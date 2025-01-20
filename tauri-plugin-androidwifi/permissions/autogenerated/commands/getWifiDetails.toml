@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-getWifiDetails"
+description = "Enables the getWifiDetails command without any pre-configured scope."
+commands.allow = ["getWifiDetails"]
+
+[[permission]]
+identifier = "deny-getWifiDetails"
+description = "Denies the getWifiDetails command without any pre-configured scope."
+commands.deny = ["getWifiDetails"]
