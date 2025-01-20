@@ -9,7 +9,21 @@
     // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
     greetMsg = await invoke("greet", { name });
   }
+
+  let networks: any[] = $state([]);
+  async function getWifiDetails() {
+    let response = await invoke("plugin:androidwifi|getWifiDetails", { payload: { value: "" } });
+    networks = JSON.parse(response.wifis);
+
+    console.log(response.wifis);
+    console.log(`found ${networks.length} networks`);
+  }
+
+
+
 </script>
+
+{#await getWifiDetails()}{/await}
 
 <main class="container">
   <h1>Welcome to Tauri + Svelte</h1>
@@ -26,6 +40,16 @@
     </a>
   </div>
   <p>Click on the Tauri, Vite, and SvelteKit logos to learn more.</p>
+
+  {#each networks as network}
+    <div class="bg-white shadow-md rounded-lg p-4">
+      <h2 class="text-lg font-semibold mb-2">SSID: ${network.ssid}</h2>
+      <p class="text-gray-700"><strong>BSSID:</strong> ${network.bssid}</p>
+      <p class="text-gray-700"><strong>Signal (RSSI):</strong> ${network.rssi} dBm</p>
+      <p class="text-gray-700"><strong>Capabilities:</strong> ${network.capabilities}</p>
+      <p class="text-gray-700"><strong>Frequency:</strong> ${network.frequency} MHz</p>
+    </div>
+  {/each}
 
   <form class="row" onsubmit={greet}>
     <input id="greet-input" placeholder="Enter a name..." bind:value={name} />
