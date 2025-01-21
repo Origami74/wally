@@ -1,12 +1,11 @@
 package com.plugin.androidwifi
 
-import android.util.Log
-
-import android.net.wifi.WifiManager 
+import android.annotation.SuppressLint
+import android.net.wifi.WifiManager
 import android.content.Context
-import android.net.wifi.WifiInfo
 import android.net.wifi.ScanResult
 import kotlinx.serialization.Serializable
+import java.nio.ByteBuffer
 
 class WifiDetails {
     fun startWifiScan(context: Context): List<ScanResult> {
@@ -23,6 +22,7 @@ class WifiDetails {
         return scanResults
     }
 
+    @SuppressLint("NewApi") // TODO: set minimum android api version to 30 (android 11)
     fun getWifiDetails(context: Context): List<WifiNetworkInfo> {
         val results = startWifiScan(context)
         return results.map { result ->
@@ -31,9 +31,23 @@ class WifiDetails {
                 bssid = result.BSSID ?: "",
                 rssi = result.level,           // signal strength in dBm
                 capabilities = result.capabilities ?: "",
-                frequency = result.frequency   // channel frequency in MHz
+                frequency = result.frequency,
+                informationElements = result.informationElements.map { informationElement ->
+                    InformationElement(
+                        id = informationElement.id,
+                        idExt = informationElement.idExt,
+                        bytes = toByteArray(informationElement.bytes)
+                    )
+                }
             )
         }
+    }
+
+    fun toByteArray(buffer: ByteBuffer): ByteArray {
+        val byteArray = ByteArray(buffer.capacity())
+        buffer.get(byteArray)
+
+        return byteArray
     }
 
     @Serializable
@@ -42,6 +56,14 @@ class WifiDetails {
         val bssid: String,
         val rssi: Int,
         val capabilities: String,
-        val frequency: Int
+        val frequency: Int,
+        val informationElements: List<InformationElement>
+    )
+
+    @Serializable
+    data class InformationElement(
+        val id: Int,
+        val idExt: Int,
+        val bytes: ByteArray,
     )
 }

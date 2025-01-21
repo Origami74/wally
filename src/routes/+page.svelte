@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import {Buffer} from "buffer";
 
   let name = $state("");
   let greetMsg = $state("");
@@ -10,6 +11,7 @@
     greetMsg = await invoke("greet", { name });
   }
 
+
   let networks: any[] = $state([]);
   async function getWifiDetails() {
     let response = await invoke("plugin:androidwifi|getWifiDetails", { payload: { value: "" } });
@@ -19,6 +21,18 @@
     console.log(`found ${networks.length} networks`);
   }
 
+
+  function hex2a(hexx) {
+    var hex = hexx.toString();//force conversion
+    var str = '';
+    for (var i = 0; i < hex.length; i += 2)
+      str += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
+    return str;
+  }
+
+  function hexDecode(hex: string): string {
+    return Buffer.from(hex, 'hex').toString()
+  }
 
 
 </script>
@@ -42,13 +56,20 @@
   <p>Click on the Tauri, Vite, and SvelteKit logos to learn more.</p>
 
   {#each networks as network}
+    <!--{#if network.ssid == "OpenWrt"}-->
     <div class="bg-white shadow-md rounded-lg p-4">
-      <h2 class="text-lg font-semibold mb-2">SSID: ${network.ssid}</h2>
-      <p class="text-gray-700"><strong>BSSID:</strong> ${network.bssid}</p>
-      <p class="text-gray-700"><strong>Signal (RSSI):</strong> ${network.rssi} dBm</p>
-      <p class="text-gray-700"><strong>Capabilities:</strong> ${network.capabilities}</p>
-      <p class="text-gray-700"><strong>Frequency:</strong> ${network.frequency} MHz</p>
+      <strong>SSID:</strong> {network.ssid}<br>
+      <strong>BSSID:</strong> {network.bssid}<br>
+      <strong>Signal (RSSI):</strong> {network.rssi} dBm<br>
+      <strong>Capabilities:</strong> {network.capabilities}<br>
+      <strong>Frequency:</strong> {network.frequency} MHz<br>
+      <strong>Information elements:</strong><br>
+      {#each network.informationElements as element}
+        <strong>id/idExt:</strong> {element.id}/{element.idExt} <strong>bytes:</strong> {hexDecode(element.bytes)}<br>
+      {/each}
+    <br><br>
     </div>
+    <!--{/if}-->
   {/each}
 
   <form class="row" onsubmit={greet}>
