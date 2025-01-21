@@ -1,34 +1,128 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import {Buffer} from "buffer";
+  import {u} from "../../.svelte-kit/output/server/chunks";
 
   let name = $state("");
   let greetMsg = $state("");
 
   async function greet(event: Event) {
     event.preventDefault();
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
     greetMsg = await invoke("greet", { name });
   }
 
+  interface NetworkElement {
+    id: string;
+    idExt: string;
+    bytes: string[]; // TODO: wrong type?
+  }
 
-  let networks: any[] = $state([]);
+  interface NetworkInfo {
+    ssid: string;
+    bssid: string;
+    rssi: number; // signal strenght in dB
+    capabilities: string;
+    frequency: string;
+    informationElements: NetworkElement[];
+  }
+
+  // Checks if the passed array matches the tollgate vendor_elements bytes (212121).
+  // This is useful to avoid having to parse everything from hex to string first.
+  function getTollgateVendorElement(network: NetworkInfo): NetworkElement | undefined {
+    const tollgateIdentifierBytes = ["50","49","50","49","50","49"]
+
+    for (const element of network.informationElements) {
+
+      const x = element.bytes.slice(0, 6);
+      if(tollgateIdentifierBytes.every((val, index) => val == x[index])){
+        return element;
+      }
+    }
+
+    return undefined;
+  }
+
+  function isTollgate(network: NetworkInfo): boolean {
+
+    // All tollgates have to identify as tollgate (openwrt for debugging purposes)
+    if(!network.ssid.toLowerCase().startsWith("tollgate") && !network.ssid.toLowerCase().startsWith("openwrt")) {
+      return false;
+    }
+
+    // Check if any of the information elements contains the tollgate info we're looking for
+
+    if(getTollgateVendorElement(network) != undefined) {
+      return true
+    }
+
+    console.log(`network ${name} does not contain TollGate element`);
+    return false;
+  }
+
+  interface TollgatePricing {
+    allocationType: string;
+    allocationPer1024: number;
+    unit: string;
+  }
+
+  interface Tollgate {
+    ssid: string;
+    bssid: string;
+    rssi: number;
+    frequency: string;
+    version: string;
+    pubkey: string;
+    pricing: TollgatePricing
+  }
+
+  let tollgates: Tollgate[] = $state([]);
+  let networks: NetworkInfo[] = $state([]);
+
+  function toTollgate(network: NetworkInfo) {
+    const vendorElements = hexDecode(getTollgateVendorElement(network).bytes)
+
+
+    const tollgateInfo = vendorElements
+            .slice(8) // drop vendor identifier
+            .split('|');
+
+    const tollgate: Tollgate = {
+      ssid: network.ssid,
+      bssid: network.bssid,
+      rssi: network.rssi,
+      frequency: network.frequency,
+      pubkey: tollgateInfo[1],
+      version: tollgateInfo[0],
+      pricing: {
+        allocationType: tollgateInfo[2],
+        allocationPer1024: tollgateInfo[3],
+        unit: tollgateInfo[4],
+      },
+    }
+
+    return tollgate;
+  }
+
   async function getWifiDetails() {
     let response = await invoke("plugin:androidwifi|getWifiDetails", { payload: { value: "" } });
     networks = JSON.parse(response.wifis);
-
-    console.log(response.wifis);
     console.log(`found ${networks.length} networks`);
+
+    let tollgateNetworks: any[] = $state([]);
+    networks.forEach(network => {
+      if(!isTollgate(network)) {
+        return;
+      }
+
+      console.log(`Network ${network.ssid} is a tollgate!`);
+      tollgateNetworks.push(network);
+    })
+
+    tollgateNetworks.forEach(network => {
+      tollgates.push(toTollgate(network))
+    })
   }
 
-
-  function hex2a(hexx) {
-    var hex = hexx.toString();//force conversion
-    var str = '';
-    for (var i = 0; i < hex.length; i += 2)
-      str += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
-    return str;
-  }
 
   function hexDecode(hex: string): string {
     return Buffer.from(hex, 'hex').toString()
@@ -55,21 +149,40 @@
   </div>
   <p>Click on the Tauri, Vite, and SvelteKit logos to learn more.</p>
 
-  {#each networks as network}
-    <!--{#if network.ssid == "OpenWrt"}-->
-    <div class="bg-white shadow-md rounded-lg p-4">
-      <strong>SSID:</strong> {network.ssid}<br>
-      <strong>BSSID:</strong> {network.bssid}<br>
-      <strong>Signal (RSSI):</strong> {network.rssi} dBm<br>
-      <strong>Capabilities:</strong> {network.capabilities}<br>
-      <strong>Frequency:</strong> {network.frequency} MHz<br>
-      <strong>Information elements:</strong><br>
-      {#each network.informationElements as element}
-        <strong>id/idExt:</strong> {element.id}/{element.idExt} <strong>bytes:</strong> {hexDecode(element.bytes)}<br>
-      {/each}
-    <br><br>
-    </div>
-    <!--{/if}-->
+  {#each tollgates as tollgate}
+      <h4>Tollgate</h4>
+    <table style="width:100%">
+      <tbody>
+      <tr>
+        <td style="text-align: right"><strong>SSID</strong></td>
+        <td style="text-align: left">{tollgate.ssid}</td>
+      </tr>
+      <tr>
+        <td style="text-align: right"><strong>BSSID</strong></td>
+        <td style="text-align: left">{tollgate.bssid}</td>
+      </tr>
+      <tr>
+        <td style="text-align: right"><strong>Signal</strong></td>
+        <td style="text-align: left">{tollgate.rssi} dB</td>
+      </tr>
+      <tr>
+        <td style="text-align: right"><strong>Frequency</strong></td>
+        <td style="text-align: left">{tollgate.frequency} Mhz</td>
+      </tr>
+      <tr>
+        <td style="text-align: right"><strong>TollGate version</strong></td>
+        <td style="text-align: left">{tollgate.version}</td>
+      </tr>
+      <tr>
+        <td style="text-align: right"><strong>Nostr pubkey</strong></td>
+        <td style="text-align: left">{tollgate.pubkey.slice(0, 7)}...{tollgate.pubkey.slice(57)}</td>
+      </tr>
+      <tr>
+        <td style="text-align: right"><strong>Price</strong></td>
+        <td style="text-align: left">{1024/tollgate.pricing.allocationPer1024} {tollgate.pricing.unit} per {tollgate.pricing.allocationType}</td>
+      </tr>
+      </tbody>
+    </table>
   {/each}
 
   <form class="row" onsubmit={greet}>
