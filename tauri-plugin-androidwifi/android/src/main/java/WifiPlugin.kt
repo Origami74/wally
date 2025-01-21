@@ -33,6 +33,15 @@ class WifiPlugin(private val activity: Activity): Plugin(activity) {
         invoke.resolve(ret)
     }
 
+    @Command
+    fun connectWifi(invoke: Invoke) {
+        val ssid = invoke.getArgs().get("ssid").toString()
+        val ret = JSObject()
+        val json = Json.encodeToString(implementation.connectWifi(activity.applicationContext, ssid))
+        ret.put("wifis", json)
+        invoke.resolve(ret)
+    }
+
     private val REQUEST_CODE_WIFI_PERMISSIONS = 1001
 
     private val requiredPermissions = arrayOf(

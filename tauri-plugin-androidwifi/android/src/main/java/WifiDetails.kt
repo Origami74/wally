@@ -1,11 +1,15 @@
 package com.plugin.androidwifi
 
 import android.annotation.SuppressLint
-import android.net.wifi.WifiManager
 import android.content.Context
 import android.net.wifi.ScanResult
+import android.net.wifi.WifiConfiguration
+import android.net.wifi.WifiManager
+import android.net.wifi.WifiNetworkSuggestion
+import app.tauri.Logger
 import kotlinx.serialization.Serializable
 import java.nio.ByteBuffer
+
 
 class WifiDetails {
     fun startWifiScan(context: Context): List<ScanResult> {
@@ -41,6 +45,29 @@ class WifiDetails {
                 }
             )
         }
+    }
+
+    // We can only make suggestions to connect to a wifi network.
+    // https://developer.android.com/develop/connectivity/wifi/wifi-suggest
+    @SuppressLint("NewApi")
+    fun connectWifi(context: Context, ssid: String): String {
+        // TODO: check permission granted: https://issuetracker.google.com/issues/224071894
+
+
+        val wifiManager = context.getSystemService(Context.WIFI_SERVICE) as WifiManager
+
+       val suggestion = WifiNetworkSuggestion.Builder()
+            .setSsid(ssid)
+            .setIsAppInteractionRequired(false) // Optional (Needs location permission)
+            .build();
+
+        val status = wifiManager.addNetworkSuggestions(listOf(suggestion));
+
+        if (status != WifiManager.STATUS_NETWORK_SUGGESTIONS_SUCCESS) {
+            Logger.error("Could not connect to network: $status")
+        }
+
+        return status.toString()
     }
 
     fun toByteArray(buffer: ByteBuffer): ByteArray {

@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "androidwifi:allow-getWifiDetails"
+    "androidwifi:allow-getWifiDetails",
+    "androidwifi:allow-connectWifi"
   ]
 }

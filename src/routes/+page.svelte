@@ -1,7 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import {Buffer} from "buffer";
-  import {u} from "../../.svelte-kit/output/server/chunks";
 
   let name = $state("");
   let greetMsg = $state("");
@@ -9,6 +8,9 @@
   async function greet(event: Event) {
     event.preventDefault();
     greetMsg = await invoke("greet", { name });
+    let response = await invoke("plugin:androidwifi|connectWifi", { ssid: "punspace" });
+
+    console.log(response);
   }
 
   interface NetworkElement {

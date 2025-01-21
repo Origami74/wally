@@ -8,6 +8,11 @@ description = "Enables the getWifiDetails command without any pre-configured sco
 commands.allow = ["getWifiDetails"]
 
 [[permission]]
+identifier = "allow-connectWifi"
+description = "Enables the connectWifi command without any pre-configured scope."
+commands.allow = ["connectWifi"]
+
+[[permission]]
 identifier = "deny-getWifiDetails"
 description = "Denies the getWifiDetails command without any pre-configured scope."
 commands.deny = ["getWifiDetails"]

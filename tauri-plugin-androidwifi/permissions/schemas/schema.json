@@ -300,6 +300,11 @@
           "const": "allow-getWifiDetails"
         },
         {
+          "description": "Enables the connectWifi command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-connectWifi"
+        },
+        {
           "description": "Denies the getWifiDetails command without any pre-configured scope.",
           "type": "string",
           "const": "deny-getWifiDetails"

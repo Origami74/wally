@@ -29,6 +29,19 @@ Enables the getWifiDetails command without any pre-configured scope.
 <tr>
 <td>
 
+`androidwifi:allow-connectWifi`
+
+</td>
+<td>
+
+Enables the connectWifi command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `androidwifi:deny-getWifiDetails`
 
 </td>
