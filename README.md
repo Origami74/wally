@@ -1,8 +1,10 @@
-# Tauri + SvelteKit + TypeScript
+# TollGate - App
 
-This template should help get you started developing with Tauri, SvelteKit and TypeScript in Vite.
+This is a multiplatform app that allows your device to discover and (auto)connect to TollGates around you.
 
-## Android
+The current version is focussing on Android first. Support for Linux and MacOS will be next.
+
+## Building for Android
 
 ```bash
 # MacOS
@@ -15,13 +17,9 @@ pnpm tauri android dev
 ```
 
 
-With delcin's version in MacOS:
-```json
+In MacOS:
+```shell
 export ANDROID_HOME="$HOME/Library/Android/sdk"
 export NDK_HOME="$ANDROID_HOME/ndk/$(ls -1 $ANDROID_HOME/ndk)"
-export JAVA_HOME="/Users/gump/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+export JAVA_HOME="/Users/[username]/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ```
-
-## Recommended IDE Setup
-
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer).
