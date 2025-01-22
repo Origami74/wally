@@ -1,5 +1,6 @@
 use serde::de::DeserializeOwned;
 use tauri::{plugin::PluginApi, AppHandle, Runtime};
+use wifiscanner;
 
 use crate::models::*;
 
@@ -14,9 +15,18 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 pub struct Androidwifi<R: Runtime>(AppHandle<R>);
 
 impl<R: Runtime> Androidwifi<R> {
-  pub fn ping(&self, payload: Empty) -> crate::Result<PingResponse> {
-    Ok(PingResponse {
-      value: payload.value,
-    })
+  pub fn get_wifi_details(&self, _payload: Empty) -> crate::Result<Vec<WifiDetails>> {
+    let wifis  = wifiscanner::scan().expect("Failed to scan wifi");
+    let wifidetails = wifis.into_iter().map(|wifi| 
+      WifiDetails {
+        ssid: wifi.ssid,
+        bssid: wifi.mac,
+        rssi: wifi.signal_level,
+        capabilities: wifi.security,
+        frequency: wifi.channel,
+        information_elements: vec![],
+      }
+    ).collect();
+    Ok(wifidetails)
   }
 }

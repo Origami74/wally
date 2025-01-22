@@ -8,6 +8,6 @@ use crate::AndroidwifiExt;
 pub(crate) async fn ping<R: Runtime>(
     app: AppHandle<R>,
     payload: Empty,
-) -> Result<PingResponse> {
+) -> Result<Vec<WifiDetails>> {
     app.androidwifi().get_wifi_details(payload)
 }

@@ -11,9 +11,18 @@ pub struct Empty {
 pub struct WifiDetails {
   pub ssid: String,
   pub bssid: String,
-  pub rssi: i64,
+  pub rssi: String,
   pub capabilities: String,
-  pub frequency: i64,
+  pub frequency: String,
+  pub information_elements: Vec<InformationElement>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InformationElement {
+  pub id: i64,
+  pub id_ext: i64,
+  pub bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
