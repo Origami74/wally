@@ -45,4 +45,11 @@ impl<R: Runtime> Androidwifi<R> {
       .run_mobile_plugin("connectWifi", payload)
       .map_err(Into::into)
   }
+
+  pub fn get_current_wifi_details(&self, payload: Empty) -> crate::Result<PingResponse> {
+    self
+      .0
+      .run_mobile_plugin("getCurrentWifiDetails", payload)
+      .map_err(Into::into)
+  }
 }

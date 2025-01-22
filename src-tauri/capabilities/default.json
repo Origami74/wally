@@ -2,11 +2,22 @@
   "$schema": "../gen/schemas/android-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "opener:default",
     "androidwifi:allow-getWifiDetails",
-    "androidwifi:allow-connectWifi"
+    "androidwifi:allow-connectWifi",
+    "androidwifi:allow-getCurrentWifiDetails",
+    "http:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {"url":  "http://192.168.21.21:2121"},
+        {"url":  "http://192.168.21.21:2122"}
+      ]
+    }
   ]
 }

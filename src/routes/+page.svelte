@@ -1,80 +1,36 @@
 <script lang="ts">
-  import { invoke } from "@tauri-apps/api/core";
+  import {invoke} from "@tauri-apps/api/core";
   import {Buffer} from "buffer";
+  import {ConnectionStatus, type NetworkInfo, type Tollgate} from "$lib/tollgate/ConnectionStatus";
+  import {getMacAddress, getTollgateVendorElement, isTollgateNetwork, isTollgateSsid} from "$lib/tollgate/helpers";
 
+  let connectionStatus = $state(ConnectionStatus.disconnected);
+  let ssid = $state("");
+  let mac = $state("");
   let name = $state("");
-  let greetMsg = $state("");
 
-  async function greet(event: Event) {
-    event.preventDefault();
-    greetMsg = await invoke("greet", { name });
-    let response = await invoke("plugin:androidwifi|connectWifi", { ssid: "punspace" });
+  async function run(){
+    const [wifiDetailsResult, macResult] = await Promise.all([
+      invoke("plugin:androidwifi|getCurrentWifiDetails", { }),
+      getMacAddress()
+    ])
 
-    console.log(response);
-  }
+    mac = macResult
+    const details = JSON.parse(wifiDetailsResult.wifiDetails) // TODO: get just the object instead of nested?
+    ssid = details.ssid.replaceAll('"',''); // TODO: bug in serialization from android
 
-  interface NetworkElement {
-    id: string;
-    idExt: string;
-    bytes: string[]; // TODO: wrong type?
-  }
-
-  interface NetworkInfo {
-    ssid: string;
-    bssid: string;
-    rssi: number; // signal strenght in dB
-    capabilities: string;
-    frequency: string;
-    informationElements: NetworkElement[];
-  }
-
-  // Checks if the passed array matches the tollgate vendor_elements bytes (212121).
-  // This is useful to avoid having to parse everything from hex to string first.
-  function getTollgateVendorElement(network: NetworkInfo): NetworkElement | undefined {
-    const tollgateIdentifierBytes = ["50","49","50","49","50","49"]
-
-    for (const element of network.informationElements) {
-
-      const x = element.bytes.slice(0, 6);
-      if(tollgateIdentifierBytes.every((val, index) => val == x[index])){
-        return element;
-      }
+    if(!isTollgateSsid(ssid)){
+      connectionStatus = ConnectionStatus.disconnected
     }
 
-    return undefined;
+    connectionStatus = ConnectionStatus.initiating
+
+    // Connect to relay and pay
   }
 
-  function isTollgate(network: NetworkInfo): boolean {
-
-    // All tollgates have to identify as tollgate (openwrt for debugging purposes)
-    if(!network.ssid.toLowerCase().startsWith("tollgate") && !network.ssid.toLowerCase().startsWith("openwrt")) {
-      return false;
-    }
-
-    // Check if any of the information elements contains the tollgate info we're looking for
-
-    if(getTollgateVendorElement(network) != undefined) {
-      return true
-    }
-
-    console.log(`network ${name} does not contain TollGate element`);
-    return false;
-  }
-
-  interface TollgatePricing {
-    allocationType: string;
-    allocationPer1024: number;
-    unit: string;
-  }
-
-  interface Tollgate {
-    ssid: string;
-    bssid: string;
-    rssi: number;
-    frequency: string;
-    version: string;
-    pubkey: string;
-    pricing: TollgatePricing
+  async function connectNetwork(ssid: string) {
+    console.log("connecting to " + ssid);
+    let response = await invoke("plugin:androidwifi|connectWifi", { ssid: ssid });
   }
 
   let tollgates: Tollgate[] = $state([]);
@@ -82,7 +38,6 @@
 
   function toTollgate(network: NetworkInfo) {
     const vendorElements = hexDecode(getTollgateVendorElement(network).bytes)
-
 
     const tollgateInfo = vendorElements
             .slice(8) // drop vendor identifier
@@ -112,7 +67,7 @@
 
     let tollgateNetworks: any[] = $state([]);
     networks.forEach(network => {
-      if(!isTollgate(network)) {
+      if(!isTollgateNetwork(network)) {
         return;
       }
 
@@ -133,65 +88,60 @@
 
 </script>
 
-{#await getWifiDetails()}{/await}
+{#await Promise.all([getWifiDetails(), run()])}{/await}
 
 <main class="container">
-  <h1>Welcome to Tauri + Svelte</h1>
+  <h1>Welcome to Tollgate</h1>
+  <h2>
+    You are
+    {#if (connectionStatus == ConnectionStatus.connected)}
+      <div style="color: green">CONNECTED</div>
+    {:else if (connectionStatus == ConnectionStatus.initiating)}
+      <div style="color: chocolate">CONNECTING...</div>
+    {:else}
+      <div style="color: red">NOT CONNECTED</div>
+    {/if}
+  </h2>
 
-  <div class="row">
-    <a href="https://vitejs.dev" target="_blank">
-      <img src="/vite.svg" class="logo vite" alt="Vite Logo" />
-    </a>
-    <a href="https://tauri.app" target="_blank">
-      <img src="/tauri.svg" class="logo tauri" alt="Tauri Logo" />
-    </a>
-    <a href="https://kit.svelte.dev" target="_blank">
-      <img src="/svelte.svg" class="logo svelte-kit" alt="SvelteKit Logo" />
-    </a>
-  </div>
-  <p>Click on the Tauri, Vite, and SvelteKit logos to learn more.</p>
+  <h2>Current Network</h2>
+  <table style="width:100%">
+    <tbody>
+    <tr>
+      <td style="text-align: right"><strong>SSID</strong></td>
+      <td style="text-align: left">{ssid}</td>
+    </tr>
+    <tr>
+      <td style="text-align: right"><strong>MAC address</strong></td>
+      <td style="text-align: left">{mac}</td>
+    </tr>
+    </tbody>
+  </table>
 
-  {#each tollgates as tollgate}
-      <h4>Tollgate</h4>
-    <table style="width:100%">
-      <tbody>
+  <h2>Nearby tollgates</h2>
+  <table style="width:100%">
+    <tbody>
+    <tr>
+      <th><strong>SSID</strong></th>
+<!--      <th><strong>BSSID</strong></th>-->
+      <th><strong>Signal</strong></th>
+      <th><strong>Freq</strong></th>
+      <th><strong>Price</strong></th>
+      <th><strong>Connect</strong></th>
+    </tr>
+    {#each tollgates as tollgate}
       <tr>
-        <td style="text-align: right"><strong>SSID</strong></td>
-        <td style="text-align: left">{tollgate.ssid}</td>
+        <td>{tollgate.ssid}</td>
+<!--        <td>{tollgate.bssid}</td>-->
+        <td>{tollgate.rssi}</td>
+        <td>{tollgate.frequency}</td>
+        <td>{tollgate.pricing.allocationPer1024}/{tollgate.pricing.unit} - {tollgate.pricing.allocationType}</td>
+        <td><button type="submit" onclick={() => connectNetwork(tollgate.ssid)}>Connect</button></td>
       </tr>
-      <tr>
-        <td style="text-align: right"><strong>BSSID</strong></td>
-        <td style="text-align: left">{tollgate.bssid}</td>
-      </tr>
-      <tr>
-        <td style="text-align: right"><strong>Signal</strong></td>
-        <td style="text-align: left">{tollgate.rssi} dB</td>
-      </tr>
-      <tr>
-        <td style="text-align: right"><strong>Frequency</strong></td>
-        <td style="text-align: left">{tollgate.frequency} Mhz</td>
-      </tr>
-      <tr>
-        <td style="text-align: right"><strong>TollGate version</strong></td>
-        <td style="text-align: left">{tollgate.version}</td>
-      </tr>
-      <tr>
-        <td style="text-align: right"><strong>Nostr pubkey</strong></td>
-        <td style="text-align: left">{tollgate.pubkey.slice(0, 7)}...{tollgate.pubkey.slice(57)}</td>
-      </tr>
-      <tr>
-        <td style="text-align: right"><strong>Price</strong></td>
-        <td style="text-align: left">{1024/tollgate.pricing.allocationPer1024} {tollgate.pricing.unit} per {tollgate.pricing.allocationType}</td>
-      </tr>
-      </tbody>
-    </table>
-  {/each}
+    {/each}
+    </tbody>
+  </table>
 
-  <form class="row" onsubmit={greet}>
-    <input id="greet-input" placeholder="Enter a name..." bind:value={name} />
-    <button type="submit">Greet</button>
-  </form>
-  <p>{greetMsg}</p>
+
 </main>
 
 <style>

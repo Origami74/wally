@@ -15,6 +15,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.encodeToJsonElement
 
 @InvokeArg
 class Empty {
@@ -39,6 +40,14 @@ class WifiPlugin(private val activity: Activity): Plugin(activity) {
         val ret = JSObject()
         val json = Json.encodeToString(implementation.connectWifi(activity.applicationContext, ssid))
         ret.put("wifis", json)
+        invoke.resolve(ret)
+    }
+
+    @Command
+    fun getCurrentWifiDetails(invoke: Invoke) {
+        val ret = JSObject()
+        val json = Json.encodeToJsonElement(implementation.getCurrentWifiDetails(activity.applicationContext))
+        ret.put("wifiDetails", json)
         invoke.resolve(ret)
     }
 

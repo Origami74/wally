@@ -1,11 +1,20 @@
 package com.plugin.androidwifi
 
 import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.wifi.ScanResult
 import android.net.wifi.WifiConfiguration
 import android.net.wifi.WifiManager
+import android.net.wifi.WifiNetworkSpecifier
 import android.net.wifi.WifiNetworkSuggestion
+import android.util.Log
 import app.tauri.Logger
 import kotlinx.serialization.Serializable
 import java.nio.ByteBuffer
@@ -47,18 +56,35 @@ class WifiDetails {
         }
     }
 
+    @SuppressLint("NewApi")
+    fun getCurrentWifiDetails(context: Context): CurrentNetworkInfo? {
+        val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        val connectionInfo = wifiManager.connectionInfo
+
+        if(connectionInfo == null){
+            return null;
+        }
+
+        return CurrentNetworkInfo(
+            ssid = connectionInfo.ssid ?: "",
+            bssid = connectionInfo.bssid ?: "",
+            macAddress = connectionInfo.macAddress ?: ""
+        )
+    }
+
     // We can only make suggestions to connect to a wifi network.
     // https://developer.android.com/develop/connectivity/wifi/wifi-suggest
     @SuppressLint("NewApi")
     fun connectWifi(context: Context, ssid: String): String {
         // TODO: check permission granted: https://issuetracker.google.com/issues/224071894
 
+        Logger.info("Connecting to ssid: $ssid")
+        val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
 
-        val wifiManager = context.getSystemService(Context.WIFI_SERVICE) as WifiManager
-
-       val suggestion = WifiNetworkSuggestion.Builder()
+        val suggestion = WifiNetworkSuggestion.Builder()
             .setSsid(ssid)
-            .setIsAppInteractionRequired(false) // Optional (Needs location permission)
+            .setPriority(Int.MAX_VALUE)
+            .setIsAppInteractionRequired(true) // Optional (Needs location permission)
             .build();
 
         val status = wifiManager.addNetworkSuggestions(listOf(suggestion));
@@ -67,7 +93,61 @@ class WifiDetails {
             Logger.error("Could not connect to network: $status")
         }
 
-        return status.toString()
+        val intentFilter = IntentFilter(WifiManager.ACTION_WIFI_NETWORK_SUGGESTION_POST_CONNECTION);
+
+        var res = ""
+        val broadcastReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                Log.i("connectWifi-res", "hoi")
+                if (!intent.action.equals(WifiManager.ACTION_WIFI_NETWORK_SUGGESTION_POST_CONNECTION)) {
+                    return;
+                }
+                res += intent.toString()
+
+                Logger.info(res)
+                // do post connect processing here
+            }
+        };
+        context.registerReceiver(broadcastReceiver, intentFilter);
+
+        res += "- status" + status.toString()
+        Logger.info(res)
+        return res
+//
+//        // start experiment
+//        val connectivityManager =
+//            context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager?
+//        var wifiNetworkSpecifier =
+//            WifiNetworkSpecifier.Builder().setSsid(ssid).build()
+//
+//        val networkRequest = NetworkRequest.Builder()
+//            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+//            .setNetworkSpecifier(wifiNetworkSpecifier)
+//            .build()
+//
+//        val networkCallback = object : ConnectivityManager.NetworkCallback() {
+//            override fun onUnavailable() {
+//                super.onUnavailable()
+//            }
+//
+//            override fun onLosing(network: Network, maxMsToLive: Int) {
+//                super.onLosing(network, maxMsToLive)
+//
+//            }
+//
+//            override fun onAvailable(network: Network) {
+//                super.onAvailable(network)
+//                connectivityManager?.bindProcessToNetwork(network)
+//            }
+//
+//            override fun onLost(network: Network) {
+//                super.onLost(network)
+//
+//            }
+//        }
+//        connectivityManager?.requestNetwork(networkRequest, networkCallback)
+//        return "ok"
+//        // end experiment
     }
 
     fun toByteArray(buffer: ByteBuffer): ByteArray {
@@ -92,5 +172,12 @@ class WifiDetails {
         val id: Int,
         val idExt: Int,
         val bytes: ByteArray,
+    )
+
+    @Serializable
+    data class CurrentNetworkInfo(
+        val ssid: String,
+        val bssid: String,
+        val macAddress: String
     )
 }
