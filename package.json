@@ -13,6 +13,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@nostrify/nostrify": "npm:@jsr/nostrify__nostrify@^0.37.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-http": "^2.2.0",
     "@tauri-apps/plugin-log": "^2.2.0",

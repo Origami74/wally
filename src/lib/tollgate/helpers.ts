@@ -20,11 +20,7 @@ export function getTollgateVendorElement(network: NetworkInfo): NetworkElement |
 }
 
 export function isTollgateNetwork(network: NetworkInfo): boolean {
-    if(network.ssid != "OpenWrt"){
-        return false; // DEBUG
-    }
-
-    // All tollgates have to identify as tollgate (openwrt for debugging purposes)
+    // All tollgates have to identify as tollgate
     if(!isTollgateSsid(network.ssid)) {
         return false;
     }
@@ -46,32 +42,25 @@ export function isTollgateSsid(ssid: string): boolean {
 // Depending on the OS we can or cannot get the mac from our device, in case of android we have to call the whoami service.
 // Ideally this happens inside the android plugin. Due to time constraints I've done it in two steps now. The 'androidwifi|getMacAddress' currently
 // only rebinds the network to the wifi interface, sho that our actual web request will go to the router and not use our cellular connection.
-export async function getMacAddress(): Promise<string|undefined> {
+export async function getMacAddress(gatewayIp: string): Promise<string|undefined> {
     // Step 1, rebind the app to the wifi network, so the whoami request won't be sent over any active cellular connection
     try{
-        let response = await invoke("plugin:androidwifi|getMacAddress", { payload: { value: "" } });
-        console.log(response);
+        await invoke("plugin:androidwifi|getMacAddress", { }); // only rebinds
     } catch (e) {
         console.error("could not get mac native", e);
     }
 
-    // Step 2, call the
-    const whoamiResponse = await fetch("http://192.168.1.1:2122/", {connectTimeout: 350}).catch((reason) => {
+    // Step 2, call the whoami service
+    const whoamiResponse = await fetch(`http://${gatewayIp}:2122/`, {connectTimeout: 350}).catch((reason) => {
         console.error(reason);
         return undefined
     }) // Universal endpoint for whoami
 
-    if(!whoamiResponse == undefined) {
-        return "x"
-    }
-
     let whoami = await whoamiResponse.json();
 
     if(whoami.Success === false) {
-        const msg = `Failed to determine MAC address, reason: ${whoami.ErrorMessage}`
-        console.error(msg);
-        return "err";
-        // throw new Error(msg);
+        console.error(`Failed to determine MAC address, reason: ${whoami.ErrorMessage}`);
+        return undefined;
     }
 
     return whoami.Mac
@@ -104,3 +93,5 @@ export function toTollgate(network: NetworkInfo) {
 
     return tollgate;
 }
+
+export const nostrNow = () => Math.floor(Date.now() / 1e3);

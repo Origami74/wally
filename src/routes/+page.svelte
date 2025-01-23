@@ -4,22 +4,73 @@
   import {
     getMacAddress,
     isTollgateNetwork,
-    isTollgateSsid, toTollgate
+    isTollgateSsid, nostrNow, toTollgate
   } from "$lib/tollgate/helpers";
   import {onMount} from "svelte";
+  import { NRelay1, NSecSigner } from '@nostrify/nostrify';
+  import {fetch} from "@tauri-apps/plugin-http";
 
   let connectionStatus = $state(ConnectionStatus.disconnected);
   let ssid = $state("");
   let mac = $state("");
-  let macNative = $state("");
   let userLog = $state([]);
+  let relayReachable = $state(false);
+  let purchaseMade = $state(false);
+
+  const gatewayIp = "192.168.1.1"
+  let tollgatePubkey: string | undefined = $state(undefined)
 
   let tollgates: Tollgate[] = $state([]);
   let networks: NetworkInfo[] = $state([]);
 
+  let relay: NRelay1;
+
   function log(str: string): void {
     userLog.push(str)
   }
+
+  async function connectRelay(){
+    log("Setting up relay connection")
+    console.log("Setting up relay connection")
+    try{
+      relay = new NRelay1(`http://${gatewayIp}:3334`) // TODO 3334 -> 2121
+      relay.socket.addEventListener("open", () => {
+        console.log("Relay CONNECTED")
+        relayReachable = true;
+      })
+      relay.socket.addEventListener('close', () => {
+        console.log("Relay DISCONNECTED")
+        relayReachable = false;
+      })
+      for await (const msg of relay.req([{ kinds: [1], limit: 1 }])) {
+        if (msg[0] === 'EVENT') console.log(msg[2]);
+        if (msg[0] === 'EOSE') break; // Sends a `CLOSE` message to the relay.
+      }
+    } catch (error) {
+      log(`Error connecting to relay: ${error.message}`);
+    }
+  }
+
+  async function makePurchase(tollgatePubkey: string, myMacAddress: string) {
+    let randomPrivateKey = "4e007801c927832ebfe06e57ef08dba5aefe44076a0add96b1700c9061313490"
+    const signer = new NSecSigner(randomPrivateKey);
+
+    const note = {
+      kind: 21000,
+      pubkey: signer.getPublicKey(),
+      content: "cashuAbcde",
+      created_at: nostrNow(),
+      tags: [
+        ["p", tollgatePubkey],
+        ["mac", myMacAddress],
+      ],
+    };
+    const event = await signer.signEvent(note);
+
+    console.log(`sending: ${JSON.stringify(event)}`);
+    await relay.event(event);
+  }
+
 
 
   const runIntervalMs = 3000
@@ -40,12 +91,10 @@
     }
 
     running = true;
-    try{
-      // networks = []
-      // tollgates = []
+    try {
 
       const wifiDetailsTask = invoke("plugin:androidwifi|getCurrentWifiDetails", { })
-      const macTask =  getMacAddress()
+      const macTask =  getMacAddress(gatewayIp)
       const [wifiDetailsResult, macResult] = await Promise.allSettled([
         wifiDetailsTask,
         macTask
@@ -54,8 +103,7 @@
       if(macResult.status === "fulfilled"){
         mac = await macTask;
       } else {
-        console.error("could not get mac")
-        mac = "n/a"
+        mac = undefined
       }
 
       const details = JSON.parse((await wifiDetailsTask).wifiDetails) // TODO: get just the object instead of nested?
@@ -63,24 +111,68 @@
 
       if(!isTollgateSsid(ssid)){
         connectionStatus = ConnectionStatus.disconnected
+        running = false;
+        return;
       }
 
-      connectionStatus = ConnectionStatus.initiating
+      if(mac == undefined){
+        connectionStatus = ConnectionStatus.initiating
+        running = false;
+        return;
+      }
 
+      if(relay == undefined){
+        await connectRelay()
+      }
+
+      if(!relayReachable){
+        running = false;
+        return;
+      }
+
+      if(tollgatePubkey === undefined){
+        console.log("ERR: tollgatePubkey not set, please tap 'Connect'")
+        log("ERR: tollgatePubkey not set, please tap 'Connect'")
+      }
+
+      if(connectionStatus === ConnectionStatus.connected){
+        running = false;
+        return;
+      }
+
+      if(!purchaseMade){
+        await makePurchase(tollgatePubkey!, mac)
+        purchaseMade = true;
+      }
+
+
+      let online = false
+      await fetch(`https://api.cloudflare.com/client/v4/ips`, {connectTimeout: 150}).catch((reason) => {
+        online = false;
+      }).then((_) => {
+        online = true;
+      })
+
+      if(online){
+        connectionStatus = ConnectionStatus.connected
+        console.log("YOU'RE ONLINE!!")
+      }
     } catch (e) {
       console.error("Running failed:", e);
     }
-
 
     // Connect to relay and pay
     running = false;
   }
 
-  async function connectNetwork(ssid: string) {
+  async function connectNetwork(tollgate: Tollgate) {
+    const ssid = tollgate.ssid;
+    tollgatePubkey = tollgate.pubkey
+
     console.log("connecting to " + ssid);
     log("connecting to " + ssid);
     let response = await invoke("plugin:androidwifi|connectWifi", { ssid: ssid });
-    log("response for connecting to " + ssid + " = " + JSON.stringify(response));
+    console.log("response for connecting to " + ssid + " = " + JSON.stringify(response));
   }
 
   async function getWifiDetails() {
@@ -129,12 +221,16 @@
       <td style="text-align: left">{ssid}</td>
     </tr>
     <tr>
-      <td style="text-align: right"><strong>MAC address</strong></td>
+      <td style="text-align: right"><strong>My MAC address</strong></td>
       <td style="text-align: left">{mac}</td>
     </tr>
     <tr>
-      <td style="text-align: right"><strong>MAC native</strong></td>
-      <td style="text-align: left">{macNative}<button type="submit" onclick={() => getMacNative()}>Connect</button></td>
+      <td style="text-align: right"><strong>Relay</strong></td>
+        {#if (relayReachable)}
+          <td style="text-align: left"><div style="color: green">CONNECTED</div></td>
+        {:else}
+          <td style="text-align: left"><div style="color: red">NOT CONNECTED</div></td>
+        {/if}
     </tr>
     </tbody>
   </table>
@@ -157,7 +253,7 @@
         <td>{tollgate.rssi}</td>
         <td>{tollgate.frequency}</td>
         <td>{tollgate.pricing.allocationPer1024}/{tollgate.pricing.unit} - {tollgate.pricing.allocationType}</td>
-        <td><button type="submit" onclick={() => connectNetwork(tollgate.ssid)}>Connect</button></td>
+        <td><button type="submit" onclick={() => connectNetwork(tollgate)}>Connect</button></td>
       </tr>
     {/each}
     </tbody>
