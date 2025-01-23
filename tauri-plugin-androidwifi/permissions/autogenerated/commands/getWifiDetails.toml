@@ -18,6 +18,11 @@ description = "Enables the getCurrentWifiDetails command without any pre-configu
 commands.allow = ["getCurrentWifiDetails"]
 
 [[permission]]
+identifier = "allow-getMacAddress"
+description = "Enables the getMacAddress command without any pre-configured scope."
+commands.allow = ["getMacAddress"]
+
+[[permission]]
 identifier = "deny-getWifiDetails"
 description = "Denies the getWifiDetails command without any pre-configured scope."
 commands.deny = ["getWifiDetails"]

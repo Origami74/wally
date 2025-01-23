@@ -55,6 +55,19 @@ Enables the getCurrentWifiDetails command without any pre-configured scope.
 <tr>
 <td>
 
+`androidwifi:allow-getMacAddress`
+
+</td>
+<td>
+
+Enables the getMacAddress command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `androidwifi:deny-getWifiDetails`
 
 </td>

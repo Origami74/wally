@@ -11,6 +11,7 @@
     "androidwifi:allow-getWifiDetails",
     "androidwifi:allow-connectWifi",
     "androidwifi:allow-getCurrentWifiDetails",
+    "androidwifi:allow-getMacAddress",
     "http:default",
     {
       "identifier": "http:default",

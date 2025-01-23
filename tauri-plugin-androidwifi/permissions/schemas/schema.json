@@ -310,6 +310,11 @@
           "const": "allow-getCurrentWifiDetails"
         },
         {
+          "description": "Enables the getMacAddress command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-getMacAddress"
+        },
+        {
           "description": "Denies the getWifiDetails command without any pre-configured scope.",
           "type": "string",
           "const": "deny-getWifiDetails"

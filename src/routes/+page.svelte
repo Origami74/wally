@@ -11,6 +11,7 @@
   let connectionStatus = $state(ConnectionStatus.disconnected);
   let ssid = $state("");
   let mac = $state("");
+  let macNative = $state("");
   let userLog = $state([]);
 
   let tollgates: Tollgate[] = $state([]);
@@ -130,6 +131,10 @@
     <tr>
       <td style="text-align: right"><strong>MAC address</strong></td>
       <td style="text-align: left">{mac}</td>
+    </tr>
+    <tr>
+      <td style="text-align: right"><strong>MAC native</strong></td>
+      <td style="text-align: left">{macNative}<button type="submit" onclick={() => getMacNative()}>Connect</button></td>
     </tr>
     </tbody>
   </table>

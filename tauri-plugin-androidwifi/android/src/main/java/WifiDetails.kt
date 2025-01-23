@@ -6,17 +6,13 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.ConnectivityManager
-import android.net.Network
-import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import android.net.wifi.ScanResult
-import android.net.wifi.WifiConfiguration
 import android.net.wifi.WifiManager
-import android.net.wifi.WifiNetworkSpecifier
 import android.net.wifi.WifiNetworkSuggestion
-import android.util.Log
 import app.tauri.Logger
 import kotlinx.serialization.Serializable
+import java.net.HttpURLConnection
+import java.net.URL
 import java.nio.ByteBuffer
 
 
@@ -72,6 +68,34 @@ class WifiDetails {
         )
     }
 
+    @SuppressLint("NewApi")
+    fun getMacAddress(context: Context): String {
+        val connectivityManager =
+            context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+        val networks = connectivityManager.allNetworks;
+
+        networks.forEach { n ->
+            var info = connectivityManager.getNetworkInfo(n)
+
+            if (info == null) {
+                Logger.error("Could not get network info for network ${n}")
+                return "no network info";
+            }
+
+            if(info?.type == ConnectivityManager.TYPE_WIFI) {
+                Logger.info("Found wifi network, binding process")
+                connectivityManager.bindProcessToNetwork(n)
+
+                // TODO: do http call from here, currently doing it from front-end bc of threading stuff here that's to complicated for now.
+
+                return "only rebinded network to WIFI"
+            }
+        }
+
+        return "something went wrong (android)"
+    }
+
     // We can only make suggestions to connect to a wifi network.
     // https://developer.android.com/develop/connectivity/wifi/wifi-suggest
     @SuppressLint("NewApi")
@@ -101,7 +125,6 @@ class WifiDetails {
         var res = ""
         val broadcastReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                Log.i("connectWifi-res", "hoi")
                 if (!intent.action.equals(WifiManager.ACTION_WIFI_NETWORK_SUGGESTION_POST_CONNECTION)) {
                     return;
                 }
@@ -112,31 +135,6 @@ class WifiDetails {
             }
         };
         context.registerReceiver(broadcastReceiver, intentFilter);
-
-        res += "- status" + status.toString()
-        Logger.info(res)
-//        return res
-//
-//        // start experiment
-//        val connectivityManager =
-//            context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-//
-//        val networks = connectivityManager.allNetworks;
-//
-//        networks.forEach { n ->
-//            var info = connectivityManager.getNetworkInfo(n)
-//
-//            if (info != null) {
-//                Logger.error("Could not get network info for network ${n}")
-//                return res;
-//            }
-//            Logger.info("network (${n}): ${info.toString()}")
-//            if(info.type == ConnectivityManager.TYPE_WIFI) {
-//                connectivityManager.bindProcessToNetwork(n)
-//            }
-//
-//
-//            }
 
 //        connectivityManager.bindProcessToNetwork()
 

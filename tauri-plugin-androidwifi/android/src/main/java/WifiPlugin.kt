@@ -44,6 +44,14 @@ class WifiPlugin(private val activity: Activity): Plugin(activity) {
     }
 
     @Command
+    fun getMacAddress(invoke: Invoke) {
+        val ret = JSObject()
+        val json = Json.encodeToString(implementation.getMacAddress(activity.applicationContext))
+        ret.put("macAddress", json)
+        invoke.resolve(ret)
+    }
+
+    @Command
     fun getCurrentWifiDetails(invoke: Invoke) {
         val ret = JSObject()
         val json = Json.encodeToJsonElement(implementation.getCurrentWifiDetails(activity.applicationContext))
