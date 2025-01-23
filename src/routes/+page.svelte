@@ -1,63 +1,85 @@
 <script lang="ts">
   import {invoke} from "@tauri-apps/api/core";
-  import {Buffer} from "buffer";
   import {ConnectionStatus, type NetworkInfo, type Tollgate} from "$lib/tollgate/ConnectionStatus";
-  import {getMacAddress, getTollgateVendorElement, isTollgateNetwork, isTollgateSsid} from "$lib/tollgate/helpers";
+  import {
+    getMacAddress,
+    isTollgateNetwork,
+    isTollgateSsid, toTollgate
+  } from "$lib/tollgate/helpers";
+  import {onMount} from "svelte";
 
   let connectionStatus = $state(ConnectionStatus.disconnected);
   let ssid = $state("");
   let mac = $state("");
-  let name = $state("");
-
-  async function run(){
-    const [wifiDetailsResult, macResult] = await Promise.all([
-      invoke("plugin:androidwifi|getCurrentWifiDetails", { }),
-      getMacAddress()
-    ])
-
-    mac = macResult
-    const details = JSON.parse(wifiDetailsResult.wifiDetails) // TODO: get just the object instead of nested?
-    ssid = details.ssid.replaceAll('"',''); // TODO: bug in serialization from android
-
-    if(!isTollgateSsid(ssid)){
-      connectionStatus = ConnectionStatus.disconnected
-    }
-
-    connectionStatus = ConnectionStatus.initiating
-
-    // Connect to relay and pay
-  }
-
-  async function connectNetwork(ssid: string) {
-    console.log("connecting to " + ssid);
-    let response = await invoke("plugin:androidwifi|connectWifi", { ssid: ssid });
-  }
+  let userLog = $state([]);
 
   let tollgates: Tollgate[] = $state([]);
   let networks: NetworkInfo[] = $state([]);
 
-  function toTollgate(network: NetworkInfo) {
-    const vendorElements = hexDecode(getTollgateVendorElement(network).bytes)
+  function log(str: string): void {
+    userLog.push(str)
+  }
 
-    const tollgateInfo = vendorElements
-            .slice(8) // drop vendor identifier
-            .split('|');
 
-    const tollgate: Tollgate = {
-      ssid: network.ssid,
-      bssid: network.bssid,
-      rssi: network.rssi,
-      frequency: network.frequency,
-      pubkey: tollgateInfo[1],
-      version: tollgateInfo[0],
-      pricing: {
-        allocationType: tollgateInfo[2],
-        allocationPer1024: tollgateInfo[3],
-        unit: tollgateInfo[4],
-      },
+  const runIntervalMs = 3000
+  onMount(() => {
+
+    const interval = setInterval(run, runIntervalMs);
+    run();
+
+    return () => clearInterval(interval);
+  })
+
+
+  let running = false;
+  async function run(){
+    console.log("run");
+    if(running){
+      return;
     }
 
-    return tollgate;
+    running = true;
+    try{
+      // networks = []
+      // tollgates = []
+
+      const wifiDetailsTask = invoke("plugin:androidwifi|getCurrentWifiDetails", { })
+      const macTask =  getMacAddress()
+      const [wifiDetailsResult, macResult] = await Promise.allSettled([
+        wifiDetailsTask,
+        macTask
+      ])
+
+      if(macResult.status === "fulfilled"){
+        mac = await macTask;
+      } else {
+        console.error("could not get mac")
+        mac = "n/a"
+      }
+
+      const details = JSON.parse((await wifiDetailsTask).wifiDetails) // TODO: get just the object instead of nested?
+      ssid = details.ssid.replaceAll('"',''); // TODO: bug in serialization from android
+
+      if(!isTollgateSsid(ssid)){
+        connectionStatus = ConnectionStatus.disconnected
+      }
+
+      connectionStatus = ConnectionStatus.initiating
+
+    } catch (e) {
+      console.error("Running failed:", e);
+    }
+
+
+    // Connect to relay and pay
+    running = false;
+  }
+
+  async function connectNetwork(ssid: string) {
+    console.log("connecting to " + ssid);
+    log("connecting to " + ssid);
+    let response = await invoke("plugin:androidwifi|connectWifi", { ssid: ssid });
+    log("response for connecting to " + ssid + " = " + JSON.stringify(response));
   }
 
   async function getWifiDetails() {
@@ -78,11 +100,6 @@
     tollgateNetworks.forEach(network => {
       tollgates.push(toTollgate(network))
     })
-  }
-
-
-  function hexDecode(hex: string): string {
-    return Buffer.from(hex, 'hex').toString()
   }
 
 
@@ -141,6 +158,12 @@
     </tbody>
   </table>
 
+  <h2>Logs</h2>
+  <p>
+  {#each userLog as log}
+    {log}<br>
+  {/each}
+  </p>
 
 </main>
 

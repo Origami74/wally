@@ -84,10 +84,13 @@ class WifiDetails {
         val suggestion = WifiNetworkSuggestion.Builder()
             .setSsid(ssid)
             .setPriority(Int.MAX_VALUE)
-            .setIsAppInteractionRequired(true) // Optional (Needs location permission)
+            .setIsAppInteractionRequired(false) // Optional (Needs location permission)
+//            .setIsMetered(false)
             .build();
 
+        wifiManager.removeNetworkSuggestions(listOf(suggestion))
         val status = wifiManager.addNetworkSuggestions(listOf(suggestion));
+
 
         if (status != WifiManager.STATUS_NETWORK_SUGGESTIONS_SUCCESS) {
             Logger.error("Could not connect to network: $status")
@@ -112,11 +115,32 @@ class WifiDetails {
 
         res += "- status" + status.toString()
         Logger.info(res)
-        return res
+//        return res
 //
 //        // start experiment
 //        val connectivityManager =
-//            context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager?
+//            context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+//
+//        val networks = connectivityManager.allNetworks;
+//
+//        networks.forEach { n ->
+//            var info = connectivityManager.getNetworkInfo(n)
+//
+//            if (info != null) {
+//                Logger.error("Could not get network info for network ${n}")
+//                return res;
+//            }
+//            Logger.info("network (${n}): ${info.toString()}")
+//            if(info.type == ConnectivityManager.TYPE_WIFI) {
+//                connectivityManager.bindProcessToNetwork(n)
+//            }
+//
+//
+//            }
+
+//        connectivityManager.bindProcessToNetwork()
+
+        return res
 //        var wifiNetworkSpecifier =
 //            WifiNetworkSpecifier.Builder().setSsid(ssid).build()
 //
