@@ -93,7 +93,9 @@
     running = true;
     try {
 
+      console.log("ASSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS");
       const wifiDetailsTask = invoke("plugin:androidwifi|getCurrentWifiDetails", { })
+      console.log(wifiDetailsTask);
       const macTask =  getMacAddress(gatewayIp)
       const [wifiDetailsResult, macResult] = await Promise.allSettled([
         wifiDetailsTask,
@@ -177,6 +179,8 @@
 
   async function getWifiDetails() {
     let response = await invoke("plugin:androidwifi|getWifiDetails", { payload: { value: "" } });
+    console.log("AAAAAAAAAAAAAAAAAAA");
+    console.log(response)
     networks = JSON.parse(response.wifis);
     console.log(`found ${networks.length} networks`);
 

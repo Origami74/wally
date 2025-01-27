@@ -26,3 +26,5 @@ tauri-plugin-androidwifi = { path = "../tauri-plugin-androidwifi" }
 tauri-plugin-log = "2.2.0"
 tauri-plugin-http = "2"
 log = "0.4.22"
+cdk = { path = "../cdk/crates/cdk" }
+async-std = "1.13.0"

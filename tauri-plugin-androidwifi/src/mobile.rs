@@ -32,7 +32,7 @@ pub struct ConnectWifiPayload {
 pub struct Androidwifi<R: Runtime>(PluginHandle<R>);
 
 impl<R: Runtime> Androidwifi<R> {
-  pub fn get_wifi_details(&self, payload: Empty) -> crate::Result<PingResponse> {
+  pub fn get_wifi_details(&self, payload: Empty) -> crate::Result<Vec<WifiDetails>> {
     self
       .0
       .run_mobile_plugin("getWifiDetails", payload)
