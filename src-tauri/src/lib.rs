@@ -16,24 +16,6 @@ struct WalletState {
     quote: Option<MintQuote>,
 }
 
-impl WalletState {
-    fn new(mint_url: &str, seed: [u8; 32]) -> Self {
-        WalletState {
-            wallet: Some(
-                Wallet::new(
-                    mint_url,
-                    CurrencyUnit::Sat,
-                    Arc::new(WalletMemoryDatabase::default()),
-                    &seed,
-                    None,
-                )
-                .unwrap(),
-            ),
-            quote: None,
-        }
-    }
-}
-
 #[tauri::command]
 fn create_wallet(
     mint_url: &str,
@@ -68,7 +50,19 @@ fn create_wallet(
 use async_std::task;
 
 #[tauri::command]
-fn load_wallet(amount: u64, state: State<'_, Mutex<WalletState>>) -> Result<String, String> {
+fn load_wallet_request(amount: u64, state: State<'_, Mutex<WalletState>>) -> Result<String, String> {
+    let state = state.lock().unwrap();
+    match &state.wallet {
+        None => Err("Wallet does not exist".to_owned()),
+        Some(wallet) => {
+            let quote = task::block_on(wallet.mint_quote(Amount::from(amount), None)).unwrap();
+            Ok(quote.request)
+        }
+    }
+}
+
+#[tauri::command]
+fn load_wallet_finalise(amount: u64, state: State<'_, Mutex<WalletState>>) -> Result<String, String> {
     let mut state = state.lock().unwrap();
     match &state.wallet {
         None => Err("Wallet does not exist".to_owned()),
@@ -119,7 +113,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_androidwifi::init())
-        .invoke_handler(tauri::generate_handler![create_wallet, load_wallet])
+        .invoke_handler(tauri::generate_handler![create_wallet, load_wallet_request, load_wallet_finalise])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
