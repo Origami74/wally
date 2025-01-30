@@ -65,9 +65,7 @@
       const availableTollgatesTask = getAvailableTollgates()
       const macTask =  operatingSystem.getMacAddress(networkSession?.tollgate?.gatewayIp ?? "") // TODO: Error handling
 
-      if(!networkSession){
-        return;
-      }
+
 
       const [currentNetworkResult, macResult, availableTollgatesResult] = await Promise.allSettled([
         currentNetworkTask,
@@ -75,15 +73,23 @@
         availableTollgatesTask
       ])
 
-      tollgates = await availableTollgatesTask
-      currentNetwork = await currentNetworkTask;
-      const userMacAddress = await macTask;
+      if(currentNetworkResult.status === "fulfilled"){
+        currentNetwork = await currentNetworkTask;
+      }
+
+      if(availableTollgatesResult.status === "fulfilled"){
+        tollgates = await availableTollgatesTask
+      }
 
       if(macResult.status === "fulfilled"){
-        if(!userMacAddress){
-          return;
+        const userMacAddress = await macTask;
+        if(networkSession){
+          networkSession.userMacAddress = userMacAddress;
         }
-        networkSession.userMacAddress = userMacAddress;
+      }
+
+      if(!networkSession){
+        return;
       }
 
       if(!purchaseMade){

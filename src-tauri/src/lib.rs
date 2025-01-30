@@ -9,6 +9,46 @@ use cdk::nuts::{CurrencyUnit, MintQuoteState};
 use cdk::wallet::MintQuote;
 use cdk::Amount;
 use cdk::{cdk_database::WalletMemoryDatabase, wallet::Wallet};
+use mac_address::mac_address_by_name;
+use wifi_rs::{prelude::*, WiFi};
+
+
+// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+#[tauri::command]
+fn get_mac_address() -> String {
+   match mac_address_by_name("en0") {
+       Ok(Some(mac_address)) => mac_address.to_string(),
+       Ok(None) => "null".to_string(),
+       Err(err) => "err".to_string(),
+   }
+}
+
+
+#[tauri::command]
+fn greet2(name: &str) -> String {
+   log::info!("Tauri is awesome2!");
+
+   let config = Some(Config {
+           interface: Some("en0"),
+       });
+
+   let mut wifi = WiFi::new(config);
+
+   match wifi.connect("Device", "gimmeinternet") {
+       Ok(result) => println!(
+           "{}",
+           if result == true {
+               "Connection Successful."
+           } else {
+               "Invalid password."
+           }
+       ),
+       Err(err) => println!("The following error occurred: {:?}", err),
+   }
+
+   format!("YES, {}! You've been greeted from Rust!", name)
+
+}
 
 #[derive(Default)]
 struct WalletState {
@@ -114,7 +154,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_androidwifi::init())
-        .invoke_handler(tauri::generate_handler![create_wallet, load_wallet_request, load_wallet_finalise])
+        .invoke_handler(tauri::generate_handler![
+                create_wallet,
+                load_wallet_request,
+                load_wallet_finalise,
+                get_mac_address,
+                greet2
+            ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
