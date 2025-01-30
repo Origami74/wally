@@ -112,6 +112,7 @@ pub fn run() {
         )
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_androidwifi::init())
         .invoke_handler(tauri::generate_handler![create_wallet, load_wallet_request, load_wallet_finalise])
         .run(tauri::generate_context!())
