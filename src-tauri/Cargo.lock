@@ -703,6 +703,7 @@ dependencies = [
 [[package]]
 name = "cashu"
 version = "0.6.0"
+source = "git+https://github.com/cashubtc/cdk.git?rev=e3fb7f9444179b41ad360885aca6864ea4da7be4#e3fb7f9444179b41ad360885aca6864ea4da7be4"
 dependencies = [
  "bitcoin",
  "cbor-diag",
@@ -752,6 +753,7 @@ dependencies = [
 [[package]]
 name = "cdk"
 version = "0.6.0"
+source = "git+https://github.com/cashubtc/cdk.git?rev=e3fb7f9444179b41ad360885aca6864ea4da7be4#e3fb7f9444179b41ad360885aca6864ea4da7be4"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -781,6 +783,7 @@ dependencies = [
 [[package]]
 name = "cdk-common"
 version = "0.6.0"
+source = "git+https://github.com/cashubtc/cdk.git?rev=e3fb7f9444179b41ad360885aca6864ea4da7be4#e3fb7f9444179b41ad360885aca6864ea4da7be4"
 dependencies = [
  "anyhow",
  "async-trait",
