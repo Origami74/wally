@@ -2,25 +2,37 @@ import type IOperatingSystem from "$lib/os/IOperatingSystem";
 import type { ConnectedNetworkInfo } from "$lib/tollgate/types/ConnectedNetworkInfo";
 import type { NetworkInfo } from "$lib/tollgate/types/NetworkInfo";
 import {invoke} from "@tauri-apps/api/core";
+import {Command} from "@tauri-apps/plugin-shell";
 
 export default class MacOsOperatingSystem implements IOperatingSystem {
     async getAvailableNetworks(): Promise<NetworkInfo[]> {
+        console.log("Getting available networks");
+        // let response: any = await invoke("get_available_networks");
+        // console.log("response: ", response);
+
         throw new Error("MacOS  getAvailableNetworks not implemented.");
     }
 
     async getCurrentNetwork(): Promise<ConnectedNetworkInfo> {
-        // let macAddress: string = await invoke("get_mac_address");
-        //
-        // console.log("response: ", response);
-        // // const networks: NetworkInfo[] = JSON.parse(response.wifis);
-        //
-        // // TODO actual error handling
-        // if(!macAddress) {}
+        console.log("Getting current network");
 
-        const info: ConnectedNetworkInfo = {
-            ssid: ""
+        try{
+            let result = await Command.create('run-networksetup', [
+                '-getairportnetwork',
+                "en0"
+            ]).execute();
+
+            const ssidWithReturnChar = result.stdout.split("Current Wi-Fi Network: ")[1]
+            const ssid = ssidWithReturnChar.substring(0, ssidWithReturnChar.length - 1);
+
+            return {
+                ssid: ssid
+            };
+        } catch (error) {
+            console.error("error", error);
+            throw new Error("Error retrieving current network");
         }
-        throw new Error("MacOS getCurrentNetwork not implemented.");
+
     }
 
     async getMacAddress(gatewayIp: string): Promise<string> {

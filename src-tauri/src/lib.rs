@@ -9,46 +9,9 @@ use cdk::nuts::{CurrencyUnit, MintQuoteState};
 use cdk::wallet::MintQuote;
 use cdk::Amount;
 use cdk::{cdk_database::WalletMemoryDatabase, wallet::Wallet};
-use mac_address::mac_address_by_name;
-use wifi_rs::{prelude::*, WiFi};
 
-
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn get_mac_address() -> String {
-   match mac_address_by_name("en0") {
-       Ok(Some(mac_address)) => mac_address.to_string(),
-       Ok(None) => "null".to_string(),
-       Err(err) => "err".to_string(),
-   }
-}
-
-
-#[tauri::command]
-fn greet2(name: &str) -> String {
-   log::info!("Tauri is awesome2!");
-
-   let config = Some(Config {
-           interface: Some("en0"),
-       });
-
-   let mut wifi = WiFi::new(config);
-
-   match wifi.connect("Device", "gimmeinternet") {
-       Ok(result) => println!(
-           "{}",
-           if result == true {
-               "Connection Successful."
-           } else {
-               "Invalid password."
-           }
-       ),
-       Err(err) => println!("The following error occurred: {:?}", err),
-   }
-
-   format!("YES, {}! You've been greeted from Rust!", name)
-
-}
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+mod desktop;
 
 #[derive(Default)]
 struct WalletState {
@@ -65,7 +28,7 @@ fn create_wallet(
     let mut state = state.lock().unwrap();
 
     match state.wallet {
-        Some(_) => Err("Wallet already exist".to_owned()),
+        Some(_) => Err("Wallet already exispub(crate)t".to_owned()),
         None => {
             let localstore = WalletMemoryDatabase::default();
             match Wallet::new(
@@ -137,30 +100,41 @@ fn load_wallet_finalise(amount: u64, state: State<'_, Mutex<WalletState>>) -> Re
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .setup(|app| {
-            app.manage(Mutex::new(WalletState::default()));
-            Ok(())
-        })
-        .plugin(
-            tauri_plugin_log::Builder::new()
-                .targets([
-                    Target::new(TargetKind::Stdout),
-                    Target::new(TargetKind::Webview),
-                ])
-                .build(),
-        )
-        .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_androidwifi::init())
-        .invoke_handler(tauri::generate_handler![
-                create_wallet,
-                load_wallet_request,
-                load_wallet_finalise,
-                get_mac_address,
-                greet2
+    let mut builder = tauri::Builder::default();
+
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+    {
+        use desktop::desktop_commands::*;
+
+        builder = builder.invoke_handler(tauri::generate_handler![
+            get_mac_address,
+            connect_network,
+            get_available_networks
+        ])
+        .plugin(tauri_plugin_shell::init());
+    }
+
+    builder.setup(|app| {
+        app.manage(Mutex::new(WalletState::default()));
+        Ok(())
+    })
+    .plugin(
+        tauri_plugin_log::Builder::new()
+            .targets([
+                Target::new(TargetKind::Stdout),
+                Target::new(TargetKind::Webview),
             ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+            .build(),
+    )
+    .plugin(tauri_plugin_http::init())
+    .plugin(tauri_plugin_opener::init())
+    .plugin(tauri_plugin_os::init())
+    .plugin(tauri_plugin_androidwifi::init())
+    .invoke_handler(tauri::generate_handler![
+            create_wallet,
+            load_wallet_request,
+            load_wallet_finalise,
+        ])
+    .run(tauri::generate_context!())
+    .expect("error while running tauri application");
 }

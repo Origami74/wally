@@ -65,8 +65,6 @@
       const availableTollgatesTask = getAvailableTollgates()
       const macTask =  operatingSystem.getMacAddress(networkSession?.tollgate?.gatewayIp ?? "") // TODO: Error handling
 
-
-
       const [currentNetworkResult, macResult, availableTollgatesResult] = await Promise.allSettled([
         currentNetworkTask,
         macTask,

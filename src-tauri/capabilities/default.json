@@ -5,6 +5,15 @@
   "windows": [
     "main"
   ],
+  "allowlist": {
+    "shell": {
+      "execute": true,
+      "all": true,
+      "sidecar": true,
+      "open": true,
+      "args": true
+    }
+  },
   "permissions": [
     "core:default",
     "opener:default",
@@ -16,12 +25,12 @@
     {
       "identifier": "http:default",
       "allow": [
+        {"url":  "http://192.168.1.1:3334"},
         {"url":  "http://192.168.1.1:2121"},
         {"url":  "http://192.168.21.21:2121"},
         {"url":  "http://192.168.1.1:2122"},
         {"url":  "http://192.168.21.21:2122"}
       ]
-    },
-    "http:default"
+    }
   ]
 }
