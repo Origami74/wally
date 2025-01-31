@@ -37,6 +37,7 @@ export default class AndroidOperatingSystem implements IOperatingSystem {
 
         const ssid = details.ssid.replaceAll('"',''); // TODO: bug in serialization from android
 
+        console.log(`Current network: ${ssid}`);
         return {
             ssid: ssid,
         }

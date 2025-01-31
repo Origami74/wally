@@ -100,7 +100,7 @@ fn load_wallet_finalise(amount: u64, state: State<'_, Mutex<WalletState>>) -> Re
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default();
+    let builder = tauri::Builder::default();
 
     #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     {
@@ -130,6 +130,7 @@ pub fn run() {
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_os::init())
     .plugin(tauri_plugin_androidwifi::init())
+    .plugin(tauri_plugin_sharetarget::init())
     .invoke_handler(tauri::generate_handler![
             create_wallet,
             load_wallet_request,

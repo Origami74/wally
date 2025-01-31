@@ -11,7 +11,6 @@ export default class TollgateNetworkSession {
 
     constructor(tollgate: Tollgate) {
         this.tollgate = tollgate;
-        this._tollgateRelay = this.connectRelay();
     }
 
     public get userMacAddress(): string | undefined {
@@ -52,22 +51,20 @@ export default class TollgateNetworkSession {
     }
 
     public get tollgateRelay(): NRelay1 | undefined {
-        return this._tollgateRelay;
-    }
-
-    private connectRelay(){
-        console.log("Setting up relay connection")
         try{
-            this._tollgateRelay = new NRelay1(`http://${this.tollgate.gatewayIp}:3334`) // TODO 3334 -> 2121
-            this._tollgateRelay.socket.addEventListener("open", () => {
-                console.log("Relay CONNECTED")
-                this.tollgateRelayReachable = true;
-            })
-            this._tollgateRelay.socket.addEventListener('close', () => {
-                console.log("Relay DISCONNECTED")
-                this.tollgateRelayReachable = false;
-            })
+            if(!this._tollgateRelay){
+                console.log("Setting up relay connection")
+                this._tollgateRelay = new NRelay1(`http://${this.tollgate.gatewayIp}:3334`) // TODO 3334 -> 2121
 
+                this._tollgateRelay.socket.addEventListener("open", () => {
+                    console.log("Relay CONNECTED")
+                    this.tollgateRelayReachable = true;
+                })
+                this._tollgateRelay.socket.addEventListener('close', () => {
+                    console.log("Relay DISCONNECTED")
+                    this.tollgateRelayReachable = false;
+                })
+            }
             return this._tollgateRelay;
         } catch (error) {
             console.log(`Error connecting to relay: ${error.message}`);

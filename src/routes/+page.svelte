@@ -34,6 +34,7 @@
 
   let userLog = $state([]);
   let purchaseMade = $state(false);
+  let online = $state(false);
 
   let tollgates: Tollgate[] = $state([]);
   let networks: NetworkInfo[] = $state([]);
@@ -56,13 +57,16 @@
   let running = false;
   async function run(){
 
+
+    console.log(`running: ${running}`);
+
     if(running) return
     running = true;
-    console.log("run");
 
     try {
       const currentNetworkTask = operatingSystem.getCurrentNetwork()
       const availableTollgatesTask = getAvailableTollgates()
+      // console.log("gatewayIp", networkSession?.tollgate?.gatewayIp)
       const macTask =  operatingSystem.getMacAddress(networkSession?.tollgate?.gatewayIp ?? "") // TODO: Error handling
 
       const [currentNetworkResult, macResult, availableTollgatesResult] = await Promise.allSettled([
@@ -70,6 +74,8 @@
         macTask,
         availableTollgatesTask
       ])
+
+      console.log(`currentNetworkResult: ${currentNetworkResult.status}\n macResult: ${macResult.status}\n availableTollgatesResult: ${availableTollgatesResult.status}`)
 
       if(currentNetworkResult.status === "fulfilled"){
         currentNetwork = await currentNetworkTask;
@@ -86,22 +92,49 @@
         }
       }
 
+      console.log("networkSession", JSON.stringify(networkSession));
       if(!networkSession){
+        running = false;
         return;
       }
+
+      if(networkSession.userMacAddress === undefined){
+        console.log("waiting for userMacAddress");
+        running = false;
+        return;
+      }
+
+      if(!networkSession.tollgateRelayReachable){
+        console.log("waiting for tollgateRelayReachable");
+        const relay = networkSession!.tollgateRelay
+        running = false;
+        return;
+      }
+
+      console.log("RELAY REACHABLE!");
 
       if(!purchaseMade){
         await makePurchase(networkSession)
         purchaseMade = true;
+        running = false;
+        return;
       }
 
-      let online = false
+      if(online){
+        console.log("++online++")
+        running = false;
+        return;
+      }
+
       await fetch(`https://api.cloudflare.com/client/v4/ips`, {connectTimeout: 150}).catch((reason) => {
         online = false;
+        console.log("--offline--")
       }).then((_) => {
+        console.log("WE ARE ONLINE!!!")
         online = true;
       })
     } catch (e) {
+      running = false;
       console.error("Running failed:", e);
     }
 
@@ -114,13 +147,14 @@
 
     console.log("connecting to " + networkSession.tollgate.ssid);
     log("connecting to " + networkSession.tollgate.ssid);
+    console.log("networkSession: ", JSON.stringify(networkSession))
 
     await operatingSystem.connectNetwork(networkSession.tollgate.ssid)
   }
 
   async function getAvailableTollgates() {
     networks = await operatingSystem.getAvailableNetworks()
-    console.log(`found ${networks.length} networks`);
+    // console.log(`found ${networks.length} networks`);
 
     return getTollgates(networks);
   }
@@ -153,6 +187,10 @@
     <tr>
       <td style="text-align: right"><strong>My MAC address</strong></td>
       <td style="text-align: left">{networkSession?.userMacAddress}</td>
+    </tr>
+    <tr>
+      <td style="text-align: right"><strong>TollGate IP</strong></td>
+      <td style="text-align: left">{networkSession?.tollgate.gatewayIp}</td>
     </tr>
     <tr>
       <td style="text-align: right"><strong>Relay</strong></td>

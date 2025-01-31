@@ -5002,6 +5002,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-sharetarget"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15a6e4638b6a5492a46847fc9e994df8cfd2dbc1bacc11f15c207d6a2163c341"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "tauri-plugin-shell"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5346,6 +5360,7 @@ dependencies = [
  "tauri-plugin-log",
  "tauri-plugin-opener",
  "tauri-plugin-os",
+ "tauri-plugin-sharetarget",
  "tauri-plugin-shell",
  "wifi-rs",
  "wifiscanner",

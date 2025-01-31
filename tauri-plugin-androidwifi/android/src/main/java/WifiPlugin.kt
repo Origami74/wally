@@ -9,10 +9,15 @@ import app.tauri.plugin.Plugin
 import app.tauri.plugin.Invoke
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.CaptivePortal
+import android.net.ConnectivityManager
+import android.util.Log
 import android.webkit.WebView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import app.tauri.Logger
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToJsonElement
@@ -25,6 +30,25 @@ class Empty {
 @TauriPlugin
 class WifiPlugin(private val activity: Activity): Plugin(activity) {
     private val implementation = WifiDetails()
+
+    /// Send all new intents to registered listeners.
+    override fun onNewIntent(intent: Intent) {
+        Logger.info("intent: ${intent.action.toString()}")
+        if (intent.action == "android.net.conn.CAPTIVE_PORTAL") {
+            Logger.info("Dismissing captive portal")
+            val mCaptivePortal: CaptivePortal? = intent.getParcelableExtra(ConnectivityManager.EXTRA_CAPTIVE_PORTAL)
+
+            if(mCaptivePortal == null) {
+                Logger.error("Could not retrieve captive portal object from intent")
+            }
+
+            Logger.info("mCaptivePortal: ${mCaptivePortal.toString()}")
+
+            val x = mCaptivePortal?.reportCaptivePortalDismissed()
+            Logger.info("x: ${x.toString()}")
+        }
+    }
+
 
     @Command
     fun getWifiDetails(invoke: Invoke) {
