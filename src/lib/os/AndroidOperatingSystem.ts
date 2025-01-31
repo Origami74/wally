@@ -9,7 +9,11 @@ export default class AndroidOperatingSystem implements IOperatingSystem {
     // Depending on the OS we can or cannot get the mac from our device, in case of android we have to call the whoami service.
     // Ideally this happens inside the android plugin. Due to time constraints I've done it in two steps now. The 'androidwifi|getMacAddress' currently
     // only rebinds the network to the wifi interface, sho that our actual web request will go to the router and not use our cellular connection.
-    async getMacAddress(gatewayIp: string): Promise<string> {
+    async getMacAddress(gatewayIp: string | undefined): Promise<string | undefined> {
+        if(gatewayIp === undefined){
+            return undefined;
+        }
+
         // Step 1, rebind the app to the wifi network, so the whoami request won't be sent over any active cellular connection
         try{
             await invoke("plugin:androidwifi|getMacAddress", { }); // only rebinds
@@ -25,7 +29,8 @@ export default class AndroidOperatingSystem implements IOperatingSystem {
         let whoami = await whoamiResponse.json();
 
         if(whoami.Success === false) {
-            throw new Error(`Failed to determine MAC address, reason: ${whoami.ErrorMessage}`)
+            console.error(`Failed to determine MAC address, reason: ${whoami.ErrorMessage}`)
+            return undefined;
         }
 
         return whoami.Mac

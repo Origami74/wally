@@ -1,10 +1,6 @@
 <script lang="ts">
-  import {
-    ConnectionStatus
-  } from "$lib/tollgate/types/ConnectionStatus";
-  import {
-    getTollgates
-  } from "$lib/tollgate/network/helpers";
+  import {ConnectionStatus} from "$lib/tollgate/types/ConnectionStatus";
+  import {getTollgates} from "$lib/tollgate/network/helpers";
   import {onMount} from "svelte";
 
   import {fetch} from "@tauri-apps/plugin-http";
@@ -18,7 +14,7 @@
   import MacOsOperatingSystem from "$lib/os/MacOsOperatingSystem";
 
   import type {ConnectedNetworkInfo} from "$lib/tollgate/types/ConnectedNetworkInfo";
-  import { platform } from '@tauri-apps/plugin-os';
+  import {platform} from '@tauri-apps/plugin-os';
 
 
   let operatingSystem: IOperatingSystem;
@@ -35,6 +31,7 @@
   let userLog = $state([]);
   let purchaseMade = $state(false);
   let online = $state(false);
+  let relayReachableView = $state(false);
 
   let tollgates: Tollgate[] = $state([]);
   let networks: NetworkInfo[] = $state([]);
@@ -42,6 +39,9 @@
   let networkSession: TollgateNetworkSession | undefined = $state(undefined)
   let tollgateSession = $state(undefined)
   let currentNetwork: ConnectedNetworkInfo | undefined = $state(undefined);
+
+
+  let networkStatusView = $state(ConnectionStatus.disconnected)
 
   function log(str: string): void {
     userLog.push(str)
@@ -67,7 +67,7 @@
       const currentNetworkTask = operatingSystem.getCurrentNetwork()
       const availableTollgatesTask = getAvailableTollgates()
       // console.log("gatewayIp", networkSession?.tollgate?.gatewayIp)
-      const macTask =  operatingSystem.getMacAddress(networkSession?.tollgate?.gatewayIp ?? "") // TODO: Error handling
+      const macTask =  operatingSystem.getMacAddress(networkSession?.tollgate?.gatewayIp) // TODO: Error handling
 
       const [currentNetworkResult, macResult, availableTollgatesResult] = await Promise.allSettled([
         currentNetworkTask,
@@ -87,7 +87,7 @@
 
       if(macResult.status === "fulfilled"){
         const userMacAddress = await macTask;
-        if(networkSession){
+        if(networkSession && userMacAddress != undefined){
           networkSession.userMacAddress = userMacAddress;
         }
       }
@@ -97,6 +97,8 @@
         running = false;
         return;
       }
+
+      networkStatusView = ConnectionStatus.initiating;
 
       if(networkSession.userMacAddress === undefined){
         console.log("waiting for userMacAddress");
@@ -112,6 +114,7 @@
       }
 
       console.log("RELAY REACHABLE!");
+      relayReachableView = true
 
       if(!purchaseMade){
         await makePurchase(networkSession)
@@ -121,18 +124,28 @@
       }
 
       if(online){
-        console.log("++online++")
+        networkStatusView = ConnectionStatus.connected;
         running = false;
         return;
       }
 
-      await fetch(`https://api.cloudflare.com/client/v4/ips`, {connectTimeout: 150}).catch((reason) => {
+      online = true;
+      try{
+        var response = await fetch(`https://api.cloudflare.com/client/v4/ips`, {connectTimeout: 150})
+
+        if(!response){
+          console.log("--noe response--")
+          online = false;
+        }
+
+        console.log("are we online?:", );
+        online = true;
+      }
+      catch(error) {
         online = false;
         console.log("--offline--")
-      }).then((_) => {
-        console.log("WE ARE ONLINE!!!")
-        online = true;
-      })
+      }
+
     } catch (e) {
       running = false;
       console.error("Running failed:", e);
@@ -149,6 +162,10 @@
     log("connecting to " + networkSession.tollgate.ssid);
     console.log("networkSession: ", JSON.stringify(networkSession))
 
+    if(networkSession.tollgate.ssid === currentNetwork?.ssid){
+      console.log(`already connected to ${currentNetwork.ssid}, not switching`);
+      return
+    }
     await operatingSystem.connectNetwork(networkSession.tollgate.ssid)
   }
 
@@ -168,9 +185,9 @@
   <h1>Welcome to Tollgate</h1>
   <h2>
     Network
-    {#if (networkSession?.status === ConnectionStatus.connected)}
+    {#if (networkStatusView === ConnectionStatus.connected)}
       <div style="color: green">CONNECTED</div>
-    {:else if (networkSession?.status === ConnectionStatus.initiating)}
+    {:else if (networkStatusView === ConnectionStatus.initiating)}
       <div style="color: chocolate">CONNECTING...</div>
     {:else}
       <div style="color: red">NOT CONNECTED</div>
@@ -194,7 +211,7 @@
     </tr>
     <tr>
       <td style="text-align: right"><strong>Relay</strong></td>
-        {#if (networkSession?.tollgateRelayReachable)}
+        {#if (relayReachableView)}
           <td style="text-align: left"><div style="color: green">CONNECTED</div></td>
         {:else}
           <td style="text-align: left"><div style="color: red">NOT CONNECTED</div></td>

@@ -5,5 +5,5 @@ export default interface IOperatingSystem {
     connectNetwork(ssid: string): Promise<void>;
     getAvailableNetworks(): Promise<NetworkInfo[]>;
     getCurrentNetwork(): Promise<ConnectedNetworkInfo>;
-    getMacAddress(gatewayIp: string): Promise<string>;
+    getMacAddress(gatewayIp: string | undefined): Promise<string | undefined>;
 }

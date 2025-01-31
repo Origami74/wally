@@ -35,7 +35,7 @@ export default class MacOsOperatingSystem implements IOperatingSystem {
 
     }
 
-    async getMacAddress(gatewayIp: string): Promise<string> {
+    async getMacAddress(gatewayIp: string | undefined): Promise<string | undefined> {
         let macAddress: string = await invoke("get_mac_address");
 
         // TODO actual error handling based on rust errors
