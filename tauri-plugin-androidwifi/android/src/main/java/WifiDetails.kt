@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.CaptivePortal
 import android.net.ConnectivityManager
 import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
@@ -109,7 +110,6 @@ class WifiDetails {
             .setSsid(ssid)
             .setPriority(Int.MAX_VALUE)
             .setIsAppInteractionRequired(false) // Optional (Needs location permission)
-//            .setIsMetered(false)
             .build();
 
         wifiManager.removeNetworkSuggestions(listOf(suggestion))
@@ -135,41 +135,7 @@ class WifiDetails {
             }
         };
         context.registerReceiver(broadcastReceiver, intentFilter);
-
-//        connectivityManager.bindProcessToNetwork()
-
         return res
-//        var wifiNetworkSpecifier =
-//            WifiNetworkSpecifier.Builder().setSsid(ssid).build()
-//
-//        val networkRequest = NetworkRequest.Builder()
-//            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-//            .setNetworkSpecifier(wifiNetworkSpecifier)
-//            .build()
-//
-//        val networkCallback = object : ConnectivityManager.NetworkCallback() {
-//            override fun onUnavailable() {
-//                super.onUnavailable()
-//            }
-//
-//            override fun onLosing(network: Network, maxMsToLive: Int) {
-//                super.onLosing(network, maxMsToLive)
-//
-//            }
-//
-//            override fun onAvailable(network: Network) {
-//                super.onAvailable(network)
-//                connectivityManager?.bindProcessToNetwork(network)
-//            }
-//
-//            override fun onLost(network: Network) {
-//                super.onLost(network)
-//
-//            }
-//        }
-//        connectivityManager?.requestNetwork(networkRequest, networkCallback)
-//        return "ok"
-//        // end experiment
     }
 
     fun toByteArray(buffer: ByteBuffer): ByteArray {
@@ -177,6 +143,21 @@ class WifiDetails {
         buffer.get(byteArray)
 
         return byteArray
+    }
+
+    fun dismissCaptivePortal(intent: Intent) {
+        Logger.info("Dismissing captive portal")
+        val mCaptivePortal = intent.getParcelableExtra(ConnectivityManager.EXTRA_CAPTIVE_PORTAL, CaptivePortal::class.java)
+
+        if(mCaptivePortal == null) {
+            Logger.error("Could not retrieve captive portal object from intent")
+        }
+
+        // TODO: Pass on to native app if it's not a Tollgate network
+        // It is possible to get info about the network we're connecting to.
+        // We can get a parcableExtra from the intent (EXTRA_NETWORK) to determine this.
+
+        mCaptivePortal?.reportCaptivePortalDismissed()
     }
 
     @Serializable
