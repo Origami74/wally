@@ -34,46 +34,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS desktop builds
-          - name: "macOS (Apple Silicon)"
-            platform: "macos-latest"
-            args: "--target aarch64-apple-darwin"
-            arch: "aarch64"
-          - name: "macOS (Intel)"
-            platform: "macos-latest"
-            args: "--target x86_64-apple-darwin"
-            arch: "x86_64"
-          # Linux desktop builds
-          - name: "Linux Desktop"
-            platform: "ubuntu-22.04"
-            args: ""
           # Single Android build that will output all ABIs
           - name: "Android"
             platform: "ubuntu-22.04"
             android: true
 
     runs-on: ${{ matrix.platform }}
-#    env:
-#      APPLE_ID: ${{ secrets.APPLE_ID }}
-#      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-#      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
-
-##      - name: Cache bun dependencies
-##        uses: actions/cache@v4
-##        with:
-##          path: |
-##            ~/.bun/install/cache
-##            node_modules
-##          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}
-##          restore-keys: |
-##            ${{ runner.os }}-bun-
-#
-#      - name: Setup bun
-#        uses: oven-sh/setup-bun@v1
-#        with:
-#          bun-version: 1.1.39
 
       - name: Add Rust cache
         uses: Swatinem/rust-cache@v2
@@ -95,7 +63,7 @@ jobs:
             ${{ matrix.android && 'aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android' || '' }}
 
       - name: Install frontend dependencies
-        run: bun install
+        run: pnpm install
 
       - name: Cache Android NDK
         if: matrix.android
@@ -125,12 +93,12 @@ jobs:
       - name: Build Android universal binary
         if: matrix.android
         run: |
-          bun tauri android build
+          pnpm tauri android build
 
       - name: Build Android arch specific binaries
         if: matrix.android
         run: |
-          bun tauri android build --apk --split-per-abi
+          pnpm tauri android build --apk --split-per-abi
 
       - name: List Android build outputs
         if: matrix.android
