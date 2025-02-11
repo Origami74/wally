@@ -1,6 +1,6 @@
 <script lang="ts">
   import {ConnectionStatus} from "$lib/tollgate/types/ConnectionStatus";
-  import {getTollgates} from "$lib/tollgate/network/helpers";
+  import {getTollgates, isTollgateSsid} from "$lib/tollgate/network/helpers";
   import {onMount} from "svelte";
 
   import {fetch} from "@tauri-apps/plugin-http";
@@ -66,7 +66,6 @@
     try {
       const currentNetworkTask = operatingSystem.getCurrentNetwork()
       const availableTollgatesTask = getAvailableTollgates()
-      // console.log("gatewayIp", networkSession?.tollgate?.gatewayIp)
       const macTask =  operatingSystem.getMacAddress(networkSession?.tollgate?.gatewayIp) // TODO: Error handling
 
       const [currentNetworkResult, macResult, availableTollgatesResult] = await Promise.allSettled([
@@ -94,6 +93,16 @@
 
       console.log("networkSession", JSON.stringify(networkSession));
       if(!networkSession){
+
+        // if we're already connected, make a session
+        if(isTollgateSsid(currentNetwork?.ssid ?? "null")){
+          const currentTollgate = tollgates.find(tg => tg.ssid === currentNetwork?.ssid);
+          if(currentTollgate){
+            await startTollgateSession(currentTollgate)
+          }
+
+        }
+
         running = false;
         return;
       }
@@ -113,10 +122,11 @@
         return;
       }
 
-      console.log("RELAY REACHABLE!");
+      console.log(`RELAY REACHABLE! purchaseMade=${purchaseMade}`);
       relayReachableView = true
 
       if(!purchaseMade){
+        console.log("starting makePurchase");
         await makePurchase(networkSession)
         purchaseMade = true;
         running = false;
@@ -156,6 +166,10 @@
   }
 
   async function startTollgateSession(tollgate: Tollgate) {
+    if(networkSession?.tollgate.ssid === tollgate.ssid){
+      console.log(`Already connected to tollgate ${tollgate.ssid}`);
+    }
+
     networkSession = new TollgateNetworkSession(tollgate);
 
     console.log("connecting to " + networkSession.tollgate.ssid);

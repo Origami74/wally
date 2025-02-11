@@ -10,6 +10,8 @@ import android.net.ConnectivityManager
 import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.net.wifi.WifiNetworkSuggestion
+import android.os.Build
+import androidx.annotation.RequiresApi
 import app.tauri.Logger
 import kotlinx.serialization.Serializable
 import java.net.HttpURLConnection
@@ -145,6 +147,7 @@ class WifiDetails {
         return byteArray
     }
 
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     fun dismissCaptivePortal(intent: Intent) {
         Logger.info("Dismissing captive portal")
         val mCaptivePortal = intent.getParcelableExtra(ConnectivityManager.EXTRA_CAPTIVE_PORTAL, CaptivePortal::class.java)
