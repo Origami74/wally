@@ -130,11 +130,11 @@ jobs:
 
           # Copy files with error checking
           for pair in \
-            "app-universal-release.apk:android-universal.apk" \
-            "app-arm64-release.apk:android-arm64.apk" \
-            "app-arm-release.apk:android-arm.apk" \
-            "app-x86-release.apk:android-x86.apk" \
-            "app-x86_64-release.apk:android-x86_64.apk"; do
+            "app-universal-release-unsigned.apk:android-universal.apk" \
+            "app-arm64-release-unsigned.apk:android-arm64.apk" \
+            "app-arm-release-unsigned.apk:android-arm.apk" \
+            "app-x86-release-unsigned.apk:android-x86.apk" \
+            "app-x86_64-release-unsigned.apk:android-x86_64.apk"; do
             src=${pair%:*}
             dst=${pair#*:}
             if [ -f "src-tauri/gen/android/app/build/outputs/apk/$src" ]; then
