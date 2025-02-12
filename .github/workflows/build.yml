@@ -2,7 +2,7 @@ name: "Build"
 
 on:
   workflow_call:
-#    secrets:
+    secrets:
 #      APPLE_ID:
 #        required: true
 #      APPLE_PASSWORD:
