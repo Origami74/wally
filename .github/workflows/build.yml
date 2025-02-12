@@ -15,16 +15,16 @@ on:
 #        required: true
 #      KEYCHAIN_PASSWORD:
 #        required: true
-#      GPG_PRIVATE_KEY:
-#        required: true
-#      GPG_PASSPHRASE:
-#        required: true
-#      ANDROID_KEY_ALIAS:
-#        required: true
-#      ANDROID_KEY_PASSWORD:
-#        required: true
-#      ANDROID_KEY_BASE64:
-#        required: true
+      GPG_PRIVATE_KEY:
+        required: true
+      GPG_PASSPHRASE:
+        required: true
+      ANDROID_KEY_ALIAS:
+        required: true
+      ANDROID_KEY_PASSWORD:
+        required: true
+      ANDROID_KEY_BASE64:
+        required: true
   pull_request:
   push:
 
@@ -46,6 +46,8 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 9.15.0
+
+
 
       - name: Add Rust cache
         uses: Swatinem/rust-cache@v2
@@ -94,6 +96,24 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653" >> $GITHUB_ENV
           echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653" >> $GITHUB_ENV
 
+      - name: Import GPG key
+        if: matrix.platform == 'ubuntu-22.04' && !matrix.android
+        id: import_gpg
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+          trust_level: 5
+
+      - name: Setup Android signing
+        if: matrix.android
+        run: |
+          cd src-tauri/gen/android
+          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" > keystore.properties
+          echo "password=${{ secrets.ANDROID_KEY_PASSWORD }}" >> keystore.properties
+          base64 -d <<< "${{ secrets.ANDROID_KEY_BASE64 }}" > $RUNNER_TEMP/keystore.jks
+          echo "storeFile=$RUNNER_TEMP/keystore.jks" >> keystore.properties
+
       - name: Build Android universal binary
         if: matrix.android
         run: |
@@ -130,10 +150,10 @@ jobs:
 
           # Copy files with error checking
           for pair in \
-            "universal/release/app-universal-release-unsigned.apk:android-universal.apk" \
-            "arm64/release/app-arm64-release-unsigned.apk:android-arm64.apk" \
-            "arm/release/app-arm-release-unsigned.apk:android-arm.apk" \
-            "x86/release/app-x86-release-unsigned.apk:android-x86.apk" \
+            "universal/release/app-universal-release.apk:android-universal.apk" \
+            "arm64/release/app-arm64-release.apk:android-arm64.apk" \
+            "arm/release/app-arm-release.apk:android-arm.apk" \
+            "x86/release/app-x86-release.apk:android-x86.apk" \
             "x86_64/release/app-x86_64-release.apk:android-x86_64.apk"; do
             src=${pair%:*}
             dst=${pair#*:}
