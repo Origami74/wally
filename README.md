@@ -23,3 +23,6 @@ export ANDROID_HOME="$HOME/Library/Android/sdk"
 export NDK_HOME="$ANDROID_HOME/ndk/$(ls -1 $ANDROID_HOME/ndk)"
 export JAVA_HOME="/Users/[username]/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ```
+
+## License
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
