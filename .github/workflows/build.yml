@@ -175,7 +175,7 @@ jobs:
           find android-artifacts/* -type f
           
           # Store for upload to blossom
-          echo "ANDROID_UNIVERSAL_IPK_PATH=$(find android-artifacts/*-universal.ipk -type f)" >> $GITHUB_ENV
+          echo "ANDROID_UNIVERSAL_IPK_PATH=$(find android-artifacts/*-universal.apk -type f)" >> $GITHUB_ENV
 
       - name: Upload to Blossom
         uses: Origami74/upload-blossom-action@main
