@@ -30,6 +30,7 @@ on:
 
 jobs:
   build-tauri:
+    environment: build
     strategy:
       fail-fast: false
       matrix:
