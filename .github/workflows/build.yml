@@ -177,6 +177,18 @@ jobs:
         if: matrix.android
         run: |
           find android-artifacts/* -type f
+          
+          # Store for upload to blossom
+          echo "ANDROID_UNIVERSAL_IPK_PATH=$(find android-artifacts/*-universal.ipk -type f)" >> $GITHUB_ENV
+
+      - name: Upload to Blossom
+        uses: Origami74/upload-blossom-action@main
+        continue-on-error: true # TODO: fail
+        env:
+          ANDROID_UNIVERSAL_IPK_PATH: ${{ env.ANDROID_UNIVERSAL_IPK_PATH }}
+        with:
+          host: 'https://blossom.swissdash.site/'
+          filePath: '${{ env.ANDROID_UNIVERSAL_IPK_PATH }}'
 
       - name: Upload Android artifacts
         if: matrix.android
