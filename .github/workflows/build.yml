@@ -30,6 +30,7 @@ on:
 
 jobs:
   build-tauri:
+    environment: build
     strategy:
       fail-fast: false
       matrix:
@@ -96,22 +97,17 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653" >> $GITHUB_ENV
           echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653" >> $GITHUB_ENV
 
-      - name: Import GPG key
-        if: matrix.platform == 'ubuntu-22.04' && !matrix.android
-        id: import_gpg
-        uses: crazy-max/ghaction-import-gpg@v6
-        with:
-          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-          passphrase: ${{ secrets.GPG_PASSPHRASE }}
-          trust_level: 5
-
       - name: Setup Android signing
         if: matrix.android
+        env:
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
         run: |
           cd src-tauri/gen/android
-          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" > keystore.properties
-          echo "password=${{ secrets.ANDROID_KEY_PASSWORD }}" >> keystore.properties
-          base64 -d <<< "${{ secrets.ANDROID_KEY_BASE64 }}" > $RUNNER_TEMP/keystore.jks
+          echo "keyAlias=$ANDROID_KEY_ALIAS" > keystore.properties
+          echo "password=$ANDROID_KEY_PASSWORD" >> keystore.properties
+          base64 -d <<< "$ANDROID_KEY_BASE64" > $RUNNER_TEMP/keystore.jks
           echo "storeFile=$RUNNER_TEMP/keystore.jks" >> keystore.properties
 
       - name: Build Android universal binary
@@ -179,7 +175,7 @@ jobs:
           find android-artifacts/* -type f
           
           # Store for upload to blossom
-          echo "ANDROID_UNIVERSAL_IPK_PATH=$(find android-artifacts/*-universal.ipk -type f)" >> $GITHUB_ENV
+          echo "ANDROID_UNIVERSAL_IPK_PATH=$(find android-artifacts/*-universal.apk -type f)" >> $GITHUB_ENV
 
       - name: Upload to Blossom
         uses: Origami74/upload-blossom-action@main
