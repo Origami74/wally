@@ -1,165 +1,163 @@
 <script lang="ts">
-  import {invoke} from "@tauri-apps/api/core";
-  import {ConnectionStatus, type NetworkInfo, type Tollgate} from "$lib/tollgate/ConnectionStatus";
-  import {
-    getMacAddress,
-    isTollgateNetwork,
-    isTollgateSsid, nostrNow, toTollgate
-  } from "$lib/tollgate/helpers";
+  import {ConnectionStatus} from "$lib/tollgate/types/ConnectionStatus";
+  import {getTollgates, isTollgateSsid} from "$lib/tollgate/network/helpers";
   import {onMount} from "svelte";
-  import { NRelay1, NSecSigner } from '@nostrify/nostrify';
+
   import {fetch} from "@tauri-apps/plugin-http";
+  import TollgateNetworkSession from "$lib/tollgate/network/TollgateNetworkSession";
+  import type {Tollgate} from "$lib/tollgate/types/Tollgate";
+  import type {NetworkInfo} from "$lib/tollgate/types/NetworkInfo";
+  import {makePurchase} from "$lib/tollgate/purchase/renameme";
 
-  let connectionStatus = $state(ConnectionStatus.disconnected);
-  let ssid = $state("");
-  let mac = $state("");
+  import type IOperatingSystem from "$lib/os/IOperatingSystem";
+  import AndroidOperatingSystem from "$lib/os/AndroidOperatingSystem";
+  import MacOsOperatingSystem from "$lib/os/MacOsOperatingSystem";
+
+  import type {ConnectedNetworkInfo} from "$lib/tollgate/types/ConnectedNetworkInfo";
+  import {platform} from '@tauri-apps/plugin-os';
+
+
+  let operatingSystem: IOperatingSystem;
+
+  switch (platform()) {
+    case "macos":
+      operatingSystem = new MacOsOperatingSystem();
+      break;
+    case "android":
+      operatingSystem = new AndroidOperatingSystem();
+      break;
+  }
+
   let userLog = $state([]);
-  let relayReachable = $state(false);
   let purchaseMade = $state(false);
-
-  const gatewayIp = "192.168.1.1"
-  let tollgatePubkey: string | undefined = $state(undefined)
+  let online = $state(false);
+  let relayReachableView = $state(false);
 
   let tollgates: Tollgate[] = $state([]);
   let networks: NetworkInfo[] = $state([]);
 
-  let relay: NRelay1;
+  let networkSession: TollgateNetworkSession | undefined = $state(undefined)
+  let tollgateSession = $state(undefined)
+  let currentNetwork: ConnectedNetworkInfo | undefined = $state(undefined);
+
+
+  let networkStatusView = $state(ConnectionStatus.disconnected)
 
   function log(str: string): void {
     userLog.push(str)
   }
 
-  async function connectRelay(){
-    log("Setting up relay connection")
-    console.log("Setting up relay connection")
-    try{
-      relay = new NRelay1(`http://${gatewayIp}:3334`) // TODO 3334 -> 2121
-      relay.socket.addEventListener("open", () => {
-        console.log("Relay CONNECTED")
-        relayReachable = true;
-      })
-      relay.socket.addEventListener('close', () => {
-        console.log("Relay DISCONNECTED")
-        relayReachable = false;
-      })
-      for await (const msg of relay.req([{ kinds: [1], limit: 1 }])) {
-        if (msg[0] === 'EVENT') console.log(msg[2]);
-        if (msg[0] === 'EOSE') break; // Sends a `CLOSE` message to the relay.
-      }
-    } catch (error) {
-      log(`Error connecting to relay: ${error.message}`);
-    }
-  }
-
-  async function makePurchase(tollgatePubkey: string, myMacAddress: string) {
-    let randomPrivateKey = "4e007801c927832ebfe06e57ef08dba5aefe44076a0add96b1700c9061313490"
-    const signer = new NSecSigner(randomPrivateKey);
-
-    const note = {
-      kind: 21000,
-      pubkey: signer.getPublicKey(),
-      content: "cashuAbcde",
-      created_at: nostrNow(),
-      tags: [
-        ["p", tollgatePubkey],
-        ["mac", myMacAddress],
-      ],
-    };
-    const event = await signer.signEvent(note);
-
-    console.log(`sending: ${JSON.stringify(event)}`);
-    await relay.event(event);
-  }
-
-
-
   const runIntervalMs = 3000
   onMount(() => {
-
     const interval = setInterval(run, runIntervalMs);
     run();
-
     return () => clearInterval(interval);
   })
 
-
   let running = false;
   async function run(){
-    console.log("run");
-    if(running){
-      return;
-    }
 
+
+    console.log(`running: ${running}`);
+
+    if(running) return
     running = true;
-    try {
 
-      console.log("ASSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS");
-      const wifiDetailsTask = invoke("plugin:androidwifi|getCurrentWifiDetails", { })
-      console.log(wifiDetailsTask);
-      const macTask =  getMacAddress(gatewayIp)
-      const [wifiDetailsResult, macResult] = await Promise.allSettled([
-        wifiDetailsTask,
-        macTask
+    try {
+      const currentNetworkTask = operatingSystem.getCurrentNetwork()
+      const availableTollgatesTask = getAvailableTollgates()
+      const macTask =  operatingSystem.getMacAddress(networkSession?.tollgate?.gatewayIp) // TODO: Error handling
+
+      const [currentNetworkResult, macResult, availableTollgatesResult] = await Promise.allSettled([
+        currentNetworkTask,
+        macTask,
+        availableTollgatesTask
       ])
 
+      console.log(`currentNetworkResult: ${currentNetworkResult.status}\n macResult: ${macResult.status}\n availableTollgatesResult: ${availableTollgatesResult.status}`)
+
+      if(currentNetworkResult.status === "fulfilled"){
+        currentNetwork = await currentNetworkTask;
+      }
+
+      if(availableTollgatesResult.status === "fulfilled"){
+        tollgates = await availableTollgatesTask
+      }
+
       if(macResult.status === "fulfilled"){
-        mac = await macTask;
-      } else {
-        mac = undefined
+        const userMacAddress = await macTask;
+        if(networkSession && userMacAddress != undefined){
+          networkSession.userMacAddress = userMacAddress;
+        }
       }
 
-      const details = JSON.parse((await wifiDetailsTask).wifiDetails) // TODO: get just the object instead of nested?
-      ssid = details.ssid.replaceAll('"',''); // TODO: bug in serialization from android
+      console.log("networkSession", JSON.stringify(networkSession));
+      if(!networkSession){
 
-      if(!isTollgateSsid(ssid)){
-        connectionStatus = ConnectionStatus.disconnected
+        // if we're already connected, make a session
+        if(isTollgateSsid(currentNetwork?.ssid ?? "null")){
+          const currentTollgate = tollgates.find(tg => tg.ssid === currentNetwork?.ssid);
+          if(currentTollgate){
+            await startTollgateSession(currentTollgate)
+          }
+
+        }
+
         running = false;
         return;
       }
 
-      if(mac == undefined){
-        connectionStatus = ConnectionStatus.initiating
+      networkStatusView = ConnectionStatus.initiating;
+
+      if(networkSession.userMacAddress === undefined){
+        console.log("waiting for userMacAddress");
         running = false;
         return;
       }
 
-      if(relay == undefined){
-        await connectRelay()
-      }
-
-      if(!relayReachable){
+      if(!networkSession.tollgateRelayReachable){
+        console.log("waiting for tollgateRelayReachable");
+        const relay = networkSession!.tollgateRelay
         running = false;
         return;
       }
 
-      if(tollgatePubkey === undefined){
-        console.log("ERR: tollgatePubkey not set, please tap 'Connect'")
-        log("ERR: tollgatePubkey not set, please tap 'Connect'")
-      }
-
-      if(connectionStatus === ConnectionStatus.connected){
-        running = false;
-        return;
-      }
+      console.log(`RELAY REACHABLE! purchaseMade=${purchaseMade}`);
+      relayReachableView = true
 
       if(!purchaseMade){
-        await makePurchase(tollgatePubkey!, mac)
+        console.log("starting makePurchase");
+        await makePurchase(networkSession)
         purchaseMade = true;
+        running = false;
+        return;
       }
-
-
-      let online = false
-      await fetch(`https://api.cloudflare.com/client/v4/ips`, {connectTimeout: 150}).catch((reason) => {
-        online = false;
-      }).then((_) => {
-        online = true;
-      })
 
       if(online){
-        connectionStatus = ConnectionStatus.connected
-        console.log("YOU'RE ONLINE!!")
+        networkStatusView = ConnectionStatus.connected;
+        running = false;
+        return;
       }
+
+      online = true;
+      try{
+        var response = await fetch(`https://api.cloudflare.com/client/v4/ips`, {connectTimeout: 150})
+
+        if(!response){
+          console.log("--noe response--")
+          online = false;
+        }
+
+        console.log("are we online?:", );
+        online = true;
+      }
+      catch(error) {
+        online = false;
+        console.log("--offline--")
+      }
+
     } catch (e) {
+      running = false;
       console.error("Running failed:", e);
     }
 
@@ -167,50 +165,43 @@
     running = false;
   }
 
-  async function connectNetwork(tollgate: Tollgate) {
-    const ssid = tollgate.ssid;
-    tollgatePubkey = tollgate.pubkey
+  async function startTollgateSession(tollgate: Tollgate) {
+    if(networkSession?.tollgate.ssid === tollgate.ssid){
+      console.log(`Already connected to tollgate ${tollgate.ssid}`);
+    }
 
-    console.log("connecting to " + ssid);
-    log("connecting to " + ssid);
-    let response = await invoke("plugin:androidwifi|connectWifi", { ssid: ssid });
-    console.log("response for connecting to " + ssid + " = " + JSON.stringify(response));
+    networkSession = new TollgateNetworkSession(tollgate);
+
+    console.log("connecting to " + networkSession.tollgate.ssid);
+    log("connecting to " + networkSession.tollgate.ssid);
+    console.log("networkSession: ", JSON.stringify(networkSession))
+
+    if(networkSession.tollgate.ssid === currentNetwork?.ssid){
+      console.log(`already connected to ${currentNetwork.ssid}, not switching`);
+      return
+    }
+    await operatingSystem.connectNetwork(networkSession.tollgate.ssid)
   }
 
-  async function getWifiDetails() {
-    let response = await invoke("plugin:androidwifi|getWifiDetails", { payload: { value: "" } });
-    console.log("AAAAAAAAAAAAAAAAAAA");
-    console.log(response)
-    networks = JSON.parse(response.wifis);
-    console.log(`found ${networks.length} networks`);
+  async function getAvailableTollgates() {
+    networks = await operatingSystem.getAvailableNetworks()
+    // console.log(`found ${networks.length} networks`);
 
-    let tollgateNetworks: any[] = $state([]);
-    networks.forEach(network => {
-      if(!isTollgateNetwork(network)) {
-        return;
-      }
-
-      console.log(`Network ${network.ssid} is a tollgate!`);
-      tollgateNetworks.push(network);
-    })
-
-    tollgateNetworks.forEach(network => {
-      tollgates.push(toTollgate(network))
-    })
+    return getTollgates(networks);
   }
 
 
 </script>
 
-{#await Promise.all([getWifiDetails(), run()])}{/await}
+{#await run()}{/await}
 
 <main class="container">
   <h1>Welcome to Tollgate</h1>
   <h2>
-    You are
-    {#if (connectionStatus == ConnectionStatus.connected)}
+    Network
+    {#if (networkStatusView === ConnectionStatus.connected)}
       <div style="color: green">CONNECTED</div>
-    {:else if (connectionStatus == ConnectionStatus.initiating)}
+    {:else if (networkStatusView === ConnectionStatus.initiating)}
       <div style="color: chocolate">CONNECTING...</div>
     {:else}
       <div style="color: red">NOT CONNECTED</div>
@@ -222,15 +213,19 @@
     <tbody>
     <tr>
       <td style="text-align: right"><strong>SSID</strong></td>
-      <td style="text-align: left">{ssid}</td>
+      <td style="text-align: left">{currentNetwork?.ssid}</td>
     </tr>
     <tr>
       <td style="text-align: right"><strong>My MAC address</strong></td>
-      <td style="text-align: left">{mac}</td>
+      <td style="text-align: left">{networkSession?.userMacAddress}</td>
+    </tr>
+    <tr>
+      <td style="text-align: right"><strong>TollGate IP</strong></td>
+      <td style="text-align: left">{networkSession?.tollgate.gatewayIp}</td>
     </tr>
     <tr>
       <td style="text-align: right"><strong>Relay</strong></td>
-        {#if (relayReachable)}
+        {#if (relayReachableView)}
           <td style="text-align: left"><div style="color: green">CONNECTED</div></td>
         {:else}
           <td style="text-align: left"><div style="color: red">NOT CONNECTED</div></td>
@@ -257,7 +252,7 @@
         <td>{tollgate.rssi}</td>
         <td>{tollgate.frequency}</td>
         <td>{tollgate.pricing.allocationPer1024}/{tollgate.pricing.unit} - {tollgate.pricing.allocationType}</td>
-        <td><button type="submit" onclick={() => connectNetwork(tollgate)}>Connect</button></td>
+        <td><button type="submit" onclick={() => startTollgateSession(tollgate)}>Connect</button></td>
       </tr>
     {/each}
     </tbody>

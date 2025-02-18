@@ -10,6 +10,9 @@ use cdk::wallet::MintQuote;
 use cdk::Amount;
 use cdk::{cdk_database::WalletMemoryDatabase, wallet::Wallet};
 
+#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+mod desktop;
+
 #[derive(Default)]
 struct WalletState {
     wallet: Option<Wallet>,
@@ -25,7 +28,7 @@ fn create_wallet(
     let mut state = state.lock().unwrap();
 
     match state.wallet {
-        Some(_) => Err("Wallet already exist".to_owned()),
+        Some(_) => Err("Wallet already exispub(crate)t".to_owned()),
         None => {
             let localstore = WalletMemoryDatabase::default();
             match Wallet::new(
@@ -97,23 +100,42 @@ fn load_wallet_finalise(amount: u64, state: State<'_, Mutex<WalletState>>) -> Re
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .setup(|app| {
-            app.manage(Mutex::new(WalletState::default()));
-            Ok(())
-        })
-        .plugin(
-            tauri_plugin_log::Builder::new()
-                .targets([
-                    Target::new(TargetKind::Stdout),
-                    Target::new(TargetKind::Webview),
-                ])
-                .build(),
-        )
-        .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_androidwifi::init())
-        .invoke_handler(tauri::generate_handler![create_wallet, load_wallet_request, load_wallet_finalise])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    let builder = tauri::Builder::default();
+
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+    {
+        use desktop::desktop_commands::*;
+
+        builder = builder.invoke_handler(tauri::generate_handler![
+            get_mac_address,
+            connect_network,
+            get_available_networks
+        ])
+        .plugin(tauri_plugin_shell::init());
+    }
+
+    builder.setup(|app| {
+        app.manage(Mutex::new(WalletState::default()));
+        Ok(())
+    })
+    .plugin(
+        tauri_plugin_log::Builder::new()
+            .targets([
+                Target::new(TargetKind::Stdout),
+                Target::new(TargetKind::Webview),
+            ])
+            .build(),
+    )
+    .plugin(tauri_plugin_http::init())
+    .plugin(tauri_plugin_opener::init())
+    .plugin(tauri_plugin_os::init())
+    .plugin(tauri_plugin_androidwifi::init())
+    .plugin(tauri_plugin_sharetarget::init())
+    .invoke_handler(tauri::generate_handler![
+            create_wallet,
+            load_wallet_request,
+            load_wallet_finalise,
+        ])
+    .run(tauri::generate_context!())
+    .expect("error while running tauri application");
 }

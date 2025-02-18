@@ -25,6 +25,16 @@ serde_json = "1"
 tauri-plugin-androidwifi = { path = "../tauri-plugin-androidwifi" }
 tauri-plugin-log = "2.2.0"
 tauri-plugin-http = "2"
+tauri-plugin-os = "2"
 log = "0.4.22"
 cdk = { git = "https://github.com/cashubtc/cdk.git", rev = "e3fb7f9444179b41ad360885aca6864ea4da7be4" }
 async-std = "1.13.0"
+
+[target.'cfg(target_os = "android")'.dependencies]
+tauri-plugin-sharetarget = "0.1.6"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+wifiscanner = "0.5.*"
+wifi-rs = "0.2.4"
+mac_address = "1.1.7"
+tauri-plugin-shell = "2"
