@@ -2668,11 +2668,11 @@ checksum = "c41e0c4fef86961ac6d6f8a82609f55f31b05e4fce149ac5710e439df7619ba4"
 
 [[package]]
 name = "mac_address"
-version = "1.1.7"
+version = "1.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8836fae9d0d4be2c8b4efcdd79e828a2faa058a90d005abf42f91cac5493a08e"
+checksum = "c0aeb26bf5e836cc1c341c8106051b573f1766dfa05aa87f0b98be5e51b02303"
 dependencies = [
- "nix 0.28.0",
+ "nix 0.29.0",
  "winapi",
 ]
 
@@ -2823,13 +2823,13 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.28.0"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab2156c4fce2f8df6c499cc1c763e4394b7482525bf2a9701c9d79d215f519e4"
+checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
 dependencies = [
  "bitflags 2.6.0",
  "cfg-if",
- "cfg_aliases 0.1.1",
+ "cfg_aliases 0.2.1",
  "libc",
  "memoffset",
 ]
@@ -4887,10 +4887,13 @@ dependencies = [
 name = "tauri-plugin-androidwifi"
 version = "0.1.0"
 dependencies = [
+ "mac_address",
  "serde",
  "tauri",
  "tauri-plugin",
+ "tauri-plugin-shell",
  "thiserror 2.0.8",
+ "wifi-rs",
  "wifiscanner",
 ]
 
@@ -5350,7 +5353,6 @@ dependencies = [
  "async-std",
  "cdk",
  "log",
- "mac_address",
  "serde",
  "serde_json",
  "tauri",
@@ -5361,9 +5363,6 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-os",
  "tauri-plugin-sharetarget",
- "tauri-plugin-shell",
- "wifi-rs",
- "wifiscanner",
 ]
 
 [[package]]

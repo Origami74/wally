@@ -25,28 +25,28 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 pub struct Androidwifi<R: Runtime>(PluginHandle<R>);
 
 impl<R: Runtime> Androidwifi<R> {
-  pub fn get_wifi_details(&self, payload: Empty) -> crate::Result<Vec<WifiDetails>> {
+  pub fn get_wifi_details(&self, payload: Empty) -> crate::Result<WifiDetailsResponse> {
     self
       .0
       .run_mobile_plugin("getWifiDetails", payload)
       .map_err(Into::into)
   }
 
-  pub fn connect_wifi(&self, payload: ConnectWifiPayload) -> crate::Result<PingResponse> {
+  pub fn connect_wifi(&self, payload: ConnectWifiPayload) -> crate::Result<ConnectWifiResponse> {
     self
       .0
       .run_mobile_plugin("connectWifi", payload)
       .map_err(Into::into)
   }
 
-  pub fn get_current_wifi_details(&self, payload: Empty) -> crate::Result<PingResponse> {
+  pub fn get_current_wifi_details(&self, payload: Empty) -> crate::Result<CurrentWifiResponse> {
     self
       .0
       .run_mobile_plugin("getCurrentWifiDetails", payload)
       .map_err(Into::into)
   }
 
-  pub fn get_mac_address(&self, payload: Empty) -> crate::Result<MacAddress> {
+  pub fn get_mac_address(&self, payload: Empty) -> crate::Result<MacAddressResponse> {
     self
       .0
       .run_mobile_plugin("getMacAddress", payload)

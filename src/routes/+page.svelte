@@ -9,24 +9,8 @@
   import type {NetworkInfo} from "$lib/tollgate/types/NetworkInfo";
   import {makePurchase} from "$lib/tollgate/purchase/renameme";
 
-  import type IOperatingSystem from "$lib/os/IOperatingSystem";
-  import AndroidOperatingSystem from "$lib/os/AndroidOperatingSystem";
-  import MacOsOperatingSystem from "$lib/os/MacOsOperatingSystem";
-
   import type {ConnectedNetworkInfo} from "$lib/tollgate/types/ConnectedNetworkInfo";
-  import {platform} from '@tauri-apps/plugin-os';
-
-
-  let operatingSystem: IOperatingSystem;
-
-  switch (platform()) {
-    case "macos":
-      operatingSystem = new MacOsOperatingSystem();
-      break;
-    case "android":
-      operatingSystem = new AndroidOperatingSystem();
-      break;
-  }
+  import { getAvailableNetworks, getCurrentNetwork, connectNetwork, getMacAddress } from "$lib/tollgate/network/pluginCommands"
 
   let userLog = $state([]);
   let purchaseMade = $state(false);
@@ -64,9 +48,9 @@
     running = true;
 
     try {
-      const currentNetworkTask = operatingSystem.getCurrentNetwork()
+      const currentNetworkTask = getCurrentNetwork()
       const availableTollgatesTask = getAvailableTollgates()
-      const macTask =  operatingSystem.getMacAddress(networkSession?.tollgate?.gatewayIp) // TODO: Error handling
+      const macTask =  getMacAddress(networkSession?.tollgate?.gatewayIp) // TODO: Error handling
 
       const [currentNetworkResult, macResult, availableTollgatesResult] = await Promise.allSettled([
         currentNetworkTask,
@@ -74,7 +58,9 @@
         availableTollgatesTask
       ])
 
-      console.log(`currentNetworkResult: ${currentNetworkResult.status}\n macResult: ${macResult.status}\n availableTollgatesResult: ${availableTollgatesResult.status}`)
+      console.log(`currentNetworkResult: ${currentNetworkResult.status}`)
+      console.log(`macResult: ${macResult.status}`)
+      console.log(`availableTollgatesResult: ${availableTollgatesResult.status}`)
 
       if(currentNetworkResult.status === "fulfilled"){
         currentNetwork = await currentNetworkTask;
@@ -82,6 +68,7 @@
 
       if(availableTollgatesResult.status === "fulfilled"){
         tollgates = await availableTollgatesTask
+        console.log(tollgates)
       }
 
       if(macResult.status === "fulfilled"){
@@ -180,11 +167,11 @@
       console.log(`already connected to ${currentNetwork.ssid}, not switching`);
       return
     }
-    await operatingSystem.connectNetwork(networkSession.tollgate.ssid)
+    await connectNetwork(networkSession.tollgate.ssid)
   }
 
   async function getAvailableTollgates() {
-    networks = await operatingSystem.getAvailableNetworks()
+    networks = await getAvailableNetworks()
     // console.log(`found ${networks.length} networks`);
 
     return getTollgates(networks);

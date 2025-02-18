@@ -27,18 +27,44 @@ pub struct InformationElement {
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PingResponse {
+pub struct WifiDetailsResponse {
   pub wifis: Option<Vec<WifiDetails>>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MacAddress {
+pub struct CurrentWifiResponse {
+  pub wifi: Option<CurrentWifi>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CurrentWifi {
+  pub ssid: String,
+  pub bssid: String,
+  pub mac_address: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MacAddressResponse {
     pub mac_address: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MacAddressPayload {
+    pub gateway_ip: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectWifiPayload {
     pub ssid: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectWifiResponse {
+    pub response: String,
 }

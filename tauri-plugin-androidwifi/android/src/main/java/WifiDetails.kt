@@ -18,6 +18,12 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.ByteBuffer
 
+import app.tauri.plugin.JSObject
+import app.tauri.plugin.JSArray
+
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
 
 class WifiDetails {
     fun startWifiScan(context: Context): List<ScanResult> {
@@ -35,68 +41,71 @@ class WifiDetails {
     }
 
     @SuppressLint("NewApi") // TODO: set minimum android api version to 30 (android 11)
-    fun getWifiDetails(context: Context): List<WifiNetworkInfo> {
+    fun getWifiDetails(context: Context): JSArray {
         val results = startWifiScan(context)
-        return results.map { result ->
-            WifiNetworkInfo(
-                ssid = result.SSID ?: "",
-                bssid = result.BSSID ?: "",
-                rssi = result.level,           // signal strength in dBm
-                capabilities = result.capabilities ?: "",
-                frequency = result.frequency,
-                informationElements = result.informationElements.map { informationElement ->
-                    InformationElement(
-                        id = informationElement.id,
-                        idExt = informationElement.idExt,
-                        bytes = toByteArray(informationElement.bytes)
-                    )
-                }
-            )
+        val resultJson = JSArray()
+        for (result in results) {
+            val wifi = JSObject()
+            val infos = JSArray()
+            wifi.put("ssid", result.SSID ?: "")
+            wifi.put("bssid", result.BSSID ?: "")
+            wifi.put("rssi", result.level)
+            wifi.put("capabilities", result.capabilities ?: "")
+            wifi.put("frequency", result.frequency)
+
+            for (il in result.informationElements) {
+                val info = JSObject()
+                info.put("id", il.id)
+                info.put("idExt", il.idExt)
+                info.put("bytes", il.bytes)
+                infos.put(info)
+            }
+            wifi.put("informationElements", infos)
         }
+        return resultJson
     }
 
     @SuppressLint("NewApi")
-    fun getCurrentWifiDetails(context: Context): CurrentNetworkInfo? {
+    fun getCurrentWifiDetails(context: Context): JSObject {
         val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         val connectionInfo = wifiManager.connectionInfo
 
+        val json = JSObject()
         if(connectionInfo == null){
-            return null;
+            return json;
         }
 
-        return CurrentNetworkInfo(
-            ssid = connectionInfo.ssid ?: "",
-            bssid = connectionInfo.bssid ?: "",
-            macAddress = connectionInfo.macAddress ?: ""
-        )
+        json.put("ssid", connectionInfo.ssid ?: "")
+        json.put("bssid", connectionInfo.bssid ?: "")
+        json.put("macAddress", connectionInfo.macAddress ?: "")
+        return json
     }
 
     @SuppressLint("NewApi")
-    fun getMacAddress(context: Context): String {
-        val connectivityManager =
-            context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    fun getMacAddress(context: Context, gatewayIp: String): String {
+        val url = "http://$gatewayIp:2122/"
+        val client = OkHttpClient()
+        val request = Request.Builder()
+            .url(url)
+            .build()
 
-        val networks = connectivityManager.allNetworks;
-
-        networks.forEach { n ->
-            var info = connectivityManager.getNetworkInfo(n)
-
-            if (info == null) {
-                Logger.error("Could not get network info for network ${n}")
-                return "no network info";
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val responseBody = response.body?.string()
+                    if (responseBody != null) {
+                        val json = JSONObject(responseBody)
+                        if (json.optBoolean("Success", false)) {
+                            return json.optString("Mac", "02:00:00:00:00:00")
+                        }
+                    }
+                }
+                "02:00:00:00:00:00"
             }
-
-            if(info?.type == ConnectivityManager.TYPE_WIFI) {
-                Logger.info("Found wifi network, binding process")
-                connectivityManager.bindProcessToNetwork(n)
-
-                // TODO: do http call from here, currently doing it from front-end bc of threading stuff here that's to complicated for now.
-
-                return "only rebinded network to WIFI"
-            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            "02:00:00:00:00:00"
         }
-
-        return "something went wrong (android)"
     }
 
     // We can only make suggestions to connect to a wifi network.
@@ -162,28 +171,4 @@ class WifiDetails {
 
         mCaptivePortal?.reportCaptivePortalDismissed()
     }
-
-    @Serializable
-    data class WifiNetworkInfo(
-        val ssid: String,
-        val bssid: String,
-        val rssi: Int,
-        val capabilities: String,
-        val frequency: Int,
-        val informationElements: List<InformationElement>
-    )
-
-    @Serializable
-    data class InformationElement(
-        val id: Int,
-        val idExt: Int,
-        val bytes: ByteArray,
-    )
-
-    @Serializable
-    data class CurrentNetworkInfo(
-        val ssid: String,
-        val bssid: String,
-        val macAddress: String
-    )
 }

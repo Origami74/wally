@@ -43,8 +43,7 @@ class WifiPlugin(private val activity: Activity): Plugin(activity) {
     @Command
     fun getWifiDetails(invoke: Invoke) {
         val ret = JSObject()
-        val json = Json.encodeToString(implementation.getWifiDetails(activity.applicationContext))
-        ret.put("wifis", json)
+        ret.put("wifis", implementation.getWifiDetails(activity.applicationContext))
         invoke.resolve(ret)
     }
 
@@ -52,24 +51,22 @@ class WifiPlugin(private val activity: Activity): Plugin(activity) {
     fun connectWifi(invoke: Invoke) {
         val ssid = invoke.getArgs().get("ssid").toString()
         val ret = JSObject()
-        val json = Json.encodeToString(implementation.connectWifi(activity.applicationContext, ssid))
-        ret.put("wifis", json)
+        ret.put("response", implementation.connectWifi(activity.applicationContext, ssid))
         invoke.resolve(ret)
     }
 
     @Command
     fun getMacAddress(invoke: Invoke) {
+        val gatewayIp = invoke.getArgs().get("gatewayIp").toString()
         val ret = JSObject()
-        val json = Json.encodeToString(implementation.getMacAddress(activity.applicationContext))
-        ret.put("macAddress", json)
+        ret.put("macAddress", implementation.getMacAddress(activity.applicationContext, gatewayIp))
         invoke.resolve(ret)
     }
 
     @Command
     fun getCurrentWifiDetails(invoke: Invoke) {
         val ret = JSObject()
-        val json = Json.encodeToJsonElement(implementation.getCurrentWifiDetails(activity.applicationContext))
-        ret.put("wifiDetails", json)
+        ret.put("wifi", implementation.getCurrentWifiDetails(activity.applicationContext))
         invoke.resolve(ret)
     }
 
