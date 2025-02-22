@@ -68,7 +68,7 @@ impl<R: Runtime> Androidwifi<R> {
     todo!()
   }
 
-  pub fn get_mac_address(&self, _payload: Empty) -> crate::Result<MacAddressResponse> {
+  pub fn get_mac_address(&self, _payload: GetMacAddressPayload) -> crate::Result<MacAddressResponse> {
     match mac_address_by_name("en0") {
         Ok(Some(ma)) => {
             println!("MAC addr = {}", ma);

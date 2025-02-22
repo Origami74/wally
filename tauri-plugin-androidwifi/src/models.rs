@@ -22,7 +22,7 @@ pub struct WifiDetails {
 pub struct InformationElement {
   pub id: i64,
   pub id_ext: i64,
-  pub bytes: Vec<u8>,
+  pub bytes: Vec<u16>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -51,16 +51,16 @@ pub struct MacAddressResponse {
     pub mac_address: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MacAddressPayload {
-    pub gateway_ip: String,
-}
-
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectWifiPayload {
     pub ssid: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetMacAddressPayload {
+    pub gateway_ip: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

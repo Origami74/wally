@@ -8,26 +8,15 @@ export async function getMacAddress(gatewayIp: string | undefined): Promise<stri
         return undefined;
     }
 
-    // Step 1, rebind the app to the wifi network, so the whoami request won't be sent over any active cellular connection
     try{
-        await invoke("plugin:androidwifi|get_mac_address", { }); // only rebinds
+        const macAddressResult = await invoke("plugin:androidwifi|get_mac_address", { payload: { gatewayIp: gatewayIp } });
+
+        console.log("macAddress", macAddressResult);
+
+        return macAddressResult.macAddress
     } catch (e) {
-        console.error("could not get mac native", e);
+        throw new Error(`Failed to determine MAC address, reason: ${e}`);
     }
-
-    // Step 2, call the whoami service
-    const whoamiResponse = await fetch(`http://${gatewayIp}:2122/`, {connectTimeout: 350}).catch((reason) => {
-        throw new Error(`Failed to determine MAC address, reason: ${reason}`);
-    }) // Universal endpoint for whoami
-
-    let whoami = await whoamiResponse.json();
-
-    if(whoami.Success === false) {
-        console.error(`Failed to determine MAC address, reason: ${whoami.ErrorMessage}`)
-        return undefined;
-    }
-
-    return whoami.Mac
 }
 
 export async function getCurrentNetwork(): Promise<ConnectedNetworkInfo> {
@@ -40,7 +29,6 @@ export async function getCurrentNetwork(): Promise<ConnectedNetworkInfo> {
 export async function getAvailableNetworks(): Promise<NetworkInfo[]> {
     try{
         let response = await invoke("plugin:androidwifi|get_wifi_details", { payload: { value: "" } });
-        console.log("response", response);
 
         const networks: NetworkInfo[] = response.wifis;
 
@@ -52,6 +40,6 @@ export async function getAvailableNetworks(): Promise<NetworkInfo[]> {
 }
 
 export async function connectNetwork(ssid: string): Promise<void> {
-    let response = await invoke("plugin:androidwifi|connect_wifi", { ssid: ssid });
+    let response = await invoke("plugin:androidwifi|connect_wifi", {payload: { ssid: ssid } });
     console.log("response for connecting to " + ssid + " = " + JSON.stringify(response));
 }

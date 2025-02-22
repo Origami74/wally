@@ -40,12 +40,14 @@
 
   let running = false;
   async function run(){
-
-
-    console.log(`running: ${running}`);
+    // console.log(`running: ${running}`);
 
     if(running) return
     running = true;
+
+    console.log("mac2");
+    var mac2 = await  getMacAddress(networkSession?.tollgate?.gatewayIp)
+    console.log(`mac2 finish: ${mac2}`);
 
     try {
       const currentNetworkTask = getCurrentNetwork()
@@ -58,9 +60,7 @@
         availableTollgatesTask
       ])
 
-      console.log(`currentNetworkResult: ${currentNetworkResult.status}`)
-      console.log(`macResult: ${macResult.status}`)
-      console.log(`availableTollgatesResult: ${availableTollgatesResult.status}`)
+      console.log(`currentNetwork/mac/availableTollgates: ${currentNetworkResult.status}/${macResult.status}/${availableTollgatesResult.status}`)
 
       if(currentNetworkResult.status === "fulfilled"){
         currentNetwork = await currentNetworkTask;
@@ -78,7 +78,7 @@
         }
       }
 
-      console.log("networkSession", JSON.stringify(networkSession));
+      // console.log("networkSession", JSON.stringify(networkSession));
       if(!networkSession){
 
         // if we're already connected, make a session

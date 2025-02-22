@@ -39,7 +39,6 @@ class WifiPlugin(private val activity: Activity): Plugin(activity) {
         }
     }
 
-
     @Command
     fun getWifiDetails(invoke: Invoke) {
         val ret = JSObject()

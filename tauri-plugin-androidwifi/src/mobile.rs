@@ -46,7 +46,7 @@ impl<R: Runtime> Androidwifi<R> {
       .map_err(Into::into)
   }
 
-  pub fn get_mac_address(&self, payload: Empty) -> crate::Result<MacAddressResponse> {
+  pub fn get_mac_address(&self, payload: GetMacAddressPayload) -> crate::Result<MacAddressResponse> {
     self
       .0
       .run_mobile_plugin("getMacAddress", payload)

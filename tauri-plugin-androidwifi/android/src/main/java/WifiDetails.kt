@@ -20,6 +20,7 @@ import okhttp3.Request
 import org.json.JSONObject
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.TimeUnit
 
 class WifiDetails {
     fun startWifiScan(context: Context): List<ScanResult> {
@@ -88,8 +89,14 @@ class WifiDetails {
 
     @SuppressLint("NewApi")
     fun getMacAddress(context: Context, gatewayIp: String): String {
+        Logger.info("getMacaddress: gatewayIp ", gatewayIp)
         val url = "http://$gatewayIp:2122/"
-        val client = OkHttpClient()
+        val client = OkHttpClient.Builder()
+            .connectTimeout(250, TimeUnit.MILLISECONDS)
+            .readTimeout(250, TimeUnit.MILLISECONDS)
+            .writeTimeout(250, TimeUnit.MILLISECONDS)
+            .build()
+        
         val request = Request.Builder()
             .url(url)
             .build()
