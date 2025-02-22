@@ -38,10 +38,17 @@ export async function getCurrentNetwork(): Promise<ConnectedNetworkInfo> {
 }
 
 export async function getAvailableNetworks(): Promise<NetworkInfo[]> {
-    let response = await invoke("plugin:androidwifi|get_wifi_details", { payload: { value: "" } });
-    const networks: NetworkInfo[] = response.wifis;
+    try{
+        let response = await invoke("plugin:androidwifi|get_wifi_details", { payload: { value: "" } });
+        console.log("response", response);
 
-    return networks;
+        const networks: NetworkInfo[] = response.wifis;
+
+        return networks;
+    } catch (e) {
+        console.error(`Failed to perform network scan, reason: ${e}`)
+        return [];
+    }
 }
 
 export async function connectNetwork(ssid: string): Promise<void> {

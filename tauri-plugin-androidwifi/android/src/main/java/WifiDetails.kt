@@ -13,17 +13,13 @@ import android.net.wifi.WifiNetworkSuggestion
 import android.os.Build
 import androidx.annotation.RequiresApi
 import app.tauri.Logger
-import kotlinx.serialization.Serializable
-import java.net.HttpURLConnection
-import java.net.URL
-import java.nio.ByteBuffer
-
-import app.tauri.plugin.JSObject
 import app.tauri.plugin.JSArray
-
+import app.tauri.plugin.JSObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
 
 class WifiDetails {
     fun startWifiScan(context: Context): List<ScanResult> {
@@ -46,22 +42,31 @@ class WifiDetails {
         val resultJson = JSArray()
         for (result in results) {
             val wifi = JSObject()
-            val infos = JSArray()
-            wifi.put("ssid", result.SSID ?: "")
-            wifi.put("bssid", result.BSSID ?: "")
-            wifi.put("rssi", result.level)
-            wifi.put("capabilities", result.capabilities ?: "")
-            wifi.put("frequency", result.frequency)
+            wifi.put("ssid", result.SSID.toString() ?: "")
+            wifi.put("bssid", result.BSSID.toString() ?: "")
+            wifi.put("rssi", result.level.toString())
+            wifi.put("capabilities", result.capabilities.toString() ?: "")
+            wifi.put("frequency", result.frequency.toString())
+
+            val informationElements = JSArray()
 
             for (il in result.informationElements) {
-                val info = JSObject()
-                info.put("id", il.id)
-                info.put("idExt", il.idExt)
-                info.put("bytes", il.bytes)
-                infos.put(info)
+
+                // Convert ByteBuffer into Serializable byte array
+                val charBuffer = StandardCharsets.US_ASCII.decode(il.bytes)
+                val bytes = JSArray()
+                charBuffer.forEach { char -> bytes.put(char.code) }
+
+                informationElements.put(JSObject().apply {
+                    put("id", il.id)
+                    put("idExt", il.idExt)
+                    put("bytes", bytes)
+                })
             }
-            wifi.put("informationElements", infos)
+            wifi.put("informationElements", informationElements)
+            resultJson.put(wifi)
         }
+
         return resultJson
     }
 
