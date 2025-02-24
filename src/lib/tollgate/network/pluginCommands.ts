@@ -10,9 +10,6 @@ export async function getMacAddress(gatewayIp: string | undefined): Promise<stri
 
     try{
         const macAddressResult = await invoke("plugin:androidwifi|get_mac_address", { payload: { gatewayIp: gatewayIp } });
-
-        console.log("macAddress", macAddressResult);
-
         return macAddressResult.macAddress
     } catch (e) {
         throw new Error(`Failed to determine MAC address, reason: ${e}`);
@@ -40,6 +37,10 @@ export async function getAvailableNetworks(): Promise<NetworkInfo[]> {
 }
 
 export async function connectNetwork(ssid: string): Promise<void> {
-    let response = await invoke("plugin:androidwifi|connect_wifi", {payload: { ssid: ssid } });
-    console.log("response for connecting to " + ssid + " = " + JSON.stringify(response));
+    try{
+        let response = await invoke("plugin:androidwifi|connect_wifi", {payload: { ssid: ssid } });
+        console.log("response for connecting to " + ssid + " = " + JSON.stringify(response));
+    } catch (e) {
+        console.error(`Error connecting to network ${ssid}, reason: ${e}`)
+    }
 }

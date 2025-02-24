@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.Intent.getIntent
 import android.content.IntentFilter
 import android.net.CaptivePortal
 import android.net.ConnectivityManager
@@ -89,54 +90,59 @@ class WifiDetails {
         return json
     }
 
-    fun makeNetworkRequest(url: String, callback: (String?) -> Unit) {
-        Thread {
-            var result: String? = null
-            val client = OkHttpClient.Builder()
-                .connectTimeout(250, TimeUnit.MILLISECONDS)
-                .readTimeout(250, TimeUnit.MILLISECONDS)
-                .writeTimeout(250, TimeUnit.MILLISECONDS)
-                .build()
-            
-            val request = Request.Builder()
-                .url(url)
-                .build()
-
-            try {
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val responseBody = response.body?.string()
-                        if (responseBody != null) {
-                            val json = JSONObject(responseBody)
-                            if (json.optBoolean("Success", false)) {
-                                result = json.optString("Mac", "02:00:00:00:00:00")
-                            }
-                        }
-                    } else {
-                        result = "02:00:00:00:00:00"
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                result = "02:00:00:00:00:00"
-            }
-
-            // Switch back to main thread
-            Handler(Looper.getMainLooper()).post {
-                callback(result)
-            }
-        }.start()
-    }
-
-
     @SuppressLint("NewApi")
-    fun getMacAddress(gatewayIp: String): String {
-        Logger.info("getMacaddress: gatewayIp ", gatewayIp)
-        var result: String? = null 
-        makeNetworkRequest("https://example.com") { response ->
-            println("Response received on main thread: $response")
-            result = response
+    fun getMacAddress(context: Context, gatewayIp: String): String {
+         val connectivityManager =
+            context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+        val networks = connectivityManager.allNetworks;
+
+        networks.forEach { n ->
+            var info = connectivityManager.getNetworkInfo(n)
+
+            if (info == null) {
+                Logger.error("Could not get network info for network ${n}")
+                return "no network info";
+            }
+
+            if (info?.type == ConnectivityManager.TYPE_WIFI) {
+                Logger.info("Found wifi network, binding process")
+                connectivityManager.bindProcessToNetwork(n)
+            }
         }
+
+        Logger.info("getMacaddress: gatewayIp ", gatewayIp)
+
+        var result: String? = null
+        val client = OkHttpClient.Builder()
+            .connectTimeout(250, TimeUnit.MILLISECONDS)
+            .readTimeout(250, TimeUnit.MILLISECONDS)
+            .writeTimeout(250, TimeUnit.MILLISECONDS)
+            .build()
+
+        val request = Request.Builder()
+            .url("http:${gatewayIp}:2122")
+            .build()
+
+        try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val responseBody = response.body?.string()
+                    if (responseBody != null) {
+                        val json = JSONObject(responseBody)
+                        if (json.optBoolean("Success", false)) {
+                            result = json.optString("Mac", "02:00:00:00:00:00")
+                        }
+                    }
+                } else {
+                    result = "02:00:00:00:00:00"
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            result = "02:00:00:00:00:00"
+        }
+
         return result!!
     }
 
@@ -157,7 +163,6 @@ class WifiDetails {
 
         wifiManager.removeNetworkSuggestions(listOf(suggestion))
         val status = wifiManager.addNetworkSuggestions(listOf(suggestion));
-
 
         if (status != WifiManager.STATUS_NETWORK_SUGGESTIONS_SUCCESS) {
             Logger.error("Could not connect to network: $status")
@@ -195,12 +200,12 @@ class WifiDetails {
 
         if(mCaptivePortal == null) {
             Logger.error("Could not retrieve captive portal object from intent")
+            return;
         }
 
         // TODO: Pass on to native app if it's not a Tollgate network
         // It is possible to get info about the network we're connecting to.
         // We can get a parcableExtra from the intent (EXTRA_NETWORK) to determine this.
-
-        mCaptivePortal?.reportCaptivePortalDismissed()
+        mCaptivePortal.reportCaptivePortalDismissed()
     }
 }

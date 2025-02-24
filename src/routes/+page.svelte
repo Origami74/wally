@@ -45,10 +45,6 @@
     if(running) return
     running = true;
 
-    console.log("mac2");
-    var mac2 = await  getMacAddress(networkSession?.tollgate?.gatewayIp)
-    console.log(`mac2 finish: ${mac2}`);
-
     try {
       const currentNetworkTask = getCurrentNetwork()
       const availableTollgatesTask = getAvailableTollgates()
@@ -68,7 +64,6 @@
 
       if(availableTollgatesResult.status === "fulfilled"){
         tollgates = await availableTollgatesTask
-        console.log(tollgates)
       }
 
       if(macResult.status === "fulfilled"){
@@ -87,7 +82,6 @@
           if(currentTollgate){
             await startTollgateSession(currentTollgate)
           }
-
         }
 
         running = false;
@@ -239,7 +233,7 @@
         <td>{tollgate.rssi}</td>
         <td>{tollgate.frequency}</td>
         <td>{tollgate.pricing.allocationPer1024}/{tollgate.pricing.unit} - {tollgate.pricing.allocationType}</td>
-        <td><button type="submit" onclick={() => startTollgateSession(tollgate)}>Connect</button></td>
+        <td><button type="button" onclick={() => startTollgateSession(tollgate)}>Connect</button></td>
       </tr>
     {/each}
     </tbody>

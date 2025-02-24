@@ -11,22 +11,21 @@ import app.tauri.plugin.Invoke
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.CaptivePortal
-import android.net.ConnectivityManager
-import android.net.Network
-import android.util.Log
 import android.webkit.WebView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import app.tauri.Logger
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 @InvokeArg
 class Empty {
   var value: String? = null
 }
+
+private val backgroundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
 @TauriPlugin
 class WifiPlugin(private val activity: Activity): Plugin(activity) {
@@ -35,12 +34,20 @@ class WifiPlugin(private val activity: Activity): Plugin(activity) {
     override fun onNewIntent(intent: Intent) {
         Logger.info("intent: ${intent.action.toString()}")
         if (intent.action == "android.net.conn.CAPTIVE_PORTAL") {
-            implementation.dismissCaptivePortal(intent)
+            backgroundScope.launch {
+                implementation.dismissCaptivePortal(intent)
+            }
         }
     }
 
     @Command
     fun getWifiDetails(invoke: Invoke) {
+        backgroundScope.launch {
+            getWifiDetailsInner(invoke)
+        }
+    }
+
+    fun getWifiDetailsInner(invoke: Invoke) {
         val ret = JSObject()
         ret.put("wifis", implementation.getWifiDetails(activity.applicationContext))
         invoke.resolve(ret)
@@ -48,6 +55,12 @@ class WifiPlugin(private val activity: Activity): Plugin(activity) {
 
     @Command
     fun connectWifi(invoke: Invoke) {
+        backgroundScope.launch {
+            connectWifiInner(invoke)
+        }
+    }
+
+    private suspend fun connectWifiInner(invoke: Invoke) {
         val ssid = invoke.getArgs().get("ssid").toString()
         val ret = JSObject()
         ret.put("response", implementation.connectWifi(activity.applicationContext, ssid))
@@ -56,14 +69,26 @@ class WifiPlugin(private val activity: Activity): Plugin(activity) {
 
     @Command
     fun getMacAddress(invoke: Invoke) {
+        backgroundScope.launch {
+            getMacAddressInner(invoke)
+        }
+    }
+
+    private suspend fun getMacAddressInner(invoke: Invoke) {
         val gatewayIp = invoke.getArgs().get("gatewayIp").toString()
         val ret = JSObject()
-        ret.put("macAddress", implementation.getMacAddress(gatewayIp))
+        ret.put("macAddress", implementation.getMacAddress(activity.applicationContext, gatewayIp))
         invoke.resolve(ret)
     }
 
     @Command
     fun getCurrentWifiDetails(invoke: Invoke) {
+        backgroundScope.launch {
+            getCurrentWifiDetailsInner(invoke)
+        }
+    }
+
+    private suspend fun getCurrentWifiDetailsInner(invoke: Invoke) {
         val ret = JSObject()
         ret.put("wifi", implementation.getCurrentWifiDetails(activity.applicationContext))
         invoke.resolve(ret)
@@ -74,7 +99,8 @@ class WifiPlugin(private val activity: Activity): Plugin(activity) {
     private val requiredPermissions = arrayOf(
         Manifest.permission.ACCESS_WIFI_STATE,
         Manifest.permission.CHANGE_WIFI_STATE,
-        Manifest.permission.ACCESS_FINE_LOCATION
+        Manifest.permission.ACCESS_FINE_LOCATION,
+        Manifest.permission.NEARBY_WIFI_DEVICES
     )
 
     override fun load(webView: WebView) {
