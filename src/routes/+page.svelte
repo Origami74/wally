@@ -147,6 +147,8 @@
   }
 
   async function startTollgateSession(tollgate: Tollgate) {
+    purchaseMade = false;
+
     if(networkSession?.tollgate.ssid === tollgate.ssid){
       console.log(`Already connected to tollgate ${tollgate.ssid}`);
     }
