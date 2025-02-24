@@ -58,7 +58,7 @@ class WifiPlugin(private val activity: Activity): Plugin(activity) {
     fun getMacAddress(invoke: Invoke) {
         val gatewayIp = invoke.getArgs().get("gatewayIp").toString()
         val ret = JSObject()
-        ret.put("macAddress", implementation.getMacAddress(activity.applicationContext, gatewayIp))
+        ret.put("macAddress", implementation.getMacAddress(gatewayIp))
         invoke.resolve(ret)
     }
 

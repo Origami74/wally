@@ -21,6 +21,8 @@ import org.json.JSONObject
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
+import android.os.Handler
+import android.os.Looper
 
 class WifiDetails {
     fun startWifiScan(context: Context): List<ScanResult> {
@@ -87,37 +89,55 @@ class WifiDetails {
         return json
     }
 
-    @SuppressLint("NewApi")
-    fun getMacAddress(context: Context, gatewayIp: String): String {
-        Logger.info("getMacaddress: gatewayIp ", gatewayIp)
-        val url = "http://$gatewayIp:2122/"
-        val client = OkHttpClient.Builder()
-            .connectTimeout(250, TimeUnit.MILLISECONDS)
-            .readTimeout(250, TimeUnit.MILLISECONDS)
-            .writeTimeout(250, TimeUnit.MILLISECONDS)
-            .build()
-        
-        val request = Request.Builder()
-            .url(url)
-            .build()
+    fun makeNetworkRequest(url: String, callback: (String?) -> Unit) {
+        Thread {
+            var result: String? = null
+            val client = OkHttpClient.Builder()
+                .connectTimeout(250, TimeUnit.MILLISECONDS)
+                .readTimeout(250, TimeUnit.MILLISECONDS)
+                .writeTimeout(250, TimeUnit.MILLISECONDS)
+                .build()
+            
+            val request = Request.Builder()
+                .url(url)
+                .build()
 
-        return try {
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val responseBody = response.body?.string()
-                    if (responseBody != null) {
-                        val json = JSONObject(responseBody)
-                        if (json.optBoolean("Success", false)) {
-                            return json.optString("Mac", "02:00:00:00:00:00")
+            try {
+                client.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val responseBody = response.body?.string()
+                        if (responseBody != null) {
+                            val json = JSONObject(responseBody)
+                            if (json.optBoolean("Success", false)) {
+                                result = json.optString("Mac", "02:00:00:00:00:00")
+                            }
                         }
+                    } else {
+                        result = "02:00:00:00:00:00"
                     }
                 }
-                "02:00:00:00:00:00"
+            } catch (e: Exception) {
+                e.printStackTrace()
+                result = "02:00:00:00:00:00"
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            "02:00:00:00:00:00"
+
+            // Switch back to main thread
+            Handler(Looper.getMainLooper()).post {
+                callback(result)
+            }
+        }.start()
+    }
+
+
+    @SuppressLint("NewApi")
+    fun getMacAddress(gatewayIp: String): String {
+        Logger.info("getMacaddress: gatewayIp ", gatewayIp)
+        var result: String? = null 
+        makeNetworkRequest("https://example.com") { response ->
+            println("Response received on main thread: $response")
+            result = response
         }
+        return result!!
     }
 
     // We can only make suggestions to connect to a wifi network.
