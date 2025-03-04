@@ -187,7 +187,7 @@ jobs:
         id: convert_to_multiline
         run: |
           # Replace ':' with newline
-          multi_line_values=$(echo "${{ steps.sign_app.signedReleaseFiles }}" | tr ':' '\n')
+          multi_line_values=$(echo "${{ steps.sign_app.outputs.signedFiles }}" | tr ':' '\n')
           echo "SIGNED_APK_FILES=${multi_line_values}" >> $GITHUB_ENV
 
       - name: Upload to Blossom
