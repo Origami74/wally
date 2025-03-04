@@ -183,12 +183,11 @@ jobs:
           # override default build-tools version (33.0.0) -- optional
           BUILD_TOOLS_VERSION: "34.0.0"
 
-      - name: Convert signedReleaseFiles to Multiline string
-        id: convert_to_multiline
+      - name: List signed apk's
         run: |
-          # Replace ':' with newline
-          multi_line_values=$(echo "${{ steps.sign_app.outputs.signedFiles }}" | tr ':' '\n')
-          echo "SIGNED_APK_FILES=${multi_line_values}" >> $GITHUB_ENV
+          signed_apks=$(ls | grep "signed.apk$")
+          echo $signed_apks
+          echo "SIGNED_APK_FILES=${signed_apks}" >> $GITHUB_ENV
 
       - name: Upload to Blossom
         uses: Origami74/upload-blossom-action@multi-file
