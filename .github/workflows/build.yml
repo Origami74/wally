@@ -136,7 +136,7 @@ jobs:
           # Get version from Cargo.toml
           VERSION=$(grep '^version[[:space:]]*=[[:space:]]*"' src-tauri/Cargo.toml | sed 's/^version[[:space:]]*=[[:space:]]*"\(.*\)"/\1/')
           echo "Version: $VERSION"
-          mkdir -p android-artifacts
+          mkdir -p android-artifacts-unsigned
 
           echo "Checking source paths:"
           for type in universal arm64 arm x86 x86_64; do
@@ -146,27 +146,35 @@ jobs:
 
           # Copy files with error checking
           for pair in \
-            "universal/release/app-universal-release.apk:android-universal.apk" \
-            "arm64/release/app-arm64-release.apk:android-arm64.apk" \
-            "arm/release/app-arm-release.apk:android-arm.apk" \
-            "x86/release/app-x86-release.apk:android-x86.apk" \
-            "x86_64/release/app-x86_64-release.apk:android-x86_64.apk"; do
+            "universal/release/app-universal-release-unsigned.apk:android-universal.apk" \
+            "arm64/release/app-arm64-release-unsigned.apk:android-arm64.apk" \
+            "arm/release/app-arm-release-unsigned.apk:android-arm.apk" \
+            "x86/release/app-x86-release-unsigned.apk:android-x86.apk" \
+            "x86_64/release/app-x86_64-release-unsigned.apk:android-x86_64.apk"; do
             src=${pair%:*}
             dst=${pair#*:}
             if [ -f "src-tauri/gen/android/app/build/outputs/apk/$src" ]; then
-              cp "src-tauri/gen/android/app/build/outputs/apk/$src" "android-artifacts/tollgate-${VERSION}-${dst}"
+              cp "src-tauri/gen/android/app/build/outputs/apk/$src" "android-artifacts-unsigned/tollgate-${VERSION}-${dst}"
               echo "Copied $src successfully"
             else
               echo "Source file not found: $src"
             fi
           done
 
+      - name: List Android artifacts
+        if: matrix.android
+        run: |
+          find android-artifacts-unsigned/* -type f
+          
+          # Store for upload to blossom
+          echo "ANDROID_UNIVERSAL_IPK_PATH=$(find android-artifacts-unsigned/*-universal.apk -type f)" >> $GITHUB_ENV
+
       - uses: r0adkll/sign-android-release@v1
         name: Sign app APK
         # ID used to access action output
         id: sign_app
         with:
-          releaseDirectory: android-artifacts
+          releaseDirectory: android-artifacts-unsigned
           signingKeyBase64: ${{ secrets.ANDROID_KEY_BASE64 }}
           alias: ${{ secrets.ANDROID_KEY_ALIAS }}
           keyStorePassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -178,20 +186,11 @@ jobs:
       - name: Generate Android artifact hashes
         if: matrix.android
         run: |
+          mkdir android-artifacts
           cd android-artifacts
           find . -type f -not -name "*.sha256" -exec sh -c '
             sha256sum "$1" | sed "s|./|  |" > "${1}.sha256"
           ' sh {} \;
-
-      
-
-      - name: List Android artifacts
-        if: matrix.android
-        run: |
-          find android-artifacts/* -type f
-          
-          # Store for upload to blossom
-          echo "ANDROID_UNIVERSAL_IPK_PATH=$(find android-artifacts/*-universal.apk -type f)" >> $GITHUB_ENV
 
       - name: Upload to Blossom
         uses: Origami74/upload-blossom-action@main
