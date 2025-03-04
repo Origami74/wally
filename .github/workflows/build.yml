@@ -183,12 +183,21 @@ jobs:
           # override default build-tools version (33.0.0) -- optional
           BUILD_TOOLS_VERSION: "34.0.0"
 
-#      - name: Upload to Blossom
-#        uses: Origami74/upload-blossom-action@multi-file
-#        continue-on-error: true # TODO: fail
-#        with:
-#          host: 'https://blossom.swissdash.site/'
-#          filePaths: '${{ steps.signed_files }}'
+      - name: Convert signedReleaseFiles to Multiline string
+        id: convert_to_multiline
+        run: |
+          # Replace ':' with newline
+          multi_line_values=$(echo "${{ steps.sign_app.signedReleaseFiles }}" | tr ':' '\n')
+          echo "SIGNED_APK_FILES=${multi_line_values}" >> $GITHUB_ENV
+
+      - name: Upload to Blossom
+        uses: Origami74/upload-blossom-action@multi-file
+        continue-on-error: true # TODO: fail
+        env:
+          SIGNED_APK_FILES: ${{ env.SIGNED_APK_FILES }}
+        with:
+          host: 'https://blossom.swissdash.site/'
+          filePaths: '${{ env.SIGNED_APK_FILES }}'
 
       - name: Upload Android artifacts
         if: matrix.android
