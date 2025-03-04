@@ -183,27 +183,16 @@ jobs:
           # override default build-tools version (33.0.0) -- optional
           BUILD_TOOLS_VERSION: "34.0.0"
 
-      - name: Generate Android artifact hashes
-        if: matrix.android
-        run: |
-          mkdir android-artifacts
-          cd android-artifacts
-          find . -type f -not -name "*.sha256" -exec sh -c '
-            sha256sum "$1" | sed "s|./|  |" > "${1}.sha256"
-          ' sh {} \;
-
-      - name: Upload to Blossom
-        uses: Origami74/upload-blossom-action@main
-        continue-on-error: true # TODO: fail
-        env:
-          ANDROID_UNIVERSAL_IPK_PATH: ${{ env.ANDROID_UNIVERSAL_IPK_PATH }}
-        with:
-          host: 'https://blossom.swissdash.site/'
-          filePath: '${{ env.ANDROID_UNIVERSAL_IPK_PATH }}'
+#      - name: Upload to Blossom
+#        uses: Origami74/upload-blossom-action@multi-file
+#        continue-on-error: true # TODO: fail
+#        with:
+#          host: 'https://blossom.swissdash.site/'
+#          filePaths: '${{ steps.signed_files }}'
 
       - name: Upload Android artifacts
         if: matrix.android
         uses: actions/upload-artifact@v4
         with:
           name: android
-          path: android-artifacts/*
+          path: android-artifacts-unsigned/*
