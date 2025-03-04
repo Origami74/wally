@@ -169,6 +169,20 @@ jobs:
             sha256sum "$1" | sed "s|./|  |" > "${1}.sha256"
           ' sh {} \;
 
+      - uses: r0adkll/sign-android-release@v1
+        name: Sign app APK
+        # ID used to access action output
+        id: sign_app
+        with:
+          releaseDirectory: android-artifacts
+          signingKeyBase64: ${{ secrets.ANDROID_KEY_BASE64 }}
+          alias: ${{ secrets.ANDROID_KEY_ALIAS }}
+          keyStorePassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          keyPassword: ""
+        env:
+          # override default build-tools version (33.0.0) -- optional
+          BUILD_TOOLS_VERSION: "34.0.0"
+
       - name: List Android artifacts
         if: matrix.android
         run: |
