@@ -161,14 +161,6 @@ jobs:
             fi
           done
 
-      - name: Generate Android artifact hashes
-        if: matrix.android
-        run: |
-          cd android-artifacts
-          find . -type f -not -name "*.sha256" -exec sh -c '
-            sha256sum "$1" | sed "s|./|  |" > "${1}.sha256"
-          ' sh {} \;
-
       - uses: r0adkll/sign-android-release@v1
         name: Sign app APK
         # ID used to access action output
@@ -182,6 +174,16 @@ jobs:
         env:
           # override default build-tools version (33.0.0) -- optional
           BUILD_TOOLS_VERSION: "34.0.0"
+
+      - name: Generate Android artifact hashes
+        if: matrix.android
+        run: |
+          cd android-artifacts
+          find . -type f -not -name "*.sha256" -exec sh -c '
+            sha256sum "$1" | sed "s|./|  |" > "${1}.sha256"
+          ' sh {} \;
+
+      
 
       - name: List Android artifacts
         if: matrix.android
