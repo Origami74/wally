@@ -31,6 +31,11 @@
     userLog.push(str)
   }
 
+  function debug(str: string): void {
+    console.log(str)
+    userLog.push(str)
+  }
+
   const runIntervalMs = 3000
   onMount(() => {
     const interval = setInterval(run, runIntervalMs);
@@ -40,7 +45,7 @@
 
   let running = false;
   async function run(){
-    // console.log(`running: ${running}`);
+    // debug(`running: ${running}`);
 
     if(running) return
     running = true;
@@ -56,7 +61,7 @@
         availableTollgatesTask
       ])
 
-      console.log(`currentNetwork/mac/availableTollgates: ${currentNetworkResult.status}/${macResult.status}/${availableTollgatesResult.status}`)
+      debug(`currentNetwork/mac/availableTollgates: ${currentNetworkResult.status}/${macResult.status}/${availableTollgatesResult.status}`)
 
       if(currentNetworkResult.status === "fulfilled"){
         currentNetwork = await currentNetworkTask;
@@ -73,7 +78,7 @@
         }
       }
 
-      // console.log("networkSession", JSON.stringify(networkSession));
+      // debug("networkSession", JSON.stringify(networkSession));
       if(!networkSession){
 
         // if we're already connected, make a session
@@ -91,23 +96,23 @@
       networkStatusView = ConnectionStatus.initiating;
 
       if(networkSession.userMacAddress === undefined){
-        console.log("waiting for userMacAddress");
+        debug("waiting for userMacAddress");
         running = false;
         return;
       }
 
       if(!networkSession.tollgateRelayReachable){
-        console.log("waiting for tollgateRelayReachable");
+        debug("waiting for tollgateRelayReachable");
         const relay = networkSession!.tollgateRelay
         running = false;
         return;
       }
 
-      console.log(`RELAY REACHABLE! purchaseMade=${purchaseMade}`);
+      debug(`RELAY REACHABLE! purchaseMade=${purchaseMade}`);
       relayReachableView = true
 
       if(!purchaseMade){
-        console.log("starting makePurchase");
+        debug("starting makePurchase");
         await makePurchase(networkSession)
         purchaseMade = true;
         running = false;
@@ -125,16 +130,16 @@
         var response = await fetch(`https://api.cloudflare.com/client/v4/ips`, {connectTimeout: 150})
 
         if(!response){
-          console.log("--noe response--")
+          debug("--noe response--")
           online = false;
         }
 
-        console.log("are we online?:", );
+        debug("are we online?:", );
         online = true;
       }
       catch(error) {
         online = false;
-        console.log("--offline--")
+        debug("--offline--")
       }
 
     } catch (e) {
@@ -150,17 +155,17 @@
     purchaseMade = false;
 
     if(networkSession?.tollgate.ssid === tollgate.ssid){
-      console.log(`Already connected to tollgate ${tollgate.ssid}`);
+      debug(`Already connected to tollgate ${tollgate.ssid}`);
     }
 
     networkSession = new TollgateNetworkSession(tollgate);
 
-    console.log("connecting to " + networkSession.tollgate.ssid);
+    debug("connecting to " + networkSession.tollgate.ssid);
     log("connecting to " + networkSession.tollgate.ssid);
-    console.log("networkSession: ", JSON.stringify(networkSession))
+    debug("networkSession: ", JSON.stringify(networkSession))
 
     if(networkSession.tollgate.ssid === currentNetwork?.ssid){
-      console.log(`already connected to ${currentNetwork.ssid}, not switching`);
+      debug(`already connected to ${currentNetwork.ssid}, not switching`);
       return
     }
     await connectNetwork(networkSession.tollgate.ssid)
@@ -168,7 +173,7 @@
 
   async function getAvailableTollgates() {
     networks = await getAvailableNetworks()
-    // console.log(`found ${networks.length} networks`);
+    // debug(`found ${networks.length} networks`);
 
     return getTollgates(networks);
   }
