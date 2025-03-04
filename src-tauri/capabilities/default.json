@@ -5,7 +5,6 @@
   "windows": [
     "main"
   ],
-  "dangerousUseHttpScheme": true,
   "allowlist": {
     "shell": {
       "execute": true,
