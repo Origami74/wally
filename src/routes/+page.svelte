@@ -33,7 +33,7 @@
 
   function debug(str: string): void {
     console.log(str)
-    userLog.push(str)
+    // userLog.push(str)
   }
 
   const runIntervalMs = 3000
