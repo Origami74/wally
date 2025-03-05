@@ -18,7 +18,7 @@ android {
     compileSdk = 34
     namespace = "com.tollgate_ui.app"
     defaultConfig {
-        manifestPlaceholders["usesCleartextTraffic"] = "false"
+        manifestPlaceholders["usesCleartextTraffic"] = "true"
         applicationId = "com.tollgate_ui.app"
         minSdk = 24
         targetSdk = 34
