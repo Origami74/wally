@@ -192,6 +192,7 @@ jobs:
 
       - name: List signed apk's
         run: |
+          cd android-artifacts-unsigned
           signed_apks=$(ls | grep "signed.apk$")
           echo $signed_apks
           echo "SIGNED_APK_FILES=${signed_apks}" >> $GITHUB_ENV
