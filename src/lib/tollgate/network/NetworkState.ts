@@ -1,34 +1,35 @@
 import {getMacAddress} from "$lib/tollgate/network/pluginCommands";
+import {BehaviorSubject, combineLatest, distinctUntilChanged, map, Observable, Subject} from 'rxjs';
 
 export type OnConnectedInfo = {
     gatewayIp: string
 }
 
 export default class NetworkState {
-    private _connected: boolean = false;
-    private _gatewayIp: string | undefined;
-    private _clientMacAddress: string | undefined;
-    private _ssid: string | undefined;
-    private _capitvePortalActive: boolean = false;
+    private _connected= new BehaviorSubject<boolean>(false);
+    public _gatewayIp= new BehaviorSubject<string | undefined>(undefined);
+    public _clientMacAddress = new BehaviorSubject<string | undefined>(undefined);
 
     public async onConnected(data: OnConnectedInfo){
+        this._connected.next(true)
+        this._gatewayIp.next(data.gatewayIp)
+        this._clientMacAddress.next(await getMacAddress(this._gatewayIp.value));
 
-        this._connected = true;
-        this._gatewayIp = data.gatewayIp;
-        this._clientMacAddress = await getMacAddress(this._gatewayIp);
-
-        console.log(`Network connected, gateway: '${this._gatewayIp}', macAddress: '${this._clientMacAddress}'`);
+        console.log(`Network connected, gateway: '${this._gatewayIp.value}', macAddress: '${this._clientMacAddress.value}'`);
     }
 
-    public get isConnected(): boolean {
-        return this._connected;
-    }
+    public networkIsReady = combineLatest([this._connected, this._gatewayIp, this._clientMacAddress])
+        .pipe( map(([connected, gatewayIp, clientMacAddress]) => {
+            return (connected && gatewayIp && clientMacAddress);
+        }), distinctUntilChanged());
 
     public reset(): void {
         console.log("NetworkState::reset");
-        this._connected = false;
-        this._gatewayIp = undefined;
-        this._ssid = undefined;
-        this._capitvePortalActive = false;
+        this._connected.next(false);
+        this._gatewayIp.next(undefined);
+    }
+
+    public get clientMacAddress() {
+        return this._clientMacAddress.value;
     }
 }

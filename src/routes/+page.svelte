@@ -21,6 +21,8 @@
     registerListener
   } from "$lib/tollgate/network/pluginCommands"
   import NetworkState, {type OnConnectedInfo} from "$lib/tollgate/network/NetworkState";
+  import TollgateState from "$lib/tollgate/network/TollgateState";
+  import {type Observable, Subscription} from "rxjs";
 
   let userLog = $state([]);
   let purchaseMade = $state(false);
@@ -30,12 +32,52 @@
   let tollgates: Tollgate[] = $state([]);
   let networks: NetworkInfo[] = $state([]);
 
+  // old state management
   let networkSession: TollgateNetworkSession | undefined = $state(undefined)
   let tollgateSession = $state(undefined)
   let currentNetwork: ConnectedNetworkInfo | undefined = $state(undefined);
 
+  // new state management
   let networkState:  NetworkState = new NetworkState();
-  // let tollgateState:  TollgateState = new TollgateState(networkState);
+  let tollgateState:  TollgateState = new TollgateState(networkState);
+
+
+
+
+  let macAddress = $state("?")
+  let gatewayIp = $state("?")
+  let networkHasRelay = $state(false)
+  let relayActive = $state(false)
+  let isTollgate = $state(false)
+
+  $effect(() => {
+    const subs: Subscription[] = []
+
+    subs.push(tollgateState._networkHasRelay.subscribe((value: boolean) => {
+      networkHasRelay = value;
+    }))
+
+    subs.push(tollgateState._relayActive.subscribe((value: boolean) => {
+      relayActive = value;
+    }))
+
+    subs.push(tollgateState._isTollgate.subscribe((value: boolean) => {
+      isTollgate = value;
+    }))
+
+    subs.push(networkState._clientMacAddress.subscribe((value: string | undefined) => {
+      macAddress = value ?? "?";
+    }))
+
+    subs.push(networkState._gatewayIp.subscribe((value: string | undefined) => {
+      gatewayIp = value ?? "?";
+    }))
+
+    return () => {
+      subs.forEach(sub => sub.unsubscribe);
+    }
+  })
+
   // let sessionState: any;
 
   let networkStatusView = $state(ConnectionStatus.disconnected)
@@ -55,9 +97,19 @@
     registerListener("network-connected", async (data) => { await networkState.onConnected(data as OnConnectedInfo) })
     registerListener("network-disconnected", () => { networkState.reset() })
 
-    const interval = setInterval(run, runIntervalMs);
-    run();
-    return () => clearInterval(interval);
+    return networkState.networkIsReady.subscribe((networkIsReady) => {
+      console.log("networkIsReady changed", networkIsReady);
+      if(!networkIsReady) {
+        // tollgateState.reset()
+      } else {
+        tollgateState.connect()
+      }
+    }).unsubscribe
+
+    // const interval = setInterval(run, runIntervalMs);
+    // run();
+    // return () => clearInterval(interval);
+
   })
 
   let running = false;
@@ -233,20 +285,39 @@
       <td style="text-align: left">{currentNetwork?.ssid}</td>
     </tr>
     <tr>
+      <td style="text-align: right"><strong>Is TollGate</strong></td>
+      <td style="text-align: left">
+        {#if (isTollgate)}
+          <span style="color: green">YES </span>
+        {:else}
+          <span style="color: red">NO </span>
+        {/if}
+      </td>
+
+    </tr>
+    <tr>
       <td style="text-align: right"><strong>My MAC address</strong></td>
-      <td style="text-align: left">{networkSession?.userMacAddress}</td>
+      <td style="text-align: left">{macAddress}</td>
     </tr>
     <tr>
       <td style="text-align: right"><strong>TollGate IP</strong></td>
-      <td style="text-align: left">{networkSession?.tollgate.gatewayIp}</td>
+      <td style="text-align: left">{gatewayIp}</td>
     </tr>
     <tr>
       <td style="text-align: right"><strong>Relay</strong></td>
-        {#if (relayReachableView)}
-          <td style="text-align: left"><div style="color: green">CONNECTED</div></td>
-        {:else}
-          <td style="text-align: left"><div style="color: red">NOT CONNECTED</div></td>
-        {/if}
+          <td style="text-align: left">
+            {#if (networkHasRelay)}
+              <span style="color: green">YES </span><span> - </span>
+            {:else}
+              <span style="color: red">NO </span><span> - </span>
+            {/if}
+            {#if (relayActive)}
+              <span style="color: green">CONNECTED</span>
+            {:else}
+              <span style="color: red">NOT CONNECTED</span>
+            {/if}
+          </td>
+
     </tr>
     </tbody>
   </table>
