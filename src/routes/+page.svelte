@@ -20,7 +20,7 @@
     getMacAddress,
     registerListener
   } from "$lib/tollgate/network/pluginCommands"
-  import NetworkState from "$lib/tollgate/network/NetworkState";
+  import NetworkState, {type OnConnectedInfo} from "$lib/tollgate/network/NetworkState";
 
   let userLog = $state([]);
   let purchaseMade = $state(false);
@@ -40,10 +40,6 @@
 
   let networkStatusView = $state(ConnectionStatus.disconnected)
 
-  function onNetworkConnected(event: unknown) {
-    console.log("Received event", event)
-  }
-
 
 
   function log(str: string): void {
@@ -52,17 +48,12 @@
 
   function debug(str: string): void {
     console.log(str)
-    // userLog.push(str)
   }
 
   const runIntervalMs = 3000
   onMount(() => {
-
-    registerListener("network-connected", (data) => {
-      console.log(`Network connected ${JSON.stringify(data)}`);
-      networkState.onConnected()
-    })
-
+    registerListener("network-connected", async (data) => { await networkState.onConnected(data as OnConnectedInfo) })
+    registerListener("network-disconnected", () => { networkState.reset() })
 
     const interval = setInterval(run, runIntervalMs);
     run();

@@ -11,11 +11,11 @@ import app.tauri.plugin.Invoke
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.util.Log
+import android.os.Build
 import android.webkit.WebView
+import androidx.annotation.RequiresApi
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import app.tauri.Logger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,15 +28,27 @@ class Empty {
 
 private val backgroundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
+@RequiresApi(Build.VERSION_CODES.N)
 @TauriPlugin
 class WifiPlugin(private val activity: Activity): Plugin(activity) {
     private val implementation = WifiDetails()
+
+    init {
+        backgroundScope.launch {
+            implementation.setupListeners(activity.applicationContext, ::triggerEvent)
+        }
+    }
+
+    fun triggerEvent(eventName: String, data: JSObject) {
+        trigger(eventName, data)
+    }
+
 
     override fun onNewIntent(intent: Intent) {
         if (intent.action == "android.net.conn.CAPTIVE_PORTAL") {
 
             backgroundScope.launch {
-                val gatewayIp = implementation.dismissCaptivePortal(activity.applicationContext, intent)
+                val gatewayIp = implementation.handleCaptivePortalIntent(activity.applicationContext, intent)
                 val data = JSObject()
                 data.put("gatewayIp", gatewayIp)
                 trigger("network-connected", data)
@@ -81,7 +93,9 @@ class WifiPlugin(private val activity: Activity): Plugin(activity) {
     private suspend fun getMacAddressInner(invoke: Invoke) {
         val gatewayIp = invoke.getArgs().get("gatewayIp").toString()
         val ret = JSObject()
-        ret.put("macAddress", implementation.getMacAddress(activity.applicationContext, gatewayIp))
+        val macAddress = implementation.getMacAddress(activity.applicationContext, gatewayIp)
+        ret.put("macAddress", macAddress)
+
         invoke.resolve(ret)
     }
 

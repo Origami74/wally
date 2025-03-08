@@ -48,7 +48,7 @@ pub struct CurrentWifi {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MacAddressResponse {
-    pub mac_address: String,
+    pub mac_address: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

@@ -3,6 +3,7 @@ package com.plugin.androidwifi
 import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Context.CONNECTIVITY_SERVICE
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.CaptivePortal
@@ -21,7 +22,6 @@ import app.tauri.plugin.JSObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
-import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 
@@ -91,12 +91,11 @@ class WifiDetails {
     }
 
     @SuppressLint("NewApi")
-    fun getMacAddress(context: Context, gatewayIp: String): String {
+    fun getMacAddress(context: Context, gatewayIp: String): String? {
         bindToWifiNetwork(context)
 
         Logger.info("getMacaddress: gatewayIp ", gatewayIp)
 
-        var result: String? = null
         val client = OkHttpClient.Builder()
             .connectTimeout(250, TimeUnit.MILLISECONDS)
             .readTimeout(250, TimeUnit.MILLISECONDS)
@@ -112,21 +111,37 @@ class WifiDetails {
                 if (response.isSuccessful) {
                     val responseBody = response.body?.string()
                     if (responseBody != null) {
-                        val json = JSONObject(responseBody)
-                        if (json.optBoolean("Success", false)) {
-                            result = json.optString("Mac", "02:00:00:00:00:00")
+                        val responseJson = JSONObject(responseBody)
+                        if (responseJson.optBoolean("Success", false)) {
+                            val macAddress = responseJson.optString("Mac")
+
+                            if(macAddress == ""){
+                                return null
+                            }
+
+                            return macAddress
                         }
                     }
-                } else {
-                    result = "02:00:00:00:00:00"
                 }
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            result = "02:00:00:00:00:00"
         }
 
-        return result!!
+        return null
+    }
+
+    private fun isWifiNetwork(context: Context, network: Network): Boolean {
+        val connectivityManager =
+            context.applicationContext.getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+        val info = connectivityManager.getNetworkInfo(network)
+
+        if (info == null) {
+            Logger.error("Could not get network info for network ${network}")
+            return false;
+        }
+
+        return info?.type == ConnectivityManager.TYPE_WIFI
     }
 
     private fun bindToWifiNetwork(context: Context): Network? {
@@ -136,15 +151,8 @@ class WifiDetails {
         val networks = connectivityManager.allNetworks;
 
         networks.forEach { network ->
-            var info = connectivityManager.getNetworkInfo(network)
-
-            if (info == null) {
-                Logger.error("Could not get network info for network ${network}")
-                return null;
-            }
-
-            if (info?.type == ConnectivityManager.TYPE_WIFI) {
-                Logger.info("Found wifi network, binding process")
+            if (isWifiNetwork(context, network)) {
+                Logger.info("Binding application process to wifi network")
                 connectivityManager.bindProcessToNetwork(network)
                 return network
             }
@@ -193,44 +201,21 @@ class WifiDetails {
         return res
     }
 
-    fun toByteArray(buffer: ByteBuffer): ByteArray {
-        val byteArray = ByteArray(buffer.capacity())
-        buffer.get(byteArray)
-
-        return byteArray
-    }
-
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    fun dismissCaptivePortal(context: Context, intent: Intent): String? {
-        Logger.info("Dismissing captive portal")
-        val mCaptivePortal = intent.getParcelableExtra(ConnectivityManager.EXTRA_CAPTIVE_PORTAL, CaptivePortal::class.java)
+    fun handleCaptivePortalIntent(context: Context, intent: Intent): String? {
 
+        Logger.info("Handling captive portal")
+        val mCaptivePortal = intent.getParcelableExtra(ConnectivityManager.EXTRA_CAPTIVE_PORTAL, CaptivePortal::class.java)
+        val network = intent.getParcelableExtra(ConnectivityManager.EXTRA_NETWORK, Network::class.java)
+
+        Logger.error("captive network: ${network}")
         if(mCaptivePortal == null) {
             Logger.error("Could not retrieve captive portal object from intent")
             return null;
         }
 
-        val network = bindToWifiNetwork(context)
-
         try {
-            val connectivityManager =
-                context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val linkProperties: LinkProperties? =
-                connectivityManager.getLinkProperties(network)
-
-            if(linkProperties == null){
-                Logger.error("No linkProperties!")
-                mCaptivePortal.reportCaptivePortalDismissed()
-                return null
-            }
-
-            for (routeInfo in linkProperties.routes) {
-                if (routeInfo.isDefaultRoute && routeInfo.hasGateway()) {
-                    val gatewayIp = routeInfo.gateway?.getHostAddress()
-                    Logger.error("gatewayIp: ${gatewayIp}")
-                    return gatewayIp
-                }
-            }
+            return getGatewayIp(context)
         } catch (exc: RemoteException) {
             throw RuntimeException(exc)
         }
@@ -239,6 +224,75 @@ class WifiDetails {
         // It is possible to get info about the network we're connecting to.
         // We can get a parcableExtra from the intent (EXTRA_NETWORK) to determine this.
         mCaptivePortal.reportCaptivePortalDismissed()
+
         return null
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun getGatewayIp(context: Context): String? {
+        val network = bindToWifiNetwork(context)
+        val connectivityManager =
+            context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val linkProperties: LinkProperties? =
+            connectivityManager.getLinkProperties(network)
+
+        if(linkProperties == null){
+            Logger.error("No linkProperties!")
+            return null
+        }
+
+        for (routeInfo in linkProperties.routes) {
+            if (routeInfo.isDefaultRoute && routeInfo.hasGateway()) {
+                val gatewayIp = routeInfo.gateway?.hostAddress
+                Logger.info("gatewayIp: ${gatewayIp}")
+                if(isValidIPv4Address(gatewayIp)){
+                    return gatewayIp
+                }
+            }
+        }
+
+        return null
+    }
+
+    @RequiresApi(Build.VERSION_CODES.N)
+    fun setupListeners(context: Context, triggerEvent: (String, JSObject) -> Unit) {
+        val connectivityManager: ConnectivityManager = context.getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+
+        val networkCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                if(isWifiNetwork(context, network)){
+                    val gatewayIp = getGatewayIp(context)
+                    Logger.error("CONNECTED TO NETWORK: ${network}, gateway = ${gatewayIp}")
+
+                    val data = JSObject()
+                    data.put("gatewayIp", gatewayIp)
+                    triggerEvent("network-connected", data)
+                }
+            }
+
+            override fun onLost(network: Network) {
+                Logger.Companion.error("!! DISCONNECTED FROM NETWORK: ${network}")
+                triggerEvent("network-disconnected", JSObject())
+            }
+        }
+
+        connectivityManager.registerDefaultNetworkCallback(networkCallback)
+    }
+}
+
+fun isValidIPv4Address(ip: String?): Boolean {
+    if (ip == null) return false
+
+    // Regular expression to match valid IPv4 address
+    val ipv4Pattern = Regex("""^(\d{1,3}\.){3}\d{1,3}$""")
+
+    // First, check if it matches the basic pattern
+    if (!ipv4Pattern.matches(ip)) return false
+
+    // Further validate each octet should be in the range of 0 to 255
+    return ip.split(".").all {
+        it.toIntOrNull()?.let { num ->
+            num in 0..255
+        } == true
     }
 }

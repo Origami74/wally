@@ -17,8 +17,16 @@ export async function getMacAddress(gatewayIp: string | undefined): Promise<stri
     }
 
     try{
-        const macAddressResult = await invoke("plugin:androidwifi|get_mac_address", { payload: { gatewayIp: gatewayIp } });
-        return macAddressResult.macAddress
+        const macAddressResult: {macAddress: string | undefined} = await invoke("plugin:androidwifi|get_mac_address", { payload: { gatewayIp: gatewayIp } });
+
+        let macAddress = macAddressResult.macAddress;
+
+        // Convert 'null' string back to undefined
+        if (macAddress === null || macAddress === 'null') {
+            macAddress = undefined;
+        }
+
+        return macAddress
     } catch (e) {
         throw new Error(`Failed to determine MAC address, reason: ${e}`);
     }
