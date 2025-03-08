@@ -202,24 +202,30 @@ class WifiDetails {
     }
 
     var mCaptivePortal: CaptivePortal? = null;
+    private val lock = Any()
+
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     fun handleCaptivePortalIntent(context: Context, intent: Intent): String? {
 
         Logger.info("Handling captive portal")
-        mCaptivePortal = intent.getParcelableExtra(ConnectivityManager.EXTRA_CAPTIVE_PORTAL, CaptivePortal::class.java)
         val network = intent.getParcelableExtra(ConnectivityManager.EXTRA_NETWORK, Network::class.java)
 
-        Logger.error("captive network: ${network}")
-        if(mCaptivePortal == null) {
-            Logger.error("Could not retrieve captive portal object from intent")
-            return null;
+        synchronized (lock) {
+            mCaptivePortal = intent.getParcelableExtra(ConnectivityManager.EXTRA_CAPTIVE_PORTAL, CaptivePortal::class.java)
+
+            Logger.error("captive network: ${network}")
+            if(mCaptivePortal == null) {
+                Logger.error("Could not retrieve captive portal object from intent")
+                return null;
+            }
         }
+
 
         try {
             // TODO: Pass on to native app if it's not a Tollgate network
             // It is possible to get info about the network we're connecting to.
             // We can get a parcableExtra from the intent (EXTRA_NETWORK) to determine this.
-            mCaptivePortal?.reportCaptivePortalDismissed()
+//            mCaptivePortal?.reportCaptivePortalDismissed()
             return getGatewayIp(context)
         } catch (exc: RemoteException) {
             throw RuntimeException(exc)
@@ -279,8 +285,16 @@ class WifiDetails {
 
     @RequiresApi(Build.VERSION_CODES.M)
     fun markCaptivePortalDismissed() {
-        Logger.error("Dismissing, is it there???: ${mCaptivePortal}")
-        mCaptivePortal?.reportCaptivePortalDismissed()
+
+        synchronized (lock) {
+            try{
+                mCaptivePortal?.reportCaptivePortalDismissed()
+            } catch (error: Exception){
+                Logger.error("Error while marking captive portal dismissed: ${mCaptivePortal}")
+            }
+
+            mCaptivePortal = null
+        }
     }
 }
 

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-mark-captive-portal-dismissed"
+description = "Enables the mark_captive_portal_dismissed command without any pre-configured scope."
+commands.allow = ["mark_captive_portal_dismissed"]
+
+[[permission]]
+identifier = "deny-mark-captive-portal-dismissed"
+description = "Denies the mark_captive_portal_dismissed command without any pre-configured scope."
+commands.deny = ["mark_captive_portal_dismissed"]

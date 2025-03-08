@@ -1,7 +1,6 @@
 import type { ConnectedNetworkInfo } from "$lib/tollgate/types/ConnectedNetworkInfo";
 import type {NetworkInfo} from "$lib/tollgate/types/NetworkInfo";
 import {Channel, invoke, PluginListener} from "@tauri-apps/api/core";
-import {fetch} from "@tauri-apps/plugin-http";
 
 export async function registerListener(eventName: string, onEvent: (data: unknown) => void): Promise<void> {
     const handler = new Channel();

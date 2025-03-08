@@ -53,7 +53,7 @@ impl<R: Runtime> Androidwifi<R> {
       .map_err(Into::into)
   }
 
-  pub fn mark_captive_portal_dismissed(&self, payload: Empty) -> crate::Result<Empty> {
+  pub fn mark_captive_portal_dismissed(&self, payload: Empty) -> crate::Result<MacAddressResponse> {
     self
       .0
       .run_mobile_plugin("markCaptivePortalDismissed", payload)

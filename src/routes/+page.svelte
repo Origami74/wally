@@ -62,7 +62,13 @@
   })
 
   onMount(async () => {
-    await registerListener("network-connected", async (data) => { await networkState.onConnected(data as OnConnectedInfo) })
+    await registerListener("network-connected", async (data) => {
+      tollgateState._tollgateIsReady.subscribe(async (isReady: boolean) => {
+        if(!isReady) {
+          await networkState.onConnected(data as OnConnectedInfo)
+        }
+      })
+    })
     await registerListener("network-disconnected", () => { networkState.reset() })
 
     networkState.networkIsReady.subscribe(async (networkIsReady) => {

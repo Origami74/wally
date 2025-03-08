@@ -71,7 +71,9 @@ class WifiPlugin(private val activity: Activity): Plugin(activity) {
     fun markCaptivePortalDismissed(invoke: Invoke) {
         backgroundScope.launch {
             markCaptivePortalDismissedInner()
-            invoke.resolve(JSObject())
+            val ret = JSObject()
+            ret.put("macAddress", "n/a")
+            invoke.resolve()
         }
     }
 
