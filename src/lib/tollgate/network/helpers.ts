@@ -1,6 +1,6 @@
 import type {NetworkInfo} from "$lib/tollgate/types/NetworkInfo";
 import type {Tollgate} from "$lib/tollgate/types/Tollgate";
-import { hexDecode} from "$lib/tollgate/helpers";
+import { hexDecode} from "$lib/util/helpers";
 import type {NetworkElement} from "$lib/tollgate/types/NetworkElement";
 
 

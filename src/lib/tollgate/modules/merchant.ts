@@ -1,5 +1,5 @@
 import TollgateNetworkSession from "$lib/tollgate/network/TollgateNetworkSession";
-import {nostrNow} from "$lib/tollgate/helpers";
+import {nostrNow} from "$lib/util/helpers";
 import { NSecSigner } from '@nostrify/nostrify';
 
 export async function makePurchase(session: TollgateNetworkSession) {

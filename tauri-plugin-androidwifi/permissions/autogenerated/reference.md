@@ -6,6 +6,7 @@ Default permissions for the plugin
 - `allow-get_mac_address`
 - `allow-get_current_wifi_details`
 - `allow-connect_wifi`
+- `allow-register-istener`
 
 ## Permission Table
 
@@ -181,6 +182,58 @@ Enables the get_wifi_details command without any pre-configured scope.
 <td>
 
 Denies the get_wifi_details command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`androidwifi:allow-registerListener`
+
+</td>
+<td>
+
+Enables the registerListener command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`androidwifi:deny-registerListener`
+
+</td>
+<td>
+
+Denies the registerListener command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`androidwifi:allow-register-listener`
+
+</td>
+<td>
+
+Enables the register_listener command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`androidwifi:deny-register-listener`
+
+</td>
+<td>
+
+Denies the register_listener command without any pre-configured scope.
 
 </td>
 </tr>

@@ -22,6 +22,7 @@
     "androidwifi:allow-get-current-wifi-details",
     "androidwifi:allow-get-mac-address",
     "androidwifi:allow-get-wifi-details",
+    "androidwifi:allow-register-listener",
     {
       "identifier": "http:default",
       "allow": [

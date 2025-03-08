@@ -4,14 +4,16 @@ import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.Intent.getIntent
 import android.content.IntentFilter
 import android.net.CaptivePortal
 import android.net.ConnectivityManager
+import android.net.LinkProperties
+import android.net.Network
 import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.net.wifi.WifiNetworkSuggestion
 import android.os.Build
+import android.os.RemoteException
 import androidx.annotation.RequiresApi
 import app.tauri.Logger
 import app.tauri.plugin.JSArray
@@ -22,8 +24,7 @@ import org.json.JSONObject
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
-import android.os.Handler
-import android.os.Looper
+
 
 class WifiDetails {
     fun startWifiScan(context: Context): List<ScanResult> {
@@ -86,30 +87,12 @@ class WifiDetails {
 
         json.put("ssid", connectionInfo.ssid ?: "")
         json.put("bssid", connectionInfo.bssid ?: "")
-        json.put("macAddress", connectionInfo.macAddress ?: "")
         return json
     }
 
     @SuppressLint("NewApi")
     fun getMacAddress(context: Context, gatewayIp: String): String {
-         val connectivityManager =
-            context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-
-        val networks = connectivityManager.allNetworks;
-
-        networks.forEach { n ->
-            var info = connectivityManager.getNetworkInfo(n)
-
-            if (info == null) {
-                Logger.error("Could not get network info for network ${n}")
-                return "no network info";
-            }
-
-            if (info?.type == ConnectivityManager.TYPE_WIFI) {
-                Logger.info("Found wifi network, binding process")
-                connectivityManager.bindProcessToNetwork(n)
-            }
-        }
+        bindToWifiNetwork(context)
 
         Logger.info("getMacaddress: gatewayIp ", gatewayIp)
 
@@ -144,6 +127,30 @@ class WifiDetails {
         }
 
         return result!!
+    }
+
+    private fun bindToWifiNetwork(context: Context): Network? {
+        val connectivityManager =
+            context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+        val networks = connectivityManager.allNetworks;
+
+        networks.forEach { network ->
+            var info = connectivityManager.getNetworkInfo(network)
+
+            if (info == null) {
+                Logger.error("Could not get network info for network ${network}")
+                return null;
+            }
+
+            if (info?.type == ConnectivityManager.TYPE_WIFI) {
+                Logger.info("Found wifi network, binding process")
+                connectivityManager.bindProcessToNetwork(network)
+                return network
+            }
+        }
+
+        return null
     }
 
     // We can only make suggestions to connect to a wifi network.
@@ -194,18 +201,44 @@ class WifiDetails {
     }
 
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    fun dismissCaptivePortal(intent: Intent) {
+    fun dismissCaptivePortal(context: Context, intent: Intent): String? {
         Logger.info("Dismissing captive portal")
         val mCaptivePortal = intent.getParcelableExtra(ConnectivityManager.EXTRA_CAPTIVE_PORTAL, CaptivePortal::class.java)
 
         if(mCaptivePortal == null) {
             Logger.error("Could not retrieve captive portal object from intent")
-            return;
+            return null;
+        }
+
+        val network = bindToWifiNetwork(context)
+
+        try {
+            val connectivityManager =
+                context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val linkProperties: LinkProperties? =
+                connectivityManager.getLinkProperties(network)
+
+            if(linkProperties == null){
+                Logger.error("No linkProperties!")
+                mCaptivePortal.reportCaptivePortalDismissed()
+                return null
+            }
+
+            for (routeInfo in linkProperties.routes) {
+                if (routeInfo.isDefaultRoute && routeInfo.hasGateway()) {
+                    val gatewayIp = routeInfo.gateway?.getHostAddress()
+                    Logger.error("gatewayIp: ${gatewayIp}")
+                    return gatewayIp
+                }
+            }
+        } catch (exc: RemoteException) {
+            throw RuntimeException(exc)
         }
 
         // TODO: Pass on to native app if it's not a Tollgate network
         // It is possible to get info about the network we're connecting to.
         // We can get a parcableExtra from the intent (EXTRA_NETWORK) to determine this.
         mCaptivePortal.reportCaptivePortalDismissed()
+        return null
     }
 }

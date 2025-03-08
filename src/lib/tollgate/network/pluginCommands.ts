@@ -1,7 +1,15 @@
 import type { ConnectedNetworkInfo } from "$lib/tollgate/types/ConnectedNetworkInfo";
 import type {NetworkInfo} from "$lib/tollgate/types/NetworkInfo";
-import {invoke} from "@tauri-apps/api/core";
+import {Channel, invoke, PluginListener} from "@tauri-apps/api/core";
 import {fetch} from "@tauri-apps/plugin-http";
+
+export async function registerListener(eventName: string, onEvent: (data: unknown) => void): Promise<void> {
+    const handler = new Channel();
+    handler.onmessage = onEvent;
+    invoke("plugin:androidwifi|register_listener", { event:eventName, handler }).then(
+        () => new PluginListener("androidwifi", eventName, handler.id)
+    );
+}
 
 export async function getMacAddress(gatewayIp: string | undefined): Promise<string | undefined> {
     if(gatewayIp === undefined){

@@ -7,10 +7,20 @@
   import TollgateNetworkSession from "$lib/tollgate/network/TollgateNetworkSession";
   import type {Tollgate} from "$lib/tollgate/types/Tollgate";
   import type {NetworkInfo} from "$lib/tollgate/types/NetworkInfo";
-  import {makePurchase} from "$lib/tollgate/purchase/renameme";
+  import {makePurchase} from "$lib/tollgate/modules/merchant";
+
+  import { createFeedbackButton } from "nostr-feedback-button/feedback";
+  import "nostr-feedback-button/styles.css";
 
   import type {ConnectedNetworkInfo} from "$lib/tollgate/types/ConnectedNetworkInfo";
-  import { getAvailableNetworks, getCurrentNetwork, connectNetwork, getMacAddress } from "$lib/tollgate/network/pluginCommands"
+  import {
+    getAvailableNetworks,
+    getCurrentNetwork,
+    connectNetwork,
+    getMacAddress,
+    registerListener
+  } from "$lib/tollgate/network/pluginCommands"
+  import NetworkState from "$lib/tollgate/network/NetworkState";
 
   let userLog = $state([]);
   let purchaseMade = $state(false);
@@ -24,8 +34,17 @@
   let tollgateSession = $state(undefined)
   let currentNetwork: ConnectedNetworkInfo | undefined = $state(undefined);
 
+  let networkState:  NetworkState = new NetworkState();
+  // let tollgateState:  TollgateState = new TollgateState(networkState);
+  // let sessionState: any;
 
   let networkStatusView = $state(ConnectionStatus.disconnected)
+
+  function onNetworkConnected(event: unknown) {
+    console.log("Received event", event)
+  }
+
+
 
   function log(str: string): void {
     userLog.push(str)
@@ -38,6 +57,13 @@
 
   const runIntervalMs = 3000
   onMount(() => {
+
+    registerListener("network-connected", (data) => {
+      console.log(`Network connected ${JSON.stringify(data)}`);
+      networkState.onConnected()
+    })
+
+
     const interval = setInterval(run, runIntervalMs);
     run();
     return () => clearInterval(interval);
@@ -179,12 +205,24 @@
   }
 
 
+  // creates and adds the feedback button to the page
+  createFeedbackButton({
+    developer: "1096f6be0a4d7f0ecc2df4ed2c8683f143efc81eeba3ece6daadd2fca74c7ecc",
+    namespace: "tollgate-app",
+    relays: [
+      "wss://relay.damus.io",
+    ],
+
+    // additional options
+  });
+
 </script>
 
 {#await run()}{/await}
 
 <main class="container">
   <h1>Welcome to Tollgate</h1>
+<!--  <Wallet></Wallet>-->
   <h2>
     Network
     {#if (networkStatusView === ConnectionStatus.connected)}

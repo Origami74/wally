@@ -5,4 +5,5 @@ permissions = [
     "allow-get_mac_address",
     "allow-get_current_wifi_details",
     "allow-connect_wifi",
+    "allow-register-istener",
     ]

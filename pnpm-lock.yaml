@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@cashu/cashu-ts':
+        specifier: ^2.2.1
+        version: 2.2.1
       '@nostrify/nostrify':
         specifier: npm:@jsr/nostrify__nostrify@^0.37.0
         version: '@jsr/nostrify__nostrify@0.37.0(typescript@5.7.2)'
@@ -29,6 +32,9 @@ importers:
       buffer:
         specifier: ^6.0.3
         version: 6.0.3
+      nostr-feedback-button:
+        specifier: ^0.1.3
+        version: 0.1.3(typescript@5.7.2)
     devDependencies:
       '@sveltejs/adapter-static':
         specifier: ^3.0.5
@@ -63,6 +69,12 @@ packages:
   '@ampproject/remapping@2.3.0':
     resolution: {integrity: sha512-30iZtAPgz+LTIYoeivqYo853f02jBYSd5uGnGpkFV0M3xOt9aN73erkgYAmZU43x4VfqcnLxW9Kpg3R5LC4YYw==}
     engines: {node: '>=6.0.0'}
+
+  '@cashu/cashu-ts@2.2.1':
+    resolution: {integrity: sha512-/A8Lfkf7nexldcAcTbqrITXxwgiCYTTnrthB8DoipLVeDfyUXer48FJdUmXpRp87Aijn2BNklo8qA0yO0kHXaA==}
+
+  '@cashu/crypto@0.3.4':
+    resolution: {integrity: sha512-mfv1Pj4iL1PXzUj9NKIJbmncCLMqYfnEDqh/OPxAX0nNBt6BOnVJJLjLWFlQeYxlnEfWABSNkrqPje1t5zcyhA==}
 
   '@esbuild/aix-ppc64@0.21.5':
     resolution: {integrity: sha512-1SDgH6ZSPTlggy1yI6+Dbkiz8xzpHJEVAlF/AM1tHPLsf5STom9rwtjE4hKAF20FfXXNTFqEYXyJNWh1GiZedQ==}
@@ -613,6 +625,9 @@ packages:
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
+  nostr-feedback-button@0.1.3:
+    resolution: {integrity: sha512-1C6RkJikhn6omrn964SiZ0WkODOZxuv35ACf/XB1N+C6UGFowplRp+eidysBtG79PrRW9Q7O8/NVxZRn1T/5ZA==}
+
   nostr-tools@2.10.4:
     resolution: {integrity: sha512-biU7sk+jxHgVASfobg2T5ttxOGGSt69wEVBC51sHHOEaKAAdzHBLV/I2l9Rf61UzClhliZwNouYhqIso4a3HYg==}
     peerDependencies:
@@ -736,6 +751,21 @@ snapshots:
     dependencies:
       '@jridgewell/gen-mapping': 0.3.5
       '@jridgewell/trace-mapping': 0.3.25
+
+  '@cashu/cashu-ts@2.2.1':
+    dependencies:
+      '@cashu/crypto': 0.3.4
+      '@noble/curves': 1.8.1
+      '@noble/hashes': 1.7.1
+      buffer: 6.0.3
+
+  '@cashu/crypto@0.3.4':
+    dependencies:
+      '@noble/curves': 1.8.1
+      '@noble/hashes': 1.7.1
+      '@scure/bip32': 1.6.2
+      '@scure/bip39': 1.5.4
+      buffer: 6.0.3
 
   '@esbuild/aix-ppc64@0.21.5':
     optional: true
@@ -1170,6 +1200,12 @@ snapshots:
   ms@2.1.3: {}
 
   nanoid@3.3.8: {}
+
+  nostr-feedback-button@0.1.3(typescript@5.7.2):
+    dependencies:
+      nostr-tools: 2.10.4(typescript@5.7.2)
+    transitivePeerDependencies:
+      - typescript
 
   nostr-tools@2.10.4(typescript@5.7.2):
     dependencies:

@@ -3,6 +3,7 @@ const COMMANDS: &[&str] = &[
   "get_current_wifi_details",
   "connect_wifi",
   "get_mac_address",
+  "registerListener",
 ];
 
 fn main() {

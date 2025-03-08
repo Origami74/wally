@@ -11,6 +11,7 @@ import app.tauri.plugin.Invoke
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.util.Log
 import android.webkit.WebView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -32,10 +33,13 @@ class WifiPlugin(private val activity: Activity): Plugin(activity) {
     private val implementation = WifiDetails()
 
     override fun onNewIntent(intent: Intent) {
-        Logger.info("intent: ${intent.action.toString()}")
         if (intent.action == "android.net.conn.CAPTIVE_PORTAL") {
+
             backgroundScope.launch {
-                implementation.dismissCaptivePortal(intent)
+                val gatewayIp = implementation.dismissCaptivePortal(activity.applicationContext, intent)
+                val data = JSObject()
+                data.put("gatewayIp", gatewayIp)
+                trigger("network-connected", data)
             }
         }
     }
