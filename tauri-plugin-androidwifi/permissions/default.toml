@@ -1,9 +1,10 @@
 [default]
 description = "Default permissions for the plugin"
 permissions = [
-    "allow-get_wifi_details",
-    "allow-get_mac_address",
-    "allow-get_current_wifi_details",
-    "allow-connect_wifi",
-    "allow-register-istener",
+    "allow-get-wifi-details",
+    "allow-get-mac-address",
+    "allow-get-current-wifi-details",
+    "allow-connect-wifi",
+    "allow-mark-captive-portal-dismissed",
+    "allow-register-listener",
     ]

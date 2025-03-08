@@ -1,54 +1,29 @@
 <script lang="ts">
-  import {ConnectionStatus} from "$lib/tollgate/types/ConnectionStatus";
-  import {getTollgates, isTollgateSsid} from "$lib/tollgate/network/helpers";
-  import {onMount} from "svelte";
-
-  import {fetch} from "@tauri-apps/plugin-http";
-  import TollgateNetworkSession from "$lib/tollgate/network/TollgateNetworkSession";
-  import type {Tollgate} from "$lib/tollgate/types/Tollgate";
-  import type {NetworkInfo} from "$lib/tollgate/types/NetworkInfo";
-  import {makePurchase} from "$lib/tollgate/modules/merchant";
-
+  import { onMount} from "svelte";
   import { createFeedbackButton } from "nostr-feedback-button/feedback";
   import "nostr-feedback-button/styles.css";
-
-  import type {ConnectedNetworkInfo} from "$lib/tollgate/types/ConnectedNetworkInfo";
-  import {
-    getAvailableNetworks,
-    getCurrentNetwork,
-    connectNetwork,
-    getMacAddress,
-    registerListener
-  } from "$lib/tollgate/network/pluginCommands"
+  import {registerListener} from "$lib/tollgate/network/pluginCommands"
   import NetworkState, {type OnConnectedInfo} from "$lib/tollgate/network/NetworkState";
   import TollgateState from "$lib/tollgate/network/TollgateState";
-  import {type Observable, Subscription} from "rxjs";
+  import { Subscription} from "rxjs";
+  import {shortenString} from "$lib/util/helpers";
+  import TollgateSession from "$lib/tollgate/network/TollgateSession";
 
-  let userLog = $state([]);
-  let purchaseMade = $state(false);
-  let online = $state(false);
-  let relayReachableView = $state(false);
+  let userLog: string[] = $state([]);
 
-  let tollgates: Tollgate[] = $state([]);
-  let networks: NetworkInfo[] = $state([]);
+  // let tollgates: Tollgate[] = $state([]);
 
-  // old state management
-  let networkSession: TollgateNetworkSession | undefined = $state(undefined)
-  let tollgateSession = $state(undefined)
-  let currentNetwork: ConnectedNetworkInfo | undefined = $state(undefined);
-
-  // new state management
   let networkState:  NetworkState = new NetworkState();
   let tollgateState:  TollgateState = new TollgateState(networkState);
-
-
-
+  let tollgateSession:  TollgateSession = new TollgateSession(tollgateState);
 
   let macAddress = $state("?")
   let gatewayIp = $state("?")
   let networkHasRelay = $state(false)
   let relayActive = $state(false)
-  let isTollgate = $state(false)
+  let tollgateReady = $state(false)
+  let tollgatePubkey = $state("?")
+  let tollgateSessionActive = $state(false)
 
   $effect(() => {
     const subs: Subscription[] = []
@@ -61,8 +36,8 @@
       relayActive = value;
     }))
 
-    subs.push(tollgateState._isTollgate.subscribe((value: boolean) => {
-      isTollgate = value;
+    subs.push(tollgateState._tollgateIsReady.subscribe((value: boolean) => {
+      tollgateReady = value;
     }))
 
     subs.push(networkState._clientMacAddress.subscribe((value: string | undefined) => {
@@ -73,180 +48,31 @@
       gatewayIp = value ?? "?";
     }))
 
+    subs.push(tollgateState._tollgatePubkey.subscribe((value: string | undefined) => {
+      tollgatePubkey = value ?? "?";
+    }))
+
+    // subs.push(tollgateSession._sessionIsActive.subscribe((value: boolean) => {
+    //   tollgateSessionActive = value;
+    // }))
+
     return () => {
       subs.forEach(sub => sub.unsubscribe);
     }
   })
 
-  // let sessionState: any;
+  onMount(async () => {
+    await registerListener("network-connected", async (data) => { await networkState.onConnected(data as OnConnectedInfo) })
+    await registerListener("network-disconnected", () => { networkState.reset() })
 
-  let networkStatusView = $state(ConnectionStatus.disconnected)
+    networkState.networkIsReady.subscribe(async (networkIsReady) => {
+      if(networkIsReady) await tollgateState.connect() // TODO: otherwise tollgateState.reset()
+    })
 
-
-
-  function log(str: string): void {
-    userLog.push(str)
-  }
-
-  function debug(str: string): void {
-    console.log(str)
-  }
-
-  const runIntervalMs = 3000
-  onMount(() => {
-    registerListener("network-connected", async (data) => { await networkState.onConnected(data as OnConnectedInfo) })
-    registerListener("network-disconnected", () => { networkState.reset() })
-
-    return networkState.networkIsReady.subscribe((networkIsReady) => {
-      console.log("networkIsReady changed", networkIsReady);
-      if(!networkIsReady) {
-        // tollgateState.reset()
-      } else {
-        tollgateState.connect()
-      }
-    }).unsubscribe
-
-    // const interval = setInterval(run, runIntervalMs);
-    // run();
-    // return () => clearInterval(interval);
-
+    tollgateState._tollgateIsReady.subscribe(async (tollgateIsReady) => {
+      if(tollgateIsReady) await tollgateSession.createSession()
+    })
   })
-
-  let running = false;
-  async function run(){
-    // debug(`running: ${running}`);
-
-    if(running) return
-    running = true;
-
-    try {
-      const currentNetworkTask = getCurrentNetwork()
-      const availableTollgatesTask = getAvailableTollgates()
-      const macTask =  getMacAddress(networkSession?.tollgate?.gatewayIp) // TODO: Error handling
-
-      const [currentNetworkResult, macResult, availableTollgatesResult] = await Promise.allSettled([
-        currentNetworkTask,
-        macTask,
-        availableTollgatesTask
-      ])
-
-      debug(`currentNetwork/mac/availableTollgates: ${currentNetworkResult.status}/${macResult.status}/${availableTollgatesResult.status}`)
-
-      if(currentNetworkResult.status === "fulfilled"){
-        currentNetwork = await currentNetworkTask;
-      }
-
-      if(availableTollgatesResult.status === "fulfilled"){
-        tollgates = await availableTollgatesTask
-      }
-
-      if(macResult.status === "fulfilled"){
-        const userMacAddress = await macTask;
-        if(networkSession && userMacAddress != undefined){
-          networkSession.userMacAddress = userMacAddress;
-        }
-      }
-
-      // debug("networkSession", JSON.stringify(networkSession));
-      if(!networkSession){
-
-        // if we're already connected, make a session
-        if(isTollgateSsid(currentNetwork?.ssid ?? "null")){
-          const currentTollgate = tollgates.find(tg => tg.ssid === currentNetwork?.ssid);
-          if(currentTollgate){
-            await startTollgateSession(currentTollgate)
-          }
-        }
-
-        running = false;
-        return;
-      }
-
-      networkStatusView = ConnectionStatus.initiating;
-
-      if(networkSession.userMacAddress === undefined){
-        debug("waiting for userMacAddress");
-        running = false;
-        return;
-      }
-
-      if(!networkSession.tollgateRelayReachable){
-        debug("waiting for tollgateRelayReachable");
-        const relay = networkSession!.tollgateRelay
-        running = false;
-        return;
-      }
-
-      debug(`RELAY REACHABLE! purchaseMade=${purchaseMade}`);
-      relayReachableView = true
-
-      if(!purchaseMade){
-        debug("starting makePurchase");
-        await makePurchase(networkSession)
-        purchaseMade = true;
-        running = false;
-        return;
-      }
-
-      if(online){
-        networkStatusView = ConnectionStatus.connected;
-        running = false;
-        return;
-      }
-
-      online = true;
-      try{
-        var response = await fetch(`https://api.cloudflare.com/client/v4/ips`, {connectTimeout: 150})
-
-        if(!response){
-          debug("--noe response--")
-          online = false;
-        }
-
-        debug("are we online?:", );
-        online = true;
-      }
-      catch(error) {
-        online = false;
-        debug("--offline--")
-      }
-
-    } catch (e) {
-      running = false;
-      console.error("Running failed:", e);
-    }
-
-    // Connect to relay and pay
-    running = false;
-  }
-
-  async function startTollgateSession(tollgate: Tollgate) {
-    purchaseMade = false;
-
-    if(networkSession?.tollgate.ssid === tollgate.ssid){
-      debug(`Already connected to tollgate ${tollgate.ssid}`);
-    }
-
-    networkSession = new TollgateNetworkSession(tollgate);
-
-    debug("connecting to " + networkSession.tollgate.ssid);
-    log("connecting to " + networkSession.tollgate.ssid);
-    debug("networkSession: ", JSON.stringify(networkSession))
-
-    if(networkSession.tollgate.ssid === currentNetwork?.ssid){
-      debug(`already connected to ${currentNetwork.ssid}, not switching`);
-      return
-    }
-    await connectNetwork(networkSession.tollgate.ssid)
-  }
-
-  async function getAvailableTollgates() {
-    networks = await getAvailableNetworks()
-    // debug(`found ${networks.length} networks`);
-
-    return getTollgates(networks);
-  }
-
 
   // creates and adds the feedback button to the page
   createFeedbackButton({
@@ -261,19 +87,15 @@
 
 </script>
 
-{#await run()}{/await}
-
 <main class="container">
   <h1>Welcome to Tollgate</h1>
 <!--  <Wallet></Wallet>-->
   <h2>
-    Network
-    {#if (networkStatusView === ConnectionStatus.connected)}
-      <div style="color: green">CONNECTED</div>
-    {:else if (networkStatusView === ConnectionStatus.initiating)}
-      <div style="color: chocolate">CONNECTING...</div>
+    Session
+    {#if (tollgateSessionActive)}
+      <div style="color: green">ACTIVE</div>
     {:else}
-      <div style="color: red">NOT CONNECTED</div>
+      <div style="color: red">NOT ACTIVE</div>
     {/if}
   </h2>
 
@@ -281,13 +103,9 @@
   <table style="width:100%">
     <tbody>
     <tr>
-      <td style="text-align: right"><strong>SSID</strong></td>
-      <td style="text-align: left">{currentNetwork?.ssid}</td>
-    </tr>
-    <tr>
-      <td style="text-align: right"><strong>Is TollGate</strong></td>
+      <td style="text-align: right"><strong>TollGate Ready</strong></td>
       <td style="text-align: left">
-        {#if (isTollgate)}
+        {#if (tollgateReady)}
           <span style="color: green">YES </span>
         {:else}
           <span style="color: red">NO </span>
@@ -304,6 +122,10 @@
       <td style="text-align: left">{gatewayIp}</td>
     </tr>
     <tr>
+      <td style="text-align: right"><strong>TollGate PubKey</strong></td>
+      <td style="text-align: left">{shortenString(tollgatePubkey, 5)}</td>
+    </tr>
+    <tr>
       <td style="text-align: right"><strong>Relay</strong></td>
           <td style="text-align: left">
             {#if (networkHasRelay)}
@@ -317,34 +139,33 @@
               <span style="color: red">NOT CONNECTED</span>
             {/if}
           </td>
-
     </tr>
     </tbody>
   </table>
 
-  <h2>Nearby tollgates</h2>
-  <table style="width:100%">
-    <tbody>
-    <tr>
-      <th><strong>SSID</strong></th>
-<!--      <th><strong>BSSID</strong></th>-->
-      <th><strong>Signal</strong></th>
-      <th><strong>Freq</strong></th>
-      <th><strong>Price</strong></th>
-      <th><strong>Connect</strong></th>
-    </tr>
-    {#each tollgates as tollgate}
-      <tr>
-        <td>{tollgate.ssid}</td>
-<!--        <td>{tollgate.bssid}</td>-->
-        <td>{tollgate.rssi}</td>
-        <td>{tollgate.frequency}</td>
-        <td>{tollgate.pricing.allocationPer1024}/{tollgate.pricing.unit} - {tollgate.pricing.allocationType}</td>
-        <td><button type="button" onclick={() => startTollgateSession(tollgate)}>Connect</button></td>
-      </tr>
-    {/each}
-    </tbody>
-  </table>
+<!--  <h2>Nearby tollgates</h2>-->
+<!--  <table style="width:100%">-->
+<!--    <tbody>-->
+<!--    <tr>-->
+<!--      <th><strong>SSID</strong></th>-->
+<!--&lt;!&ndash;      <th><strong>BSSID</strong></th>&ndash;&gt;-->
+<!--      <th><strong>Signal</strong></th>-->
+<!--      <th><strong>Freq</strong></th>-->
+<!--      <th><strong>Price</strong></th>-->
+<!--      <th><strong>Connect</strong></th>-->
+<!--    </tr>-->
+<!--    {#each tollgates as tollgate}-->
+<!--      <tr>-->
+<!--        <td>{tollgate.ssid}</td>-->
+<!--&lt;!&ndash;        <td>{tollgate.bssid}</td>&ndash;&gt;-->
+<!--        <td>{tollgate.rssi}</td>-->
+<!--        <td>{tollgate.frequency}</td>-->
+<!--        <td>{tollgate.pricing.allocationPer1024}/{tollgate.pricing.unit} - {tollgate.pricing.allocationType}</td>-->
+<!--&lt;!&ndash;        <td><button type="button" onclick={() => startTollgateSession(tollgate)}>Connect</button></td>&ndash;&gt;-->
+<!--      </tr>-->
+<!--    {/each}-->
+<!--    </tbody>-->
+<!--  </table>-->
 
   <h2>Logs</h2>
   <p>

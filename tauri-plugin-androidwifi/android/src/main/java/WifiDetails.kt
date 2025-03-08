@@ -201,11 +201,12 @@ class WifiDetails {
         return res
     }
 
+    var mCaptivePortal: CaptivePortal? = null;
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     fun handleCaptivePortalIntent(context: Context, intent: Intent): String? {
 
         Logger.info("Handling captive portal")
-        val mCaptivePortal = intent.getParcelableExtra(ConnectivityManager.EXTRA_CAPTIVE_PORTAL, CaptivePortal::class.java)
+        mCaptivePortal = intent.getParcelableExtra(ConnectivityManager.EXTRA_CAPTIVE_PORTAL, CaptivePortal::class.java)
         val network = intent.getParcelableExtra(ConnectivityManager.EXTRA_NETWORK, Network::class.java)
 
         Logger.error("captive network: ${network}")
@@ -215,17 +216,14 @@ class WifiDetails {
         }
 
         try {
+            // TODO: Pass on to native app if it's not a Tollgate network
+            // It is possible to get info about the network we're connecting to.
+            // We can get a parcableExtra from the intent (EXTRA_NETWORK) to determine this.
+            mCaptivePortal?.reportCaptivePortalDismissed()
             return getGatewayIp(context)
         } catch (exc: RemoteException) {
             throw RuntimeException(exc)
         }
-
-        // TODO: Pass on to native app if it's not a Tollgate network
-        // It is possible to get info about the network we're connecting to.
-        // We can get a parcableExtra from the intent (EXTRA_NETWORK) to determine this.
-        mCaptivePortal.reportCaptivePortalDismissed()
-
-        return null
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
@@ -277,6 +275,12 @@ class WifiDetails {
         }
 
         connectivityManager.registerDefaultNetworkCallback(networkCallback)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.M)
+    fun markCaptivePortalDismissed() {
+        Logger.error("Dismissing, is it there???: ${mCaptivePortal}")
+        mCaptivePortal?.reportCaptivePortalDismissed()
     }
 }
 

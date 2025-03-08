@@ -11,7 +11,7 @@ export async function registerListener(eventName: string, onEvent: (data: unknow
     );
 }
 
-export async function getMacAddress(gatewayIp: string | undefined): Promise<string | undefined> {
+export async function getClientMacAddress(gatewayIp: string | undefined): Promise<string | undefined> {
     if(gatewayIp === undefined){
         return undefined;
     }
@@ -58,5 +58,13 @@ export async function connectNetwork(ssid: string): Promise<void> {
         console.log("response for connecting to " + ssid + " = " + JSON.stringify(response));
     } catch (e) {
         console.error(`Error connecting to network ${ssid}, reason: ${e}`)
+    }
+}
+
+export async function markCaptivePortalDismissed(): Promise<void> {
+    try{
+        await invoke("plugin:androidwifi|mark_captive_portal_dismissed", {payload: {  } });
+    } catch (e) {
+        console.error(`Error marking captive portal dismissed, reason: ${e}`)
     }
 }

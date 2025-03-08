@@ -1,14 +1,16 @@
 import { NRelay1 } from '@nostrify/nostrify';
 import type NetworkState from "$lib/tollgate/network/NetworkState";
-import {BehaviorSubject, combineLatest, map, Observable, scan, tap} from "rxjs";
+import {BehaviorSubject, combineLatest, map, Observable} from "rxjs";
+import {fetch} from "@tauri-apps/plugin-http";
 
 export default class TollgateState {
-    private _relay: NRelay1 | undefined;
-    private _networkState: NetworkState;
+    public _relay: NRelay1 | undefined;
+    public _networkState: NetworkState;
 
+    public _tollgatePubkey = new BehaviorSubject<string | undefined>(undefined);
     public _networkHasRelay = new BehaviorSubject<boolean>(false);
     public _relayActive = new BehaviorSubject<boolean>(false);
-    public _isTollgate: Observable<boolean>
+    public _tollgateIsReady: Observable<boolean>;
 
     constructor(networkState: NetworkState) {
         this._networkState = networkState;
@@ -17,14 +19,28 @@ export default class TollgateState {
         this._relayActive.subscribe((value => console.log(`relay ${value ? "" : "DIS"}CONNECTED`)));
         this._networkHasRelay.subscribe((value => console.log(`Current network is a TollGate!`)));
 
-        this._isTollgate = combineLatest([this._networkState.networkIsReady, this._networkHasRelay])
-            .pipe(map(([networkStateConnected, networkHasRelay]) => {
-               return networkStateConnected && networkHasRelay
+        this._tollgateIsReady = combineLatest([this._networkState.networkIsReady, this._networkHasRelay, this._tollgatePubkey])
+            .pipe(map(([networkStateConnected, networkHasRelay, tollgatePubKey]) => {
+               return (!!networkStateConnected && !!networkHasRelay && !!tollgatePubKey)
             }))
     }
 
-    public connect() {
+    public async connect() {
         this.connectRelay()
+        this._tollgatePubkey.next(await this.getTollgatePubkey());
+    }
+
+    public async getTollgatePubkey(){
+        const url = ` http://${this._networkState._gatewayIp.value}:2122/pubkey`
+
+        try{
+            const pubkey = await fetch(url).then(res => res.text());
+
+            return pubkey
+        } catch(err) {
+            console.error("Error fetching TollGate's pubkey, reason: ", err)
+            return undefined
+        }
     }
 
     public connectRelay(){
@@ -41,6 +57,7 @@ export default class TollgateState {
         })
     }
 
+    // TODO
     public reset() {
         this._networkHasRelay.next(false);
     }

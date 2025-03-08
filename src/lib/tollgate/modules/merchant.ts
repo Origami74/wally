@@ -1,15 +1,8 @@
-import TollgateNetworkSession from "$lib/tollgate/network/TollgateNetworkSession";
 import {nostrNow} from "$lib/util/helpers";
-import { NSecSigner } from '@nostrify/nostrify';
+import { NRelay1, NSecSigner } from '@nostrify/nostrify';
 
-export async function makePurchase(session: TollgateNetworkSession) {
+export async function makePurchase(relay: NRelay1, tollgatePubkey: string, clientMacAddress: string): Promise<void> {
     console.log("purchasing data")
-    const relay = session.tollgateRelay
-
-    if(!relay) {
-        console.error("No Tollgate relay found for session");
-        return;
-    }
 
     let randomPrivateKey = "4e007801c927832ebfe06e57ef08dba5aefe44076a0add96b1700c9061313490"
     const signer = new NSecSigner(randomPrivateKey);
@@ -20,8 +13,8 @@ export async function makePurchase(session: TollgateNetworkSession) {
         content: "cashuAbcde",
         created_at: nostrNow(),
         tags: [
-            ["p", session.tollgate.pubkey],
-            ["mac", session.userMacAddress],
+            ["p", tollgatePubkey],
+            ["mac", clientMacAddress],
         ],
     };
     const event = await signer.signEvent(note);

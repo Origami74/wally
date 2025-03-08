@@ -2,11 +2,12 @@
 
 Default permissions for the plugin
 
-- `allow-get_wifi_details`
-- `allow-get_mac_address`
-- `allow-get_current_wifi_details`
-- `allow-connect_wifi`
-- `allow-register-istener`
+- `allow-get-wifi-details`
+- `allow-get-mac-address`
+- `allow-get-current-wifi-details`
+- `allow-connect-wifi`
+- `allow-mark-captive-portal-dismissed`
+- `allow-register-listener`
 
 ## Permission Table
 
@@ -182,6 +183,58 @@ Enables the get_wifi_details command without any pre-configured scope.
 <td>
 
 Denies the get_wifi_details command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`androidwifi:allow-mark-captive-portal-dismissed`
+
+</td>
+<td>
+
+Enables the mark_captive_portal_dismissed command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`androidwifi:deny-mark-captive-portal-dismissed`
+
+</td>
+<td>
+
+Denies the mark_captive_portal_dismissed command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`androidwifi:allow-register-listener`
+
+</td>
+<td>
+
+Enables the register-listener command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`androidwifi:deny-register-listener`
+
+</td>
+<td>
+
+Denies the register-listener command without any pre-configured scope.
 
 </td>
 </tr>

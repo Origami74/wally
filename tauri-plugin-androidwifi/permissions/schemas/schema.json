@@ -360,6 +360,26 @@
           "const": "deny-get-wifi-details"
         },
         {
+          "description": "Enables the mark_captive_portal_dismissed command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mark-captive-portal-dismissed"
+        },
+        {
+          "description": "Denies the mark_captive_portal_dismissed command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mark-captive-portal-dismissed"
+        },
+        {
+          "description": "Enables the register-listener command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-register-listener"
+        },
+        {
+          "description": "Denies the register-listener command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-register-listener"
+        },
+        {
           "description": "Enables the registerListener command without any pre-configured scope.",
           "type": "string",
           "const": "allow-registerListener"

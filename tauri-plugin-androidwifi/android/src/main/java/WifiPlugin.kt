@@ -63,7 +63,19 @@ class WifiPlugin(private val activity: Activity): Plugin(activity) {
         }
     }
 
-    fun getWifiDetailsInner(invoke: Invoke) {
+    private suspend fun markCaptivePortalDismissedInner() {
+        implementation.markCaptivePortalDismissed()
+    }
+
+    @Command
+    fun markCaptivePortalDismissed(invoke: Invoke) {
+        backgroundScope.launch {
+            markCaptivePortalDismissedInner()
+            invoke.resolve(JSObject())
+        }
+    }
+
+    private suspend fun getWifiDetailsInner(invoke: Invoke) {
         val ret = JSObject()
         ret.put("wifis", implementation.getWifiDetails(activity.applicationContext))
         invoke.resolve(ret)
