@@ -20,7 +20,7 @@ export default class NetworkState {
 
     public networkIsReady = combineLatest([this._connected, this._gatewayIp, this._clientMacAddress])
         .pipe(map(([connected, gatewayIp, clientMacAddress]) => {
-            return (!!connected && !!gatewayIp && !!clientMacAddress)
+            return (connected === true && !!gatewayIp && !!clientMacAddress)
         }), distinctUntilChanged());
 
     public reset(): void {

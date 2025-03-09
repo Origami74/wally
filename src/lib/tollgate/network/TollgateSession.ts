@@ -26,6 +26,8 @@ export default class TollgateSession {
             this._tollgateState._networkState._clientMacAddress.value!
         );
 
-        await markCaptivePortalDismissed()
+        setTimeout(async () => {
+            await markCaptivePortalDismissed()
+        }, 3000)
     }
 }

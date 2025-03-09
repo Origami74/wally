@@ -28,27 +28,35 @@
   $effect(() => {
     const subs: Subscription[] = []
 
+    const vals: string[] = []
+
     subs.push(tollgateState._networkHasRelay.subscribe((value: boolean) => {
+      console.log("networkHasRelay", value)
       networkHasRelay = value;
     }))
 
     subs.push(tollgateState._relayActive.subscribe((value: boolean) => {
+      console.log("relayActive", value)
       relayActive = value;
     }))
 
     subs.push(tollgateState._tollgateIsReady.subscribe((value: boolean) => {
+      console.log("tollgateReady", value)
       tollgateReady = value;
     }))
 
     subs.push(networkState._clientMacAddress.subscribe((value: string | undefined) => {
+      console.log("macAddress", value)
       macAddress = value ?? "?";
     }))
 
     subs.push(networkState._gatewayIp.subscribe((value: string | undefined) => {
+      console.log("gatewayIp", value)
       gatewayIp = value ?? "?";
     }))
 
     subs.push(tollgateState._tollgatePubkey.subscribe((value: string | undefined) => {
+      console.log("tollgatePubkey", value)
       tollgatePubkey = value ?? "?";
     }))
 
@@ -69,7 +77,9 @@
         }
       })
     })
-    await registerListener("network-disconnected", () => { networkState.reset() })
+    await registerListener("network-disconnected", () => {
+      networkState.reset()
+    })
 
     networkState.networkIsReady.subscribe(async (networkIsReady) => {
       if(networkIsReady) await tollgateState.connect() // TODO: otherwise tollgateState.reset()

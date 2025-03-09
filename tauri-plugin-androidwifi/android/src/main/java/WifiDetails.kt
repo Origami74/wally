@@ -14,6 +14,7 @@ import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.net.wifi.WifiNetworkSuggestion
 import android.os.Build
+import android.os.ConditionVariable
 import android.os.RemoteException
 import androidx.annotation.RequiresApi
 import app.tauri.Logger
@@ -144,14 +145,16 @@ class WifiDetails {
         return info?.type == ConnectivityManager.TYPE_WIFI
     }
 
+    @RequiresApi(Build.VERSION_CODES.M)
     private fun bindToWifiNetwork(context: Context): Network? {
         val connectivityManager =
             context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
+        val activeNetwork = connectivityManager.activeNetwork;
         val networks = connectivityManager.allNetworks;
-
+        Logger.error(activeNetwork.toString())
         networks.forEach { network ->
-            if (isWifiNetwork(context, network)) {
+            if (network.networkHandle != activeNetwork?.networkHandle && isWifiNetwork(context, network)) {
                 Logger.info("Binding application process to wifi network")
                 connectivityManager.bindProcessToNetwork(network)
                 return network
@@ -201,7 +204,7 @@ class WifiDetails {
         return res
     }
 
-    var mCaptivePortal: CaptivePortal? = null;
+    lateinit var dismissPortal: ConditionVariable
     private val lock = Any()
 
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
@@ -210,14 +213,12 @@ class WifiDetails {
         Logger.info("Handling captive portal")
         val network = intent.getParcelableExtra(ConnectivityManager.EXTRA_NETWORK, Network::class.java)
 
-        synchronized (lock) {
-            mCaptivePortal = intent.getParcelableExtra(ConnectivityManager.EXTRA_CAPTIVE_PORTAL, CaptivePortal::class.java)
+        val mCaptivePortal = intent.getParcelableExtra(ConnectivityManager.EXTRA_CAPTIVE_PORTAL, CaptivePortal::class.java)
 
-            Logger.error("captive network: ${network}")
-            if(mCaptivePortal == null) {
-                Logger.error("Could not retrieve captive portal object from intent")
-                return null;
-            }
+        Logger.error("captive network: ${network}")
+        if(mCaptivePortal == null) {
+            Logger.error("Could not retrieve captive portal object from intent")
+            return null;
         }
 
 
@@ -225,7 +226,19 @@ class WifiDetails {
             // TODO: Pass on to native app if it's not a Tollgate network
             // It is possible to get info about the network we're connecting to.
             // We can get a parcableExtra from the intent (EXTRA_NETWORK) to determine this.
-//            mCaptivePortal?.reportCaptivePortalDismissed()
+
+            val task = Runnable {
+                // Code to run in the separate thread
+                println("Running in a separate thread using Runnable interface.")
+                    Logger.error("block")
+                    dismissPortal = ConditionVariable(false);
+                    dismissPortal.block()
+                    Logger.error("dismiss")
+                    mCaptivePortal?.reportCaptivePortalDismissed()
+            }
+            Thread(task).start()
+
+
             return getGatewayIp(context)
         } catch (exc: RemoteException) {
             throw RuntimeException(exc)
@@ -235,6 +248,7 @@ class WifiDetails {
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun getGatewayIp(context: Context): String? {
         val network = bindToWifiNetwork(context)
+
         val connectivityManager =
             context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val linkProperties: LinkProperties? =
@@ -258,8 +272,14 @@ class WifiDetails {
         return null
     }
 
+    var initialized = false;
     @RequiresApi(Build.VERSION_CODES.N)
     fun setupListeners(context: Context, triggerEvent: (String, JSObject) -> Unit) {
+        if(initialized){
+            Logger.warn("Listener already initialized, skipping...")
+            return
+        }
+
         val connectivityManager: ConnectivityManager = context.getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
 
         val networkCallback = object : ConnectivityManager.NetworkCallback() {
@@ -267,6 +287,11 @@ class WifiDetails {
                 if(isWifiNetwork(context, network)){
                     val gatewayIp = getGatewayIp(context)
                     Logger.error("CONNECTED TO NETWORK: ${network}, gateway = ${gatewayIp}")
+
+                    if(gatewayIp == null){
+                        Logger.warn("No gatewayIp found, will not trigger network-connected event")
+                        return;
+                    }
 
                     val data = JSObject()
                     data.put("gatewayIp", gatewayIp)
@@ -286,15 +311,17 @@ class WifiDetails {
     @RequiresApi(Build.VERSION_CODES.M)
     fun markCaptivePortalDismissed() {
 
-        synchronized (lock) {
-            try{
-                mCaptivePortal?.reportCaptivePortalDismissed()
-            } catch (error: Exception){
-                Logger.error("Error while marking captive portal dismissed: ${mCaptivePortal}")
-            }
-
-            mCaptivePortal = null
-        }
+        Logger.error("open")
+        dismissPortal.open()
+//        synchronized (lock) {
+//            try{
+//                mCaptivePortal?.reportCaptivePortalDismissed()
+//            } catch (error: Exception){
+//                Logger.error("Error while marking captive portal dismissed: ${mCaptivePortal}")
+//            }
+//
+//            mCaptivePortal = null
+//        }
     }
 }
 

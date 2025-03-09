@@ -1,6 +1,6 @@
 import { NRelay1 } from '@nostrify/nostrify';
 import type NetworkState from "$lib/tollgate/network/NetworkState";
-import {BehaviorSubject, combineLatest, map, Observable} from "rxjs";
+import {BehaviorSubject, combineLatest, distinctUntilChanged, map, Observable} from "rxjs";
 import {fetch} from "@tauri-apps/plugin-http";
 
 export default class TollgateState {
@@ -20,9 +20,10 @@ export default class TollgateState {
         this._networkHasRelay.subscribe((value => console.log(`Current network is a TollGate!`)));
 
         this._tollgateIsReady = combineLatest([this._networkState.networkIsReady, this._networkHasRelay, this._tollgatePubkey])
-            .pipe(map(([networkStateConnected, networkHasRelay, tollgatePubKey]) => {
-               return (!!networkStateConnected && !!networkHasRelay && !!tollgatePubKey)
-            }))
+            .pipe(map(([networkIsReady, networkHasRelay, tollgatePubKey]) => {
+                const ready = (!!networkIsReady && !!networkHasRelay && !!tollgatePubKey)
+                return ready
+            }), distinctUntilChanged());
     }
 
     public async connect() {
