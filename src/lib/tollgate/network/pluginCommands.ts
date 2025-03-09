@@ -31,6 +31,23 @@ export async function getClientMacAddress(gatewayIp: string | undefined): Promis
     }
 }
 
+export async function getGatewayIp(): Promise<string | undefined> {
+    try{
+        const gatewayIpResult: {gatewayIp: string | undefined} = await invoke("plugin:androidwifi|get_gateway_ip", { payload: { } });
+
+        let gatewayIp = gatewayIpResult.gatewayIp;
+
+        // Convert 'null' string back to undefined
+        if (gatewayIp === null || gatewayIp === 'null') {
+            gatewayIp = undefined;
+        }
+
+        return gatewayIp
+    } catch (e) {
+        throw new Error(`Failed to determine gatewayIp, reason: ${e}`);
+    }
+}
+
 export async function getCurrentNetwork(): Promise<ConnectedNetworkInfo> {
     const currentNetworkInfo = await invoke("plugin:androidwifi|get_current_wifi_details", { payload: { value: "" } })
     const details = currentNetworkInfo.wifi;

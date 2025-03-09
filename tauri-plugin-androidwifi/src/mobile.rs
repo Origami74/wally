@@ -53,6 +53,13 @@ impl<R: Runtime> Androidwifi<R> {
       .map_err(Into::into)
   }
 
+  pub fn get_gateway_ip(&self, payload: Empty) -> crate::Result<GatewayIpResponse> {
+    self
+      .0
+      .run_mobile_plugin("getMacAddress", payload)
+      .map_err(Into::into)
+  }
+
   pub fn mark_captive_portal_dismissed(&self, payload: Empty) -> crate::Result<MacAddressResponse> {
     self
       .0

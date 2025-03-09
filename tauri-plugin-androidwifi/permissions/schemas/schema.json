@@ -340,6 +340,16 @@
           "const": "deny-get-current-wifi-details"
         },
         {
+          "description": "Enables the get_gateway_ip command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-gateway-ip"
+        },
+        {
+          "description": "Denies the get_gateway_ip command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-gateway-ip"
+        },
+        {
           "description": "Enables the get_mac_address command without any pre-configured scope.",
           "type": "string",
           "const": "allow-get-mac-address"

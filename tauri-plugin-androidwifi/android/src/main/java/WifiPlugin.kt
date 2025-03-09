@@ -44,13 +44,13 @@ class WifiPlugin(private val activity: Activity): Plugin(activity) {
     }
 
 
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     override fun onNewIntent(intent: Intent) {
         if (intent.action == "android.net.conn.CAPTIVE_PORTAL") {
 
             backgroundScope.launch {
-                val gatewayIp = implementation.handleCaptivePortalIntent(activity.applicationContext, intent)
+                implementation.handleCaptivePortalIntent(activity.applicationContext, intent)
                 val data = JSObject()
-                data.put("gatewayIp", gatewayIp)
                 trigger("network-connected", data)
             }
         }
@@ -109,6 +109,23 @@ class WifiPlugin(private val activity: Activity): Plugin(activity) {
         val ret = JSObject()
         val macAddress = implementation.getMacAddress(activity.applicationContext, gatewayIp)
         ret.put("macAddress", macAddress)
+
+        invoke.resolve(ret)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    @Command
+    fun getGatewayIp(invoke: Invoke) {
+        backgroundScope.launch {
+            getGatewayIpInner(invoke)
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private suspend fun getGatewayIpInner(invoke: Invoke) {
+        val ret = JSObject()
+        val gatewayIp = implementation.getGatewayIp(activity.applicationContext)
+        ret.put("gatewayIp", gatewayIp)
 
         invoke.resolve(ret)
     }

@@ -3,6 +3,7 @@ description = "Default permissions for the plugin"
 permissions = [
     "allow-get-wifi-details",
     "allow-get-mac-address",
+    "allow-get-gateway-ip",
     "allow-get-current-wifi-details",
     "allow-connect-wifi",
     "allow-mark-captive-portal-dismissed",

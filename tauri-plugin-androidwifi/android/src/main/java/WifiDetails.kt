@@ -95,8 +95,6 @@ class WifiDetails {
     fun getMacAddress(context: Context, gatewayIp: String): String? {
         bindToWifiNetwork(context)
 
-        Logger.info("getMacaddress: gatewayIp ", gatewayIp)
-
         val client = OkHttpClient.Builder()
             .connectTimeout(250, TimeUnit.MILLISECONDS)
             .readTimeout(250, TimeUnit.MILLISECONDS)
@@ -151,10 +149,16 @@ class WifiDetails {
             context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
         val activeNetwork = connectivityManager.activeNetwork;
+
+        if(activeNetwork != null && isWifiNetwork(context, activeNetwork)){
+            Logger.warn("Active network is already a wifi-network, won't rebind...")
+            return activeNetwork
+        }
+
         val networks = connectivityManager.allNetworks;
         Logger.error(activeNetwork.toString())
         networks.forEach { network ->
-            if (network.networkHandle != activeNetwork?.networkHandle && isWifiNetwork(context, network)) {
+            if (isWifiNetwork(context, network)) {
                 Logger.info("Binding application process to wifi network")
                 connectivityManager.bindProcessToNetwork(network)
                 return network
@@ -208,7 +212,7 @@ class WifiDetails {
     private val lock = Any()
 
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    fun handleCaptivePortalIntent(context: Context, intent: Intent): String? {
+    fun handleCaptivePortalIntent(context: Context, intent: Intent) {
 
         Logger.info("Handling captive portal")
         val network = intent.getParcelableExtra(ConnectivityManager.EXTRA_NETWORK, Network::class.java)
@@ -218,7 +222,7 @@ class WifiDetails {
         Logger.error("captive network: ${network}")
         if(mCaptivePortal == null) {
             Logger.error("Could not retrieve captive portal object from intent")
-            return null;
+            return
         }
 
 
@@ -239,14 +243,14 @@ class WifiDetails {
             Thread(task).start()
 
 
-            return getGatewayIp(context)
+            return
         } catch (exc: RemoteException) {
             throw RuntimeException(exc)
         }
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
-    private fun getGatewayIp(context: Context): String? {
+    fun getGatewayIp(context: Context): String? {
         val network = bindToWifiNetwork(context)
 
         val connectivityManager =
@@ -262,7 +266,6 @@ class WifiDetails {
         for (routeInfo in linkProperties.routes) {
             if (routeInfo.isDefaultRoute && routeInfo.hasGateway()) {
                 val gatewayIp = routeInfo.gateway?.hostAddress
-                Logger.info("gatewayIp: ${gatewayIp}")
                 if(isValidIPv4Address(gatewayIp)){
                     return gatewayIp
                 }
@@ -285,16 +288,9 @@ class WifiDetails {
         val networkCallback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 if(isWifiNetwork(context, network)){
-                    val gatewayIp = getGatewayIp(context)
-                    Logger.error("CONNECTED TO NETWORK: ${network}, gateway = ${gatewayIp}")
-
-                    if(gatewayIp == null){
-                        Logger.warn("No gatewayIp found, will not trigger network-connected event")
-                        return;
-                    }
+                    Logger.error("CONNECTED TO NETWORK: ${network}")
 
                     val data = JSObject()
-                    data.put("gatewayIp", gatewayIp)
                     triggerEvent("network-connected", data)
                 }
             }
@@ -312,16 +308,9 @@ class WifiDetails {
     fun markCaptivePortalDismissed() {
 
         Logger.error("open")
-        dismissPortal.open()
-//        synchronized (lock) {
-//            try{
-//                mCaptivePortal?.reportCaptivePortalDismissed()
-//            } catch (error: Exception){
-//                Logger.error("Error while marking captive portal dismissed: ${mCaptivePortal}")
-//            }
-//
-//            mCaptivePortal = null
-//        }
+        if (this::dismissPortal.isInitialized) {
+            dismissPortal.open()
+        }
     }
 }
 

@@ -70,13 +70,14 @@
   })
 
   onMount(async () => {
-    await registerListener("network-connected", async (data) => {
+    await registerListener("network-connected", async () => {
       tollgateState._tollgateIsReady.subscribe(async (isReady: boolean) => {
         if(!isReady) {
-          await networkState.onConnected(data as OnConnectedInfo)
+          await networkState.performNetworkCheck()
         }
       })
     })
+
     await registerListener("network-disconnected", () => {
       networkState.reset()
     })
@@ -102,6 +103,8 @@
   });
 
 </script>
+
+{#await networkState.performNetworkCheck()}{/await}
 
 <main class="container">
   <h1>Welcome to Tollgate</h1>

@@ -3,6 +3,7 @@ const COMMANDS: &[&str] = &[
   "get_current_wifi_details",
   "connect_wifi",
   "get_mac_address",
+  "get_gateway_ip",
   "mark_captive_portal_dismissed",
   "register-listener",
 ];

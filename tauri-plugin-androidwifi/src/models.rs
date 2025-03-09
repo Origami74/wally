@@ -51,6 +51,12 @@ pub struct MacAddressResponse {
     pub mac_address: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayIpResponse {
+    pub gateway_ip: Option<String>,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectWifiPayload {
@@ -62,6 +68,8 @@ pub struct ConnectWifiPayload {
 pub struct GetMacAddressPayload {
     pub gateway_ip: String,
 }
+
+
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

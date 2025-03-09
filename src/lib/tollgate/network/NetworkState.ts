@@ -1,4 +1,4 @@
-import {getClientMacAddress} from "$lib/tollgate/network/pluginCommands";
+import {getClientMacAddress, getGatewayIp} from "$lib/tollgate/network/pluginCommands";
 import {BehaviorSubject, combineLatest, distinctUntilChanged, map, Observable, Subject} from 'rxjs';
 
 export type OnConnectedInfo = {
@@ -10,9 +10,9 @@ export default class NetworkState {
     public _gatewayIp= new BehaviorSubject<string | undefined>(undefined);
     public _clientMacAddress = new BehaviorSubject<string | undefined>(undefined);
 
-    public async onConnected(data: OnConnectedInfo){
+    public async performNetworkCheck(){
         this._connected.next(true)
-        this._gatewayIp.next(data.gatewayIp)
+        this._gatewayIp.next(await getGatewayIp())
         this._clientMacAddress.next(await getClientMacAddress(this._gatewayIp.value));
 
         console.log(`Network connected, gateway: '${this._gatewayIp.value}', macAddress: '${this._clientMacAddress.value}'`);

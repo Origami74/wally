@@ -4,6 +4,7 @@ Default permissions for the plugin
 
 - `allow-get-wifi-details`
 - `allow-get-mac-address`
+- `allow-get-gateway-ip`
 - `allow-get-current-wifi-details`
 - `allow-connect-wifi`
 - `allow-mark-captive-portal-dismissed`
@@ -131,6 +132,32 @@ Enables the get_current_wifi_details command without any pre-configured scope.
 <td>
 
 Denies the get_current_wifi_details command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`androidwifi:allow-get-gateway-ip`
+
+</td>
+<td>
+
+Enables the get_gateway_ip command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`androidwifi:deny-get-gateway-ip`
+
+</td>
+<td>
+
+Denies the get_gateway_ip command without any pre-configured scope.
 
 </td>
 </tr>
