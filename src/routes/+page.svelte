@@ -5,34 +5,36 @@
   import {registerListener} from "$lib/tollgate/network/pluginCommands"
   import NetworkState, {type OnConnectedInfo} from "$lib/tollgate/network/NetworkState";
   import TollgateState from "$lib/tollgate/network/TollgateState";
-  import { Subscription} from "rxjs";
+  import {type BehaviorSubject, Subscription} from "rxjs";
   import {shortenString} from "$lib/util/helpers";
   import TollgateSession from "$lib/tollgate/network/TollgateSession";
 
   let userLog: string[] = $state([]);
 
-  // let tollgates: Tollgate[] = $state([]);
-
   let networkState:  NetworkState = new NetworkState();
   let tollgateState:  TollgateState = new TollgateState(networkState);
   let tollgateSession:  TollgateSession = new TollgateSession(tollgateState);
 
-  let macAddress = $state("?")
-  let gatewayIp = $state("?")
+  let networkReady = $state(false)
+  let macAddress = $state("WAITING")
+  let gatewayIp = $state("WAITING")
   let networkHasRelay = $state(false)
   let relayActive = $state(false)
   let tollgateReady = $state(false)
-  let tollgatePubkey = $state("?")
+  let tollgatePubkey = $state("WAITING")
   let tollgateSessionActive = $state(false)
 
   $effect(() => {
     const subs: Subscription[] = []
 
-    const vals: string[] = []
-
     subs.push(tollgateState._networkHasRelay.subscribe((value: boolean) => {
       console.log("networkHasRelay", value)
       networkHasRelay = value;
+    }))
+
+    subs.push(networkState.networkIsReady.subscribe((value: boolean) => {
+      console.log("networkReady", value)
+      networkReady = value;
     }))
 
     subs.push(tollgateState._relayActive.subscribe((value: boolean) => {
@@ -121,44 +123,53 @@
   <h2>Current Network</h2>
   <table style="width:100%">
     <tbody>
-    <tr>
-      <td style="text-align: right"><strong>TollGate Ready</strong></td>
-      <td style="text-align: left">
-        {#if (tollgateReady)}
-          <span style="color: green">YES </span>
-        {:else}
-          <span style="color: red">NO </span>
-        {/if}
-      </td>
-
-    </tr>
-    <tr>
-      <td style="text-align: right"><strong>My MAC address</strong></td>
-      <td style="text-align: left">{macAddress}</td>
-    </tr>
-    <tr>
-      <td style="text-align: right"><strong>TollGate IP</strong></td>
-      <td style="text-align: left">{gatewayIp}</td>
-    </tr>
-    <tr>
-      <td style="text-align: right"><strong>TollGate PubKey</strong></td>
-      <td style="text-align: left">{shortenString(tollgatePubkey, 5)}</td>
-    </tr>
-    <tr>
-      <td style="text-align: right"><strong>Relay</strong></td>
-          <td style="text-align: left">
-            {#if (networkHasRelay)}
-              <span style="color: green">YES </span><span> - </span>
-            {:else}
-              <span style="color: red">NO </span><span> - </span>
-            {/if}
-            {#if (relayActive)}
-              <span style="color: green">CONNECTED</span>
-            {:else}
-              <span style="color: red">NOT CONNECTED</span>
-            {/if}
-          </td>
-    </tr>
+      <tr>
+        <td style="text-align: right"><strong>Gateway IP</strong></td>
+        <td style="text-align: left">{gatewayIp}</td>
+      </tr>
+      <tr>
+        <td style="text-align: right"><strong>My MAC address</strong></td>
+        <td style="text-align: left">{macAddress}</td>
+      </tr>
+      <tr>
+        <td style="text-align: right"><strong>Network</strong></td>
+        <td style="text-align: left">
+          {#if (networkReady)}
+            <span style="color: green">Ready </span>
+          {:else}
+            <span style="color: red">NOT READY</span>
+          {/if}
+        </td>
+      </tr>
+      <tr>
+        <td style="text-align: right"><strong>TollGate PubKey</strong></td>
+        <td style="text-align: left">{shortenString(tollgatePubkey, 5)}</td>
+      </tr>
+      <tr>
+        <td style="text-align: right"><strong>Relay</strong></td>
+        <td style="text-align: left">
+          {#if (networkHasRelay)}
+            <span style="color: green">READY </span><span> - </span>
+          {:else}
+            <span style="color: red">NOT READY </span><span> - </span>
+          {/if}
+          {#if (relayActive)}
+            <span style="color: green">ACTIVE</span>
+          {:else}
+            <span style="color: coral">INACTIVE</span>
+          {/if}
+        </td>
+      </tr>
+      <tr>
+        <td style="text-align: right"><strong>TollGate Ready</strong></td>
+        <td style="text-align: left">
+          {#if (tollgateReady)}
+            <span style="color: green">YES </span>
+          {:else}
+            <span style="color: red">NO </span>
+          {/if}
+        </td>
+      </tr>
     </tbody>
   </table>
 

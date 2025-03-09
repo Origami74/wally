@@ -28,6 +28,6 @@ export default class TollgateSession {
 
         setTimeout(async () => {
             await markCaptivePortalDismissed()
-        }, 3000)
+        }, 1500)
     }
 }
