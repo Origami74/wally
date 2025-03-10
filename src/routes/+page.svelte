@@ -7,13 +7,42 @@
   import TollgateState from "$lib/tollgate/network/TollgateState";
   import {type BehaviorSubject, Subscription} from "rxjs";
   import {shortenString} from "$lib/util/helpers";
-  import TollgateSession from "$lib/tollgate/network/TollgateSession";
+  import TollgateSessionState from "$lib/tollgate/network/TollgateSessionState";
 
   let userLog: string[] = $state([]);
 
-  let networkState:  NetworkState = new NetworkState();
-  let tollgateState:  TollgateState = new TollgateState(networkState);
-  let tollgateSession:  TollgateSession = new TollgateSession(tollgateState);
+  let networkState = new NetworkState();
+  let tollgateState = new TollgateState(networkState);
+  let tollgateSession = new TollgateSessionState(tollgateState);
+
+  onMount(async () => {
+    await registerListener("network-connected", async () => {
+      networkState.networkIsReady.subscribe(async (isReady: boolean) => { // TODO: Was tollgateState._tollgateIsReady.sub (check if worked)
+        if(!isReady) {
+          await networkState.performNetworkCheck()
+        }
+      })
+    })
+
+    await registerListener("network-disconnected", () => {
+      networkState.reset()
+    })
+  })
+
+
+
+
+  // creates and adds the feedback button to the page
+  createFeedbackButton({
+    developer: "1096f6be0a4d7f0ecc2df4ed2c8683f143efc81eeba3ece6daadd2fca74c7ecc",
+    namespace: "tollgate-app",
+    relays: [
+      "wss://relay.damus.io",
+    ],
+
+    // additional options
+  });
+
 
   let networkReady = $state(false)
   let macAddress = $state("WAITING")
@@ -62,48 +91,14 @@
       tollgatePubkey = value ?? "?";
     }))
 
-    // subs.push(tollgateSession._sessionIsActive.subscribe((value: boolean) => {
-    //   tollgateSessionActive = value;
-    // }))
+    subs.push(tollgateSession._sessionIsActive.subscribe((value: boolean) => {
+      tollgateSessionActive = value;
+    }))
 
     return () => {
       subs.forEach(sub => sub.unsubscribe);
     }
   })
-
-  onMount(async () => {
-    await registerListener("network-connected", async () => {
-      tollgateState._tollgateIsReady.subscribe(async (isReady: boolean) => {
-        if(!isReady) {
-          await networkState.performNetworkCheck()
-        }
-      })
-    })
-
-    await registerListener("network-disconnected", () => {
-      networkState.reset()
-    })
-
-    networkState.networkIsReady.subscribe(async (networkIsReady) => {
-      if(networkIsReady) await tollgateState.connect() // TODO: otherwise tollgateState.reset()
-    })
-
-    tollgateState._tollgateIsReady.subscribe(async (tollgateIsReady) => {
-      if(tollgateIsReady) await tollgateSession.createSession()
-    })
-  })
-
-  // creates and adds the feedback button to the page
-  createFeedbackButton({
-    developer: "1096f6be0a4d7f0ecc2df4ed2c8683f143efc81eeba3ece6daadd2fca74c7ecc",
-    namespace: "tollgate-app",
-    relays: [
-      "wss://relay.damus.io",
-    ],
-
-    // additional options
-  });
-
 </script>
 
 {#await networkState.performNetworkCheck()}{/await}

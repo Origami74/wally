@@ -189,19 +189,19 @@ jobs:
         with:
           name: android
           path: android-artifacts-unsigned/*
-
-      - name: List signed apk's
-        run: |
-          cd android-artifacts-unsigned
-          signed_apks=$(ls | grep "signed.apk$")
-          echo $signed_apks
-          echo "SIGNED_APK_FILES=${signed_apks}" >> $GITHUB_ENV
-
-      - name: Upload to Blossom
-        uses: Origami74/upload-blossom-action@multi-file
-        continue-on-error: true # TODO: fail
-        env:
-          SIGNED_APK_FILES: ${{ env.SIGNED_APK_FILES }}
-        with:
-          host: 'https://blossom.swissdash.site/'
-          filePaths: '${{ env.SIGNED_APK_FILES }}'
+#
+#      - name: List signed apk's
+#        run: |
+#          cd android-artifacts-unsigned
+#          signed_apks=$(ls | grep "signed.apk$")
+#          echo $signed_apks
+#          echo "SIGNED_APK_FILES=${signed_apks}" >> $GITHUB_ENV
+#
+#      - name: Upload to Blossom
+#        uses: Origami74/upload-blossom-action@multi-file
+#        continue-on-error: true # TODO: fail
+#        env:
+#          SIGNED_APK_FILES: ${{ env.SIGNED_APK_FILES }}
+#        with:
+#          host: 'https://blossom.swissdash.site/'
+#          filePaths: '${{ env.SIGNED_APK_FILES }}'

@@ -15,10 +15,7 @@ pub fn run() {
             ])
             .build(),
     )
-    .setup(|app| {
-            log::info!("TollGate app is starting");
-            Ok(())
-        })
+
     .plugin(tauri_plugin_http::init())
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_os::init())

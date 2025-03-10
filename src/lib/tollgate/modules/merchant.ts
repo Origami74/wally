@@ -23,35 +23,6 @@ export async function makePurchase(relay: NRelay1, tollgatePubkey: string, clien
     console.log(`sending: ${JSON.stringify(event)}`);
     await relay.event(event);
 
-    // const sessionFilter = {
-    //     kinds: [2200, 22000, 66666],
-    //     since: nostrNow() - 60000000
-    //     // "#mac": [clientMacAddress]
-    // }
-    //
-    // for await (const msg of relay.req([sessionFilter])) {
-    //     // console.log(msg);
-    //     if (msg[0] === 'EVENT') {
-    //         console.log(msg[2]);
-    //
-    //         const event = msg[2]
-    //
-    //         const macAddress = getTag(event, "mac")?.[1]
-    //         const sessionEnd = getTag(event, "session-end")?.[1]
-    //
-    //         if(!macAddress || !sessionEnd) {
-    //             console.log("mac/session-end missing from tags: ", macAddress, sessionEnd)
-    //             continue;
-    //         }
-    //
-    //         if(macAddress != clientMacAddress) {
-    //             continue;
-    //         }
-    //
-    //         console.log("sessionEnd", sessionEnd)
-    //         console.log("session left:", Number(sessionEnd) - nostrNow())
-    //     }
-    //     // if (msg[0] === 'EOSE') continue; // Sends a `CLOSE` message to the relay.
-    // }
+
 
 }

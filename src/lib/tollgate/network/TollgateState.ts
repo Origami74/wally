@@ -17,13 +17,25 @@ export default class TollgateState {
 
         this._networkHasRelay.subscribe((value => console.log(`Network has nostr relay`)));
         this._relayActive.subscribe((value => console.log(`relay ${value ? "" : "DIS"}CONNECTED`)));
-        this._networkHasRelay.subscribe((value => console.log(`Current network is a TollGate!`)));
+        this._networkHasRelay.subscribe((value => {
+            if(value === true){
+                console.log(`Current network is a TollGate!`)
+            }
+        }));
 
         this._tollgateIsReady = combineLatest([this._networkState.networkIsReady, this._networkHasRelay, this._tollgatePubkey])
             .pipe(map(([networkIsReady, networkHasRelay, tollgatePubKey]) => {
-                const ready = (!!networkIsReady && !!networkHasRelay && !!tollgatePubKey)
-                return ready
+                return  (!!networkIsReady && !!networkHasRelay && !!tollgatePubKey)
             }), distinctUntilChanged());
+
+        this._networkState.networkIsReady.subscribe(async (networkIsReady) => {
+            if(networkIsReady) {
+                await this.connect()
+            } else{
+                console.log("NetworkState no longer ready, resetting tollgateState (TODO)")
+                this.reset()
+            }
+        })
     }
 
     public async connect() {
@@ -61,5 +73,8 @@ export default class TollgateState {
     // TODO
     public reset() {
         this._networkHasRelay.next(false);
+        this._relay?.close()
+        this._tollgatePubkey.next(undefined);
+        this._relayActive.next(false);
     }
 }
