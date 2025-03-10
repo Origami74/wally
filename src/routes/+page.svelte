@@ -2,7 +2,7 @@
   import { onMount} from "svelte";
   import { createFeedbackButton } from "nostr-feedback-button/feedback";
   import "nostr-feedback-button/styles.css";
-  import {registerListener} from "$lib/tollgate/network/pluginCommands"
+  import {markCaptivePortalDismissed, registerListener} from "$lib/tollgate/network/pluginCommands"
   import NetworkState, {type OnConnectedInfo} from "$lib/tollgate/network/NetworkState";
   import TollgateState from "$lib/tollgate/network/TollgateState";
   import {type BehaviorSubject, Subscription} from "rxjs";
@@ -17,6 +17,10 @@
 
   onMount(async () => {
     await registerListener("network-connected", async () => {
+      if(tollgateSession._sessionIsActive) {
+        tollgateSession.sessionExpired();
+      }
+
       networkState.networkIsReady.subscribe(async (isReady: boolean) => { // TODO: Was tollgateState._tollgateIsReady.sub (check if worked)
         if(!isReady) {
           await networkState.performNetworkCheck()

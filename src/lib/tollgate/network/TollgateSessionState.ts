@@ -1,10 +1,10 @@
 import { BehaviorSubject, combineLatest, map, Observable} from "rxjs";
 import type TollgateState from "$lib/tollgate/network/TollgateState";
-import {makePurchase} from "$lib/tollgate/modules/merchant";
 import {markCaptivePortalDismissed} from "$lib/tollgate/network/pluginCommands";
 import { generateSecretKey, getPublicKey } from 'nostr-tools/pure'
 import {nostrNow} from "$lib/util/helpers";
 import {getTag} from "$lib/util/nostr";
+import { NSecSigner } from '@nostrify/nostrify';
 
 export default class TollgateSessionState {
     private _tollgateState: TollgateState;
@@ -19,14 +19,7 @@ export default class TollgateSessionState {
         // Create session state when tollGate becomes ready
         this._tollgateState._tollgateIsReady.subscribe(async (tollgateIsReady) => {
             if(tollgateIsReady) {
-
-               this._sessionSecretKey.next(generateSecretKey());
-
-                await makePurchase(
-                    this._tollgateState._relay!,
-                    this._tollgateState._tollgatePubkey.value!,
-                    this._tollgateState._networkState._clientMacAddress.value!
-                );
+                await this.makePurchase();
             } else{
                 console.log("TollgateState no longer ready, resetting tollgateSessionState (TODO)")
                 this.reset()
@@ -38,20 +31,42 @@ export default class TollgateSessionState {
                return (tollgateIsReady === true && !!sessionSecretKey && sessionConfirmedByTollgate === true)
             }))
 
-        // this._sessionIsActive.subscribe((value => console.log(`Tollgate session ${value ? "STARTED" : "STOPPED"}`)));
         this._sessionSecretKey.subscribe(async (secretKey) => {
             if(!!secretKey){
                 await this.listenForSessionConfirmation()
-            } else {
-
             }
         })
 
     }
 
     private reset() {
-        this._sessionSecretKey.next(undefined);
         this._sessionConfirmedByTollgate.next(false);
+        this._sessionSecretKey.next(undefined);
+    }
+
+    private async makePurchase(): Promise<void> {
+        console.log("cycling private key")
+        this._sessionSecretKey.next(generateSecretKey());
+
+        console.log("purchasing data")
+
+        let randomPrivateKey = "4e007801c927832ebfe06e57ef08dba5aefe44076a0add96b1700c9061313490"
+        const signer = new NSecSigner(randomPrivateKey);
+
+        const note = {
+            kind: 21000,
+            pubkey: signer.getPublicKey(),
+            content: "cashuAbcde",
+            created_at: nostrNow(),
+            tags: [
+                ["p", this._tollgateState._tollgatePubkey.value!],
+                ["mac", this._tollgateState._networkState._clientMacAddress.value!],
+            ],
+        };
+        const event = await signer.signEvent(note);
+
+        console.log(`sending: ${JSON.stringify(event)}`);
+        await this._tollgateState._relay!.event(event);
     }
 
     private async listenForSessionConfirmation() {
@@ -93,5 +108,9 @@ export default class TollgateSessionState {
             }
             // if (msg[0] === 'EOSE') continue; // Sends a `CLOSE` message to the relay.
         }
+    }
+
+    sessionExpired() {
+        this.reset()
     }
 }
