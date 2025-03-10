@@ -16,6 +16,7 @@ import android.webkit.WebView
 import androidx.annotation.RequiresApi
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import app.tauri.Logger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -109,7 +110,6 @@ class WifiPlugin(private val activity: Activity): Plugin(activity) {
         val ret = JSObject()
         val macAddress = implementation.getMacAddress(activity.applicationContext, gatewayIp)
         ret.put("macAddress", macAddress)
-
         invoke.resolve(ret)
     }
 
