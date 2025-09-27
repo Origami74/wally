@@ -56,7 +56,7 @@ impl<R: Runtime> Androidwifi<R> {
   pub fn get_gateway_ip(&self, payload: Empty) -> crate::Result<GatewayIpResponse> {
     self
       .0
-      .run_mobile_plugin("getMacAddress", payload)
+      .run_mobile_plugin("getGatewayIp", payload)
       .map_err(Into::into)
   }
 

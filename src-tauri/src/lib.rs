@@ -127,6 +127,16 @@ async fn get_current_wifi_details(app: tauri::AppHandle) -> Result<serde_json::V
 }
 
 #[tauri::command]
+async fn get_gateway_ip(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let payload = Empty { value: None };
+    
+    match app.androidwifi().get_gateway_ip(payload) {
+        Ok(result) => Ok(serde_json::to_value(result).unwrap()),
+        Err(e) => Err(format!("Failed to get gateway IP: {}", e))
+    }
+}
+
+#[tauri::command]
 async fn get_active_sessions(state: State<'_, TollGateState>) -> Result<Vec<serde_json::Value>, String> {
     let service = state.lock().await;
     
@@ -204,6 +214,7 @@ pub fn run() {
             get_active_sessions,
             get_mac_address,
             get_current_wifi_details,
+            get_gateway_ip,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

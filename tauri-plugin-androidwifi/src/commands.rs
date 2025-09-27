@@ -29,3 +29,8 @@ pub(crate) async fn get_current_wifi_details<R: Runtime>(app: AppHandle<R>, payl
 pub(crate) async fn get_mac_address<R: Runtime>(app: AppHandle<R>, payload: GetMacAddressPayload) -> crate::Result<MacAddressResponse> {
     app.androidwifi().get_mac_address(payload)
 }
+
+#[command]
+pub(crate) async fn get_gateway_ip<R: Runtime>(app: AppHandle<R>, payload: Empty) -> crate::Result<GatewayIpResponse> {
+    app.androidwifi().get_gateway_ip(payload)
+}

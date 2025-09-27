@@ -37,10 +37,21 @@
 			// Get current WiFi details
 			try {
 				const wifiResult = await invoke('get_current_wifi_details');
-				deviceInfo.currentNetwork = wifiResult.ssid || 'Not connected';
-				deviceInfo.gatewayIp = wifiResult.gateway_ip || 'Unknown';
+				if (wifiResult.wifi) {
+					deviceInfo.currentNetwork = wifiResult.wifi.ssid || 'Not connected';
+				} else {
+					deviceInfo.currentNetwork = 'Not connected';
+				}
 			} catch (e) {
 				deviceInfo.currentNetwork = `Error: ${e}`;
+			}
+			
+			// Get gateway IP separately
+			try {
+				const gatewayResult = await invoke('get_gateway_ip');
+				deviceInfo.gatewayIp = gatewayResult.gateway_ip || 'Unknown';
+			} catch (e) {
+				deviceInfo.gatewayIp = 'Unknown';
 			}
 			
 			// Check if current network is a TollGate

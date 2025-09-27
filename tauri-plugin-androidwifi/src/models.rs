@@ -42,7 +42,6 @@ pub struct CurrentWifiResponse {
 pub struct CurrentWifi {
   pub ssid: String,
   pub bssid: String,
-  pub mac_address: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]

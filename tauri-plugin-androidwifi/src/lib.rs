@@ -37,7 +37,7 @@ impl<R: Runtime, T: Manager<R>> crate::AndroidwifiExt<R> for T {
 /// Initializes the plugin.
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
   Builder::new("androidwifi")
-    .invoke_handler(tauri::generate_handler![get_wifi_details, get_current_wifi_details, get_mac_address, connect_wifi])
+    .invoke_handler(tauri::generate_handler![get_wifi_details, get_current_wifi_details, get_mac_address, get_gateway_ip, connect_wifi])
     .setup(|app, api| {
       #[cfg(mobile)]
       let androidwifi = mobile::init(app, api)?;
