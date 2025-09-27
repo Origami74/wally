@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tollgate-ui",
+  "productName": "MeshMate",
   "version": "0.1.0",
-  "identifier": "com.tollgate-ui.app",
+  "identifier": "com.meshmate.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "tollgate-ui",
+        "title": "MeshMate",
         "width": 800,
         "height": 600
       }
@@ -30,7 +30,8 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
-      "icons/icon.ico"
+      "icons/icon.ico",
+      "icons/icon.png"
     ]
   }
 }

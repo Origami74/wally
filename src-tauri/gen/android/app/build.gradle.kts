@@ -1,4 +1,3 @@
-import java.io.FileInputStream
 import java.util.Properties
 
 plugins {
@@ -16,16 +15,15 @@ val tauriProperties = Properties().apply {
 
 android {
     compileSdk = 34
-    namespace = "com.tollgate_ui.app"
+    namespace = "com.meshmate.app"
     defaultConfig {
-        manifestPlaceholders["usesCleartextTraffic"] = "true"
-        applicationId = "com.tollgate_ui.app"
+        manifestPlaceholders["usesCleartextTraffic"] = "false"
+        applicationId = "com.meshmate.app"
         minSdk = 24
         targetSdk = 34
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
-
     buildTypes {
         getByName("debug") {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
@@ -40,7 +38,6 @@ android {
         }
         getByName("release") {
             isMinifyEnabled = true
-            
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
                     .plus(getDefaultProguardFile("proguard-android-optimize.txt"))
