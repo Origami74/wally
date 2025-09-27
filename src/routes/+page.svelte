@@ -126,46 +126,17 @@
 
 <main class="app">
   <div class="header">
-    <h1>TollGate</h1>
+    <div class="logo-container">
+      <img src="/meshmate-logo-orange.webp" alt="MeshMate" class="logo" />
+    </div>
+    <!-- <h1>MeshMate</h1> -->
     <div class="wallet-balance">
       {walletBalance} sats
     </div>
-  </div>
 
-  <div class="status-section">
-    <div 
-      class="status-indicator"
-      style="background-color: {getStatusColor(connectionStatus)}"
-    >
-      <div class="status-text">{getStatusText(connectionStatus)}</div>
+    <div class="status-indicator">
+      {getStatusText(connectionStatus)}
     </div>
-
-    {#if currentSession}
-      <div class="session-info">
-        <div class="usage-bar">
-          <div 
-            class="usage-fill"
-            style="width: {usagePercentage}%"
-          ></div>
-        </div>
-        
-        <div class="remaining-info">
-          {#if remainingTime !== "--:--"}
-            <div class="remaining-time">
-              <span class="label">Time:</span>
-              <span class="value">{remainingTime}</span>
-            </div>
-          {/if}
-          
-          {#if remainingData !== "--"}
-            <div class="remaining-data">
-              <span class="label">Data:</span>
-              <span class="value">{remainingData}</span>
-            </div>
-          {/if}
-        </div>
-      </div>
-    {/if}
   </div>
 
   <div class="toggle-section">
@@ -196,53 +167,46 @@
 
 <style>
   .app {
-    min-height: 100vh;
+    min-height: calc(100vh - 80px); /* Account for bottom navigation */
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     padding: 2rem;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
 
   .header {
     text-align: center;
-    margin-bottom: 3rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .logo-container {
+    margin-bottom: 0.5rem;
+  }
+
+  .logo {
+    height: 240px; /* Keep logo large as requested */
+    width: auto;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
   }
 
   .header h1 {
-    font-size: 3rem;
+    font-size: 2rem;
     font-weight: 700;
-    margin: 0 0 1rem 0;
+    margin: 0 0 0.5rem 0;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    color: #FF8C00; /* Bitcoin orange for the title */
   }
 
+  .status-indicator,
   .wallet-balance {
+    margin-bottom: 1.5rem;
     font-size: 1.2rem;
     opacity: 0.9;
     background: rgba(255, 255, 255, 0.1);
     padding: 0.5rem 1rem;
     border-radius: 20px;
     backdrop-filter: blur(10px);
-  }
-
-  .status-section {
-    margin-bottom: 3rem;
-    text-align: center;
-  }
-
-  .status-indicator {
-    width: 200px;
-    height: 200px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto 2rem auto;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    transition: all 0.3s ease;
   }
 
   .status-text {
@@ -300,8 +264,8 @@
   }
 
   .toggle-button {
-    width: 200px;
-    height: 200px;
+    width: 150px;
+    height: 150px;
     border-radius: 50%;
     border: none;
     cursor: pointer;
@@ -384,7 +348,6 @@
       font-size: 2.5rem;
     }
 
-    .status-indicator,
     .toggle-button {
       width: 150px;
       height: 150px;

@@ -470,6 +470,31 @@ impl TollGateService {
         Ok(balances.iter().map(|b| b.balance).sum())
     }
 
+    /// Detect if current network is a TollGate
+    pub async fn detect_tollgate(&self, gateway_ip: &str, mac_address: &str) -> TollGateResult<NetworkInfo> {
+        self.network_detector.detect_tollgate(gateway_ip, mac_address).await
+    }
+
+    /// Get all active sessions
+    pub async fn get_active_sessions(&self) -> TollGateResult<Vec<SessionInfo>> {
+        let manager = self.session_manager.lock().await;
+        let active_sessions: Vec<SessionInfo> = manager
+            .get_active_sessions()
+            .iter()
+            .map(|session| SessionInfo {
+                id: session.id.clone(),
+                tollgate_pubkey: session.tollgate_pubkey.clone(),
+                gateway_ip: session.gateway_ip.clone(),
+                status: session.status.clone(),
+                usage_percentage: session.usage_percentage(),
+                remaining_time_seconds: session.remaining_time_seconds(),
+                remaining_data_bytes: session.remaining_data_bytes(),
+                total_spent: session.total_spent,
+            })
+            .collect();
+        Ok(active_sessions)
+    }
+
     /// Load persisted state from storage
     async fn load_persisted_state(&self) -> TollGateResult<()> {
         // TODO: Implement persistence loading from file/database
