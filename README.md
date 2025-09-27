@@ -7,9 +7,15 @@ The current version is focussing on Android first. Support for Linux and MacOS w
 ## Building for Android
 
 ```bash
-# MacOS
+# MacOS - Android Development Environment
 export ANDROID_HOME="$HOME/Library/Android/sdk"
-export NDK_HOME="$ANDROID_HOME/ndk/$(ls -1 $ANDROID_HOME/ndk)"
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$(ls -1 $ANDROID_HOME/ndk)"
+export NDK_HOME="$ANDROID_NDK_HOME"
+export PATH="$PATH:$ANDROID_HOME/tools:$ANDROID_HOME/platform-tools"
+
+# Java 17 for Android compatibility (use SDKMAN)
+# sdk use java 17.0.16-amzn
+export JAVA_HOME="$HOME/.sdkman/candidates/java/17.0.16-amzn"
 
 pnpm tauri android init
 

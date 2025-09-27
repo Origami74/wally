@@ -1,327 +1,401 @@
 <script lang="ts">
-  import { onMount} from "svelte";
-  import { createFeedbackButton } from "nostr-feedback-button/feedback";
-  import "nostr-feedback-button/styles.css";
-  import {markCaptivePortalDismissed, registerListener} from "$lib/tollgate/network/pluginCommands"
-  import NetworkState, {type OnConnectedInfo} from "$lib/tollgate/network/NetworkState";
-  import TollgateState from "$lib/tollgate/network/TollgateState";
-  import {type BehaviorSubject, Subscription} from "rxjs";
-  import {shortenString} from "$lib/util/helpers";
-  import TollgateSessionState from "$lib/tollgate/network/TollgateSessionState";
+  import { onMount, onDestroy } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
+  import { registerListener } from "$lib/tollgate/network/pluginCommands";
 
-  let userLog: string[] = $state([]);
+  // State
+  let autoTollgateEnabled = $state(false);
+  let connectionStatus = $state("disconnected");
+  let remainingTime = $state("--:--");
+  let remainingData = $state("--");
+  let usagePercentage = $state(0);
+  let walletBalance = $state(0);
+  let currentSession = $state(null);
+  let isLoading = $state(false);
 
-  let networkState = new NetworkState();
-  let tollgateState = new TollgateState(networkState);
-  let tollgateSession = new TollgateSessionState(tollgateState);
+  // Cleanup functions
+  let unsubscribers: (() => void)[] = [];
 
   onMount(async () => {
-    await registerListener("network-connected", async () => {
-      if(tollgateSession._sessionIsActive) {
-        tollgateSession.sessionExpired();
-      }
+    // Load initial status
+    await refreshStatus();
 
-      networkState.networkIsReady.subscribe(async (isReady: boolean) => { // TODO: Was tollgateState._tollgateIsReady.sub (check if worked)
-        if(!isReady) {
-          await networkState.performNetworkCheck()
-        }
-      })
-    })
+    // Set up network event listeners
+    await registerListener("network-connected", handleNetworkConnected);
+    await registerListener("network-disconnected", handleNetworkDisconnected);
 
-    await registerListener("network-disconnected", () => {
-      networkState.reset()
-    })
-  })
-
-
-
-
-  // creates and adds the feedback button to the page
-  createFeedbackButton({
-    developer: "1096f6be0a4d7f0ecc2df4ed2c8683f143efc81eeba3ece6daadd2fca74c7ecc",
-    namespace: "tollgate-app",
-    relays: [
-      "wss://relay.damus.io",
-    ],
-
-    // additional options
+    // Refresh status every 5 seconds
+    const statusInterval = setInterval(refreshStatus, 5000);
+    unsubscribers.push(() => clearInterval(statusInterval));
   });
 
+  onDestroy(() => {
+    unsubscribers.forEach(unsub => unsub());
+  });
 
-  let networkReady = $state(false)
-  let macAddress = $state("WAITING")
-  let gatewayIp = $state("WAITING")
-  let networkHasRelay = $state(false)
-  let relayActive = $state(false)
-  let tollgateReady = $state(false)
-  let tollgatePubkey = $state("WAITING")
-  let tollgateSessionActive = $state(false)
-
-  $effect(() => {
-    const subs: Subscription[] = []
-
-    subs.push(tollgateState._networkHasRelay.subscribe((value: boolean) => {
-      console.log("networkHasRelay", value)
-      networkHasRelay = value;
-    }))
-
-    subs.push(networkState.networkIsReady.subscribe((value: boolean) => {
-      console.log("networkReady", value)
-      networkReady = value;
-    }))
-
-    subs.push(tollgateState._relayActive.subscribe((value: boolean) => {
-      console.log("relayActive", value)
-      relayActive = value;
-    }))
-
-    subs.push(tollgateState._tollgateIsReady.subscribe((value: boolean) => {
-      console.log("tollgateReady", value)
-      tollgateReady = value;
-    }))
-
-    subs.push(networkState._clientMacAddress.subscribe((value: string | undefined) => {
-      console.log("macAddress", value)
-      macAddress = value ?? "?";
-    }))
-
-    subs.push(networkState._gatewayIp.subscribe((value: string | undefined) => {
-      console.log("gatewayIp", value)
-      gatewayIp = value ?? "?";
-    }))
-
-    subs.push(tollgateState._tollgatePubkey.subscribe((value: string | undefined) => {
-      console.log("tollgatePubkey", value)
-      tollgatePubkey = value ?? "?";
-    }))
-
-    subs.push(tollgateSession._sessionIsActive.subscribe((value: boolean) => {
-      tollgateSessionActive = value;
-    }))
-
-    return () => {
-      subs.forEach(sub => sub.unsubscribe);
+  async function refreshStatus() {
+    try {
+      const status = await invoke("get_tollgate_status");
+      autoTollgateEnabled = status.auto_tollgate_enabled;
+      walletBalance = status.wallet_balance;
+      
+      // Update connection status
+      if (status.active_sessions && status.active_sessions.length > 0) {
+        const session = status.active_sessions[0];
+        currentSession = session;
+        connectionStatus = session.status.toLowerCase();
+        usagePercentage = session.usage_percentage * 100;
+        
+        // Update remaining time/data
+        if (session.remaining_time_seconds !== null) {
+          const minutes = Math.floor(session.remaining_time_seconds / 60);
+          const seconds = session.remaining_time_seconds % 60;
+          remainingTime = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        } else if (session.remaining_data_bytes !== null) {
+          remainingData = formatBytes(session.remaining_data_bytes);
+        }
+      } else {
+        connectionStatus = status.current_network?.is_tollgate ? "available" : "disconnected";
+        currentSession = null;
+        usagePercentage = 0;
+        remainingTime = "--:--";
+        remainingData = "--";
+      }
+    } catch (error) {
+      console.error("Failed to refresh status:", error);
     }
-  })
+  }
+
+  async function toggleAutoTollgate() {
+    if (isLoading) return;
+    
+    isLoading = true;
+    try {
+      await invoke("toggle_auto_tollgate", { enabled: !autoTollgateEnabled });
+      await refreshStatus();
+    } catch (error) {
+      console.error("Failed to toggle auto-tollgate:", error);
+    } finally {
+      isLoading = false;
+    }
+  }
+
+  async function handleNetworkConnected(data: any) {
+    console.log("Network connected event:", data);
+    // The Rust backend will handle the network connection automatically
+    await refreshStatus();
+  }
+
+  async function handleNetworkDisconnected() {
+    console.log("Network disconnected event");
+    await invoke("handle_network_disconnected");
+    await refreshStatus();
+  }
+
+  function formatBytes(bytes: number): string {
+    if (bytes === 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+  }
+
+  function getStatusColor(status: string): string {
+    switch (status) {
+      case "active": return "#10b981"; // green
+      case "renewing": return "#f59e0b"; // amber
+      case "available": return "#3b82f6"; // blue
+      case "expired": return "#ef4444"; // red
+      case "error": return "#ef4444"; // red
+      default: return "#6b7280"; // gray
+    }
+  }
+
+  function getStatusText(status: string): string {
+    switch (status) {
+      case "active": return "CONNECTED";
+      case "renewing": return "RENEWING";
+      case "available": return "AVAILABLE";
+      case "expired": return "EXPIRED";
+      case "error": return "ERROR";
+      default: return "DISCONNECTED";
+    }
+  }
 </script>
 
-{#await networkState.performNetworkCheck()}{/await}
+<main class="app">
+  <div class="header">
+    <h1>TollGate</h1>
+    <div class="wallet-balance">
+      {walletBalance} sats
+    </div>
+  </div>
 
-<main class="container">
-  <h1>Welcome to Tollgate</h1>
-<!--  <Wallet></Wallet>-->
-  <h2>
-    Session
-    {#if (tollgateSessionActive)}
-      <div style="color: green">ACTIVE</div>
-    {:else}
-      <div style="color: red">NOT ACTIVE</div>
+  <div class="status-section">
+    <div 
+      class="status-indicator"
+      style="background-color: {getStatusColor(connectionStatus)}"
+    >
+      <div class="status-text">{getStatusText(connectionStatus)}</div>
+    </div>
+
+    {#if currentSession}
+      <div class="session-info">
+        <div class="usage-bar">
+          <div 
+            class="usage-fill"
+            style="width: {usagePercentage}%"
+          ></div>
+        </div>
+        
+        <div class="remaining-info">
+          {#if remainingTime !== "--:--"}
+            <div class="remaining-time">
+              <span class="label">Time:</span>
+              <span class="value">{remainingTime}</span>
+            </div>
+          {/if}
+          
+          {#if remainingData !== "--"}
+            <div class="remaining-data">
+              <span class="label">Data:</span>
+              <span class="value">{remainingData}</span>
+            </div>
+          {/if}
+        </div>
+      </div>
     {/if}
-  </h2>
+  </div>
 
-  <h2>Current Network</h2>
-  <table style="width:100%">
-    <tbody>
-      <tr>
-        <td style="text-align: right"><strong>Gateway IP</strong></td>
-        <td style="text-align: left">{gatewayIp}</td>
-      </tr>
-      <tr>
-        <td style="text-align: right"><strong>My MAC address</strong></td>
-        <td style="text-align: left">{macAddress}</td>
-      </tr>
-      <tr>
-        <td style="text-align: right"><strong>Network</strong></td>
-        <td style="text-align: left">
-          {#if (networkReady)}
-            <span style="color: green">Ready </span>
-          {:else}
-            <span style="color: red">NOT READY</span>
-          {/if}
-        </td>
-      </tr>
-      <tr>
-        <td style="text-align: right"><strong>TollGate PubKey</strong></td>
-        <td style="text-align: left">{shortenString(tollgatePubkey, 5)}</td>
-      </tr>
-      <tr>
-        <td style="text-align: right"><strong>Relay</strong></td>
-        <td style="text-align: left">
-          {#if (networkHasRelay)}
-            <span style="color: green">READY </span><span> - </span>
-          {:else}
-            <span style="color: red">NOT READY </span><span> - </span>
-          {/if}
-          {#if (relayActive)}
-            <span style="color: green">ACTIVE</span>
-          {:else}
-            <span style="color: coral">INACTIVE</span>
-          {/if}
-        </td>
-      </tr>
-      <tr>
-        <td style="text-align: right"><strong>TollGate Ready</strong></td>
-        <td style="text-align: left">
-          {#if (tollgateReady)}
-            <span style="color: green">YES </span>
-          {:else}
-            <span style="color: red">NO </span>
-          {/if}
-        </td>
-      </tr>
-    </tbody>
-  </table>
-
-<!--  <h2>Nearby tollgates</h2>-->
-<!--  <table style="width:100%">-->
-<!--    <tbody>-->
-<!--    <tr>-->
-<!--      <th><strong>SSID</strong></th>-->
-<!--&lt;!&ndash;      <th><strong>BSSID</strong></th>&ndash;&gt;-->
-<!--      <th><strong>Signal</strong></th>-->
-<!--      <th><strong>Freq</strong></th>-->
-<!--      <th><strong>Price</strong></th>-->
-<!--      <th><strong>Connect</strong></th>-->
-<!--    </tr>-->
-<!--    {#each tollgates as tollgate}-->
-<!--      <tr>-->
-<!--        <td>{tollgate.ssid}</td>-->
-<!--&lt;!&ndash;        <td>{tollgate.bssid}</td>&ndash;&gt;-->
-<!--        <td>{tollgate.rssi}</td>-->
-<!--        <td>{tollgate.frequency}</td>-->
-<!--        <td>{tollgate.pricing.allocationPer1024}/{tollgate.pricing.unit} - {tollgate.pricing.allocationType}</td>-->
-<!--&lt;!&ndash;        <td><button type="button" onclick={() => startTollgateSession(tollgate)}>Connect</button></td>&ndash;&gt;-->
-<!--      </tr>-->
-<!--    {/each}-->
-<!--    </tbody>-->
-<!--  </table>-->
-
-  <h2>Logs</h2>
-  <p>
-  {#each userLog as log}
-    {log}<br>
-  {/each}
-  </p>
-
+  <div class="toggle-section">
+    <button 
+      class="toggle-button {autoTollgateEnabled ? 'enabled' : 'disabled'}"
+      class:loading={isLoading}
+      onclick={toggleAutoTollgate}
+      disabled={isLoading}
+    >
+      <div class="toggle-inner">
+        {#if isLoading}
+          <div class="spinner"></div>
+        {:else}
+          <span class="toggle-text">
+            {autoTollgateEnabled ? 'ON' : 'OFF'}
+          </span>
+        {/if}
+      </div>
+    </button>
+    
+    <div class="toggle-description">
+      {autoTollgateEnabled 
+        ? "Auto-purchase is enabled. TollGate sessions will start automatically." 
+        : "Auto-purchase is disabled. Enable to automatically connect to TollGates."}
+    </div>
+  </div>
 </main>
 
 <style>
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.svelte-kit:hover {
-  filter: drop-shadow(0 0 2em #ff3e00);
-}
-
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
-
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
-}
-
-.container {
-  margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
-}
-
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
-  display: flex;
-  justify-content: center;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-}
-
-h1 {
-  text-align: center;
-}
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-}
-
-button {
-  cursor: pointer;
-}
-
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
-}
-
-input,
-button {
-  outline: none;
-}
-
-#greet-input {
-  margin-right: 5px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
+  .app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
 
-  a:hover {
-    color: #24c8db;
+  .header {
+    text-align: center;
+    margin-bottom: 3rem;
   }
 
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
+  .header h1 {
+    font-size: 3rem;
+    font-weight: 700;
+    margin: 0 0 1rem 0;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   }
-  button:active {
-    background-color: #0f0f0f69;
-  }
-}
 
+  .wallet-balance {
+    font-size: 1.2rem;
+    opacity: 0.9;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    backdrop-filter: blur(10px);
+  }
+
+  .status-section {
+    margin-bottom: 3rem;
+    text-align: center;
+  }
+
+  .status-indicator {
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 2rem auto;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+  }
+
+  .status-text {
+    font-size: 1.5rem;
+    font-weight: 600;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  .session-info {
+    max-width: 300px;
+    margin: 0 auto;
+  }
+
+  .usage-bar {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 1rem;
+  }
+
+  .usage-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #10b981, #f59e0b, #ef4444);
+    transition: width 0.3s ease;
+  }
+
+  .remaining-info {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .remaining-time,
+  .remaining-data {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .label {
+    font-size: 0.9rem;
+    opacity: 0.8;
+    margin-bottom: 0.25rem;
+  }
+
+  .value {
+    font-size: 1.2rem;
+    font-weight: 600;
+  }
+
+  .toggle-section {
+    text-align: center;
+  }
+
+  .toggle-button {
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    margin-bottom: 2rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .toggle-button.enabled {
+    background: linear-gradient(135deg, #10b981, #059669);
+  }
+
+  .toggle-button.disabled {
+    background: linear-gradient(135deg, #6b7280, #4b5563);
+  }
+
+  .toggle-button:hover:not(:disabled) {
+    transform: scale(1.05);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  }
+
+  .toggle-button:active:not(:disabled) {
+    transform: scale(0.95);
+  }
+
+  .toggle-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+
+  .toggle-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+  }
+
+  .toggle-text {
+    font-size: 2rem;
+    font-weight: 700;
+    color: white;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  .spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid rgba(255, 255, 255, 0.3);
+    border-top: 4px solid white;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  .toggle-description {
+    max-width: 400px;
+    font-size: 1rem;
+    opacity: 0.9;
+    line-height: 1.5;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 1rem;
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+  }
+
+  /* Responsive design */
+  @media (max-width: 768px) {
+    .app {
+      padding: 1rem;
+    }
+
+    .header h1 {
+      font-size: 2.5rem;
+    }
+
+    .status-indicator,
+    .toggle-button {
+      width: 150px;
+      height: 150px;
+    }
+
+    .toggle-text {
+      font-size: 1.5rem;
+    }
+
+    .status-text {
+      font-size: 1.2rem;
+    }
+  }
 </style>

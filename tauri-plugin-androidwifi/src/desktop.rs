@@ -74,7 +74,7 @@ impl<R: Runtime> Androidwifi<R> {
             println!("MAC addr = {}", ma);
             println!("bytes = {:?}", ma.bytes());
             Ok(MacAddressResponse {
-              mac_address: ma.to_string(),
+              mac_address: Some(ma.to_string()),
             })
         }
         Ok(None) => {
