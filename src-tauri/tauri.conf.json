@@ -14,8 +14,13 @@
     "windows": [
       {
         "title": "MeshMate",
-        "width": 800,
-        "height": 600
+        "width": 384,
+        "height": 512,
+        "minWidth": 384,
+        "minHeight": 512,
+        "maxWidth": 384,
+        "maxHeight": 512,
+        "resizable": false
       }
     ],
     "security": {

@@ -4,6 +4,9 @@ use tauri_plugin_log::{Target, TargetKind};
 use tokio::sync::Mutex;
 use tauri_plugin_androidwifi::{AndroidwifiExt, GetMacAddressPayload, Empty};
 
+#[cfg(target_os = "macos")]
+use tauri_nspanel::WebviewWindowExt;
+
 mod tollgate;
 use tollgate::TollGateService;
 use tollgate::session::SessionStatus;
@@ -165,9 +168,9 @@ async fn get_active_sessions(state: State<'_, TollGateState>) -> Result<Vec<serd
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default();
+    let mut builder = tauri::Builder::default();
 
-    builder
+    builder = builder
         .setup(|app| {
             // Initialize TollGate service
             let rt = tokio::runtime::Runtime::new().unwrap();
@@ -182,10 +185,26 @@ pub fn run() {
             });
 
             app.manage(Arc::new(Mutex::new(service)));
+
+            #[cfg(target_os = "macos")]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    if let Ok(panel) = window.to_panel() {
+                        panel.set_released_when_closed(true);
+                    }
+                }
+            }
             
             log::info!("TollGate service initialized");
             Ok(())
-        })
+        });
+
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.plugin(tauri_nspanel::init());
+    }
+
+    builder = builder
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([
@@ -215,7 +234,9 @@ pub fn run() {
             get_mac_address,
             get_current_wifi_details,
             get_gateway_ip,
-        ])
+        ]);
+
+    builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
