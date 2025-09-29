@@ -49,9 +49,16 @@
 			// Get gateway IP separately
 			try {
 				const gatewayResult = await invoke('get_gateway_ip');
-				deviceInfo.gatewayIp = gatewayResult.gateway_ip || 'Unknown';
+				if (gatewayResult.gateway_ip) {
+					deviceInfo.gatewayIp = gatewayResult.gateway_ip;
+				} else {
+					// Fallback to common gateway IPs when Android method returns null
+					deviceInfo.gatewayIp = '192.168.1.1 (fallback)';
+					console.warn('Gateway IP method returned null, using fallback');
+				}
 			} catch (e) {
-				deviceInfo.gatewayIp = 'Unknown';
+				deviceInfo.gatewayIp = `Error: ${e}`;
+				console.error('Gateway IP error:', e);
 			}
 			
 			// Check if current network is a TollGate

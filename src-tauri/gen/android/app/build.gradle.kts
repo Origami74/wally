@@ -17,7 +17,7 @@ android {
     compileSdk = 34
     namespace = "com.meshmate.app"
     defaultConfig {
-        manifestPlaceholders["usesCleartextTraffic"] = "false"
+        manifestPlaceholders["usesCleartextTraffic"] = "true"
         applicationId = "com.meshmate.app"
         minSdk = 24
         targetSdk = 34
