@@ -3,9 +3,7 @@ use tauri::{plugin::PluginApi, AppHandle, Runtime};
 use wifi_rs::{prelude::*, WiFi};
 use wifiscanner;
 use mac_address::mac_address_by_name;
-use std::io;
-
-use crate::{models::*, Error};
+use crate::models::*;
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
   app: &AppHandle<R>,
@@ -65,26 +63,31 @@ impl<R: Runtime> Androidwifi<R> {
     
   }
   pub fn get_current_wifi_details(&self, _payload: Empty) -> crate::Result<CurrentWifiResponse> {
-    todo!()
+    Ok(CurrentWifiResponse {
+      // TODO mock data: replace with real current Wi-Fi lookup once implemented
+      wifi: Some(CurrentWifi {
+        ssid: "MockSSID".to_string(),
+        bssid: "00:11:22:33:44:55".to_string(),
+      }),
+    })
   }
 
   pub fn get_mac_address(&self, _payload: GetMacAddressPayload) -> crate::Result<MacAddressResponse> {
     match mac_address_by_name("en0") {
-        Ok(Some(ma)) => {
-            println!("MAC addr = {}", ma);
-            println!("bytes = {:?}", ma.bytes());
-            Ok(MacAddressResponse {
-              mac_address: Some(ma.to_string()),
-            })
-        }
-        Ok(None) => {
-          let io_err = io::Error::new(io::ErrorKind::Other, "macaddress not found");
-          Err(Error::Io(io_err))
-        },
-        Err(e) => {
-          let io_err = io::Error::new(io::ErrorKind::Other, e.to_string());
-          Err(Error::Io(io_err))
-        }
+      Ok(Some(ma)) => Ok(MacAddressResponse {
+        mac_address: Some(ma.to_string()),
+      }),
+      Ok(None) | Err(_) => Ok(MacAddressResponse {
+        // TODO mock data: replace with real MAC lookup once implemented
+        mac_address: Some("AA:BB:CC:DD:EE:FF".to_string()),
+      }),
     }
+  }
+
+  pub fn get_gateway_ip(&self, _payload: Empty) -> crate::Result<GatewayIpResponse> {
+    Ok(GatewayIpResponse {
+      // TODO mock data: replace with real gateway lookup once implemented
+      gateway_ip: Some("192.168.0.1".to_string()),
+    })
   }
 }

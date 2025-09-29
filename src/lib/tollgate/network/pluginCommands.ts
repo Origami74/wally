@@ -1,7 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Channel, PluginListener } from "@tauri-apps/api/core";
 
-export async function registerListener(eventName: string, onEvent: (data: any) => void): Promise<void> {
+export async function registerListener(
+    eventName: string,
+    onEvent: (data: any) => void,
+): Promise<PluginListener> {
     const handler = new Channel();
     handler.onmessage = async (data: any) => {
         // Handle network events and forward to Rust backend
@@ -32,7 +35,7 @@ export async function registerListener(eventName: string, onEvent: (data: any) =
         onEvent(data);
     };
     
-    invoke("plugin:androidwifi|register_listener", { event: eventName, handler }).then(
+    return invoke("plugin:androidwifi|register_listener", { event: eventName, handler }).then(
         () => new PluginListener("androidwifi", eventName, handler.id)
     );
 }

@@ -1,0 +1,17 @@
+@import "tailwindcss";
+@import "./styles/theme.css";
+
+@source "../index.html";
+@source "./**/*.{ts,tsx}";
+
+@layer base {
+  html, body {
+    @apply min-h-screen bg-background text-foreground antialiased overscroll-none;
+  }
+}
+
+@layer utilities {
+  .shadow-soft {
+    @apply shadow-[0_10px_40px_-15px_rgba(15,23,42,0.35)];
+  }
+}
