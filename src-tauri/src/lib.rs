@@ -5,7 +5,23 @@ use tokio::sync::Mutex;
 use tauri_plugin_androidwifi::{AndroidwifiExt, GetMacAddressPayload, Empty};
 
 #[cfg(target_os = "macos")]
-use tauri_nspanel::WebviewWindowExt;
+use cocoa::{
+    appkit::{NSMainMenuWindowLevel, NSWindowCollectionBehavior},
+    base::{id, NO},
+    foundation::NSRect,
+};
+#[cfg(target_os = "macos")]
+use objc::{msg_send, sel, sel_impl};
+#[cfg(target_os = "macos")]
+use tauri::{
+    ActivationPolicy,
+    image::Image,
+    tray::{MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    LogicalPosition,
+    PhysicalPosition,
+};
+#[cfg(target_os = "macos")]
+use tauri_nspanel::{ManagerExt, WebviewWindowExt};
 
 mod tollgate;
 use tollgate::TollGateService;
@@ -193,8 +209,11 @@ pub fn run() {
                         panel.set_released_when_closed(true);
                     }
                 }
+
+                let app_handle = app.app_handle();
+                setup_macos_panel(&app_handle)?;
             }
-            
+
             log::info!("TollGate service initialized");
             Ok(())
         });
@@ -239,4 +258,92 @@ pub fn run() {
     builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(target_os = "macos")]
+fn setup_macos_panel(app: &tauri::AppHandle) -> tauri::Result<()> {
+    app.set_activation_policy(ActivationPolicy::Accessory)?;
+
+    if let Some(window) = app.get_webview_window("main") {
+        let panel = window.to_panel()?;
+
+        panel.set_level(NSMainMenuWindowLevel + 1);
+        panel.set_collection_behaviour(
+            NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces
+                | NSWindowCollectionBehavior::NSWindowCollectionBehaviorStationary
+                | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenAuxiliary,
+        );
+
+        panel.set_becomes_key_only_if_needed(false);
+        panel.set_hides_on_deactivate(false);
+        panel.set_has_shadow(true);
+    }
+
+    TrayIconBuilder::with_id("meshmate-tray")
+        .icon(load_tray_icon()?)
+        .icon_as_template(true)
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click { button_state, position, .. } = event {
+                if button_state == MouseButtonState::Up {
+                    toggle_panel(&tray.app_handle(), Some(position));
+                }
+            }
+        })
+        .build(app)?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn toggle_panel(
+    app: &tauri::AppHandle,
+    anchor: Option<PhysicalPosition<f64>>,
+) {
+    let app_handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Ok(panel) = app_handle.get_webview_panel("main") {
+            if panel.is_visible() {
+                let _ = panel.order_out(None);
+            } else {
+                if let Some(position) = anchor {
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        position_panel_at_menubar_icon(&window, position);
+                    }
+                }
+                panel.set_level(NSMainMenuWindowLevel + 1);
+                panel.order_front_regardless();
+                panel.make_key_and_order_front(None);
+            }
+        }
+    });
+}
+
+#[cfg(target_os = "macos")]
+fn load_tray_icon() -> tauri::Result<Image<'static>> {
+    Image::from_bytes(include_bytes!("../icons/trayTemplate.png"))
+}
+
+#[cfg(target_os = "macos")]
+fn position_panel_at_menubar_icon(
+    window: &tauri::WebviewWindow,
+    anchor: PhysicalPosition<f64>,
+) {
+    if let (Ok(panel_handle), Ok(Some(monitor))) = (window.ns_window(), window.current_monitor()) {
+        let scale_factor = monitor.scale_factor();
+        let logical_pos: LogicalPosition<f64> = anchor.to_logical(scale_factor);
+        let monitor_pos = monitor.position().to_logical::<f64>(scale_factor);
+        let monitor_size = monitor.size().to_logical::<f64>(scale_factor);
+
+        let menubar_height = 24.0_f64;
+
+        let panel_id: id = panel_handle as _;
+
+        let mut frame: NSRect = unsafe { msg_send![panel_id, frame] };
+
+        frame.origin.y =
+            (monitor_pos.y + monitor_size.height) - menubar_height - frame.size.height;
+        frame.origin.x = logical_pos.x - frame.size.width / 2.0;
+
+        let _: () = unsafe { msg_send![panel_id, setFrame: frame display: NO] };
+    }
 }
