@@ -24,20 +24,26 @@ export function HomeScreen({
   onSend,
 }: HomeScreenProps) {
   return (
-    <Screen className="gap-8 pt-6">
-      <div className="flex flex-col gap-2">
+    <Screen className="relative h-full gap-6">
+      <div className="absolute left-4 top-4 flex flex-col gap-2">
         {statusBadges.map(badge => (
-          <Badge key={badge.id} tone={badge.tone} className="w-max px-4 py-1.5 text-xs">
+          <Badge key={badge.id} tone={badge.tone} className="w-max px-3 py-1 text-[11px]">
             <span className="font-medium uppercase tracking-wide">{badge.label}</span>
-            <span className="ml-2 text-xs capitalize">{badge.value.toLowerCase()}</span>
+            <span className="ml-2 text-[11px] capitalize">{badge.value.toLowerCase()}</span>
           </Badge>
         ))}
       </div>
 
-      <div className="text-center">
-        <div className="text-6xl font-semibold leading-tight text-primary">
-          {walletBalance.toLocaleString()} sats
+      {/* Spacer about the height of the buttons */}
+      <div className="h-12"></div>
+
+      <div className="flex-1 flex flex-col justify-center items-center gap-3">
+        <div className="text-[72px] font-semibold leading-none text-primary">
+          {walletBalance.toLocaleString()}
         </div>
+        <span className="text-sm font-medium uppercase tracking-[0.35em] text-muted-foreground">
+          sats
+        </span>
       </div>
 
       {currentSession ? (

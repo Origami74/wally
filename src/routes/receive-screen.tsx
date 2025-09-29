@@ -11,16 +11,14 @@ type ReceiveScreenProps = {
 
 export function ReceiveScreen({ onBack, onCopy }: ReceiveScreenProps) {
   return (
-    <Screen className="gap-6 pt-6">
-      <div className="text-left">
-        <h1 className="text-3xl font-semibold">Receive</h1>
-      </div>
+    <Screen className="h-screen gap-4">
+        <h2 className="text-lg font-semibold uppercase tracking-[0.2em] text-muted-foreground">Receive</h2>
 
-      <div className="flex flex-1 flex-col items-center justify-center gap-6">
-        <div className="grid h-56 w-56 place-items-center rounded-3xl border-2 border-dashed border-primary/40 bg-muted text-xs font-medium text-muted-foreground">
+      <div className="flex flex-1 flex-col items-center justify-center gap-5">
+        <div className="grid h-48 w-48 place-items-center rounded-3xl border-2 border-dashed border-primary/40 bg-muted text-xs font-medium text-muted-foreground">
           QR preview
         </div>
-        <div className="w-full max-w-sm grid gap-2">
+        <div className="grid w-full max-w-xs gap-2">
           <Label htmlFor="receive-amount">Optional amount (sats)</Label>
           <Input id="receive-amount" type="number" min={0} placeholder="Add an amount" />
         </div>

@@ -10,23 +10,28 @@ type SendScreenProps = {
   onSubmit: () => void;
 };
 
-export function SendScreen({ onBack, request, onChangeRequest, onSubmit }: SendScreenProps) {
+export function SendScreen({
+  onBack,
+  request,
+  onChangeRequest,
+  onSubmit,
+}: SendScreenProps) {
   const canSend = request.trim().length > 0;
 
   return (
-    <Screen className="gap-6 pt-6">
-      <div className="text-left">
-        <h1 className="text-3xl font-semibold">Send</h1>
-      </div>
+    <Screen className="h-screen gap-4">
+      <h2 className="text-lg font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+        Send
+      </h2>
 
-      <div className="flex-1">
+      <div className="flex-1 flex flex-col justify-center">
         <div className="grid gap-2">
           <Label htmlFor="send-request">Payment request</Label>
           <Textarea
             id="send-request"
             placeholder="Paste payment request here"
             value={request}
-            onChange={event => onChangeRequest(event.target.value)}
+            onChange={(event) => onChangeRequest(event.target.value)}
           />
         </div>
       </div>

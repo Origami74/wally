@@ -63,7 +63,6 @@ const initialFeatures: FeatureState[] = [
 export default function App() {
   const [location, setLocation] = useLocation();
   const [status, setStatus] = useState<ServiceStatus | null>(null);
-  const [autoLoading, setAutoLoading] = useState(false);
   const [mintInput, setMintInput] = useState("");
   const [npubInput, setNpubInput] = useState("");
   const [savingMint, setSavingMint] = useState(false);
@@ -71,7 +70,8 @@ export default function App() {
   const [features, setFeatures] = useState<FeatureState[]>(initialFeatures);
 
   const periodMeta = useCallback(
-    (period: Period) => periods.find(item => item.value === period) ?? periods[0],
+    (period: Period) =>
+      periods.find((item) => item.value === period) ?? periods[0],
     []
   );
 
@@ -80,15 +80,18 @@ export default function App() {
       const result = await invoke<ServiceStatus>("get_tollgate_status");
       setStatus(result);
       if (!mintInput) {
-        const fallbackMint = result.current_network?.advertisement?.pricing_options?.[0]?.mint_url ?? "";
+        const fallbackMint =
+          result.current_network?.advertisement?.pricing_options?.[0]
+            ?.mint_url ?? "";
         if (fallbackMint) setMintInput(fallbackMint);
       }
       if (!npubInput) {
-        const fallbackNpub = result.current_network?.advertisement?.tollgate_pubkey ?? "";
+        const fallbackNpub =
+          result.current_network?.advertisement?.tollgate_pubkey ?? "";
         if (fallbackNpub) setNpubInput(fallbackNpub);
       }
-      setFeatures(prev =>
-        prev.map(feature =>
+      setFeatures((prev) =>
+        prev.map((feature) =>
           feature.id === "tollgate" && result.active_sessions?.[0]
             ? { ...feature, spent: result.active_sessions[0].total_spent }
             : feature
@@ -106,16 +109,22 @@ export default function App() {
     const initialise = async () => {
       await refreshStatus();
       try {
-        const connected = await registerListener("network-connected", async () => {
-          if (!mounted) return;
-          await refreshStatus();
-        });
+        const connected = await registerListener(
+          "network-connected",
+          async () => {
+            if (!mounted) return;
+            await refreshStatus();
+          }
+        );
         listeners.push(connected);
 
-        const disconnected = await registerListener("network-disconnected", async () => {
-          if (!mounted) return;
-          await refreshStatus();
-        });
+        const disconnected = await registerListener(
+          "network-disconnected",
+          async () => {
+            if (!mounted) return;
+            await refreshStatus();
+          }
+        );
         listeners.push(disconnected);
       } catch (error) {
         console.warn("Failed to register androidwifi listeners", error);
@@ -128,22 +137,9 @@ export default function App() {
     return () => {
       mounted = false;
       clearInterval(interval);
-      listeners.forEach(listener => listener.remove());
+      listeners.forEach((listener) => listener.remove());
     };
   }, [refreshStatus]);
-
-  const toggleAutoTollgate = useCallback(async () => {
-    if (!status) return;
-    setAutoLoading(true);
-    try {
-      await invoke("toggle_auto_tollgate", { enabled: !status.auto_tollgate_enabled });
-      await refreshStatus();
-    } catch (error) {
-      console.error("Failed to toggle auto tollgate", error);
-    } finally {
-      setAutoLoading(false);
-    }
-  }, [status, refreshStatus]);
 
   const saveMintUrl = useCallback(async () => {
     if (!mintInput.trim()) return;
@@ -158,8 +154,13 @@ export default function App() {
   }, [mintInput]);
 
   const handleFeatureUpdate = useCallback(
-    (id: FeatureState["id"], updater: (feature: FeatureState) => FeatureState) => {
-      setFeatures(prev => prev.map(feature => (feature.id === id ? updater(feature) : feature)));
+    (
+      id: FeatureState["id"],
+      updater: (feature: FeatureState) => FeatureState
+    ) => {
+      setFeatures((prev) =>
+        prev.map((feature) => (feature.id === id ? updater(feature) : feature))
+      );
     },
     []
   );
@@ -192,20 +193,26 @@ export default function App() {
     });
 
     const featureState = (featureId: FeatureState["id"]) =>
-      features.find(feature => feature.id === featureId)?.enabled ? "Enabled" : "Idle";
+      features.find((feature) => feature.id === featureId)?.enabled
+        ? "Enabled"
+        : "Idle";
 
     badges.push({
       id: "402",
       label: "402",
       value: featureState("402"),
-      tone: features.find(feature => feature.id === "402")?.enabled ? "info" : "default",
+      tone: features.find((feature) => feature.id === "402")?.enabled
+        ? "info"
+        : "default",
     });
 
     badges.push({
       id: "nwc",
       label: "NWC",
       value: featureState("nwc"),
-      tone: features.find(feature => feature.id === "nwc")?.enabled ? "info" : "default",
+      tone: features.find((feature) => feature.id === "nwc")?.enabled
+        ? "info"
+        : "default",
     });
 
     return badges;
@@ -216,26 +223,39 @@ export default function App() {
   const goSend = () => setLocation("/send");
   const goSettings = () => setLocation("/settings");
 
+  const sharedMainClasses =
+    "relative mx-auto flex w-full max-w-md flex-col overflow-hidden bg-background";
+
   const mainClasses =
     location === "/settings"
-      ? "relative mx-auto flex min-h-screen w-full max-w-md flex-col overflow-hidden bg-background px-4 pb-6 pt-6"
-      : "relative mx-auto flex h-screen w-full max-w-md flex-col overflow-hidden bg-background px-4 pb-6 pt-6";
+      ? `${sharedMainClasses} min-h-screen`
+      : `${sharedMainClasses} h-screen`;
 
   const showHeaderButton = location === "/" || location === "/settings";
   const primaryNavAction = location === "/settings" ? goHome : goSettings;
-  const primaryNavIcon = location === "/settings" ? <Wallet className="h-5 w-5" /> : <Settings2 className="h-5 w-5" />;
+  const primaryNavIcon =
+    location === "/settings" ? (
+      <Wallet className="h-5 w-5" />
+    ) : (
+      <Settings2 className="h-5 w-5" />
+    );
 
   return (
-    <div className="bg-background text-foreground" style={{ overscrollBehavior: "none" }}>
+    <div
+      className="bg-background text-foreground"
+      style={{ overscrollBehavior: "none" }}
+    >
       <main className={mainClasses}>
         {showHeaderButton ? (
-          <div className="absolute right-5 top-5">
+          <div className="absolute right-4 top-4 z-20">
             <Button
               variant="outline"
               size="icon"
               className="h-10 w-10 rounded-full"
               onClick={primaryNavAction}
-              aria-label={location === "/settings" ? "Back to wallet" : "Open settings"}
+              aria-label={
+                location === "/settings" ? "Back to wallet" : "Open settings"
+              }
             >
               {primaryNavIcon}
             </Button>
@@ -285,11 +305,14 @@ export default function App() {
               savingMint={savingMint}
               onSaveMint={saveMintUrl}
               onReset={() => {
-                setMintInput(status?.current_network?.advertisement?.pricing_options?.[0]?.mint_url ?? "");
-                setNpubInput(status?.current_network?.advertisement?.tollgate_pubkey ?? "");
+                setMintInput(
+                  status?.current_network?.advertisement?.pricing_options?.[0]
+                    ?.mint_url ?? ""
+                );
+                setNpubInput(
+                  status?.current_network?.advertisement?.tollgate_pubkey ?? ""
+                );
               }}
-              autoLoading={autoLoading}
-              toggleAutoTollgate={toggleAutoTollgate}
               handleFeatureUpdate={handleFeatureUpdate}
               copyToClipboard={copyToClipboard}
               periodMeta={periodMeta}
