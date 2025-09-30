@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import QRCode from "react-qr-code";
 
 import { Screen } from "@/components/layout/screen";
@@ -38,6 +38,74 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
   const activeRequest = mode === "cashu" ? cashuRequest : lightningInvoice;
   const qrValue = activeRequest?.request ?? "";
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      const trimmedAmount = amount.trim();
+      const trimmedDescription = description.trim() || null;
+
+      if (mode === "lightning") {
+        const numeric = Number(trimmedAmount);
+        if (!trimmedAmount) {
+          setLightningInvoice(null);
+          setError("Enter the amount in sats for a Lightning invoice.");
+          return;
+        }
+        if (Number.isNaN(numeric) || numeric <= 0 || !Number.isInteger(numeric)) {
+          setLightningInvoice(null);
+          setError("Lightning invoices require a whole number of sats.");
+          return;
+        }
+      } else if (
+        trimmedAmount &&
+        (Number.isNaN(Number(trimmedAmount)) || Number(trimmedAmount) < 0 || !Number.isInteger(Number(trimmedAmount)))
+      ) {
+        setCashuRequest(null);
+        setError("Enter a whole number of sats.");
+        return;
+      }
+
+      setIsGenerating(true);
+      setError(null);
+
+      try {
+        if (mode === "cashu") {
+          const numericAmount = trimmedAmount ? Number(trimmedAmount) : null;
+          const request = await createNut18PaymentRequest(numericAmount, trimmedDescription);
+          if (!cancelled) {
+            setCashuRequest(request);
+          }
+        } else {
+          const numeric = Number(trimmedAmount);
+          const invoice = await createBolt11Invoice(numeric, trimmedDescription);
+          if (!cancelled) {
+            setLightningInvoice(invoice);
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Failed to create receive request", err);
+          setError(
+            mode === "cashu"
+              ? "Unable to create a Cashu payment request."
+              : "Unable to create a Lightning invoice."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setIsGenerating(false);
+        }
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, amount, description]);
+
   const mintLabel = useMemo(() => {
     if (mode === "cashu") {
       if (cashuRequest?.mints?.length) {
@@ -63,60 +131,6 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
     return lightningInvoice?.amount ?? null;
   }, [activeRequest, mode, lightningInvoice]);
 
-  const resetForMode = (nextMode: ReceiveMode) => {
-    setMode(nextMode);
-    setError(null);
-  };
-
-  const handleGenerate = async () => {
-    setError(null);
-
-    const trimmedAmount = amount.trim();
-    const trimmedDescription = showDescription && description.trim()
-      ? description.trim()
-      : null;
-
-    if (mode === "lightning") {
-      const numeric = Number(trimmedAmount);
-      if (!trimmedAmount || Number.isNaN(numeric) || numeric <= 0) {
-        setError("Enter the amount in sats for a Lightning invoice.");
-        return;
-      }
-      if (!Number.isInteger(numeric)) {
-        setError("Lightning invoices require a whole number of sats.");
-        return;
-      }
-    } else if (
-      trimmedAmount &&
-      (Number.isNaN(Number(trimmedAmount)) || Number(trimmedAmount) < 0 || !Number.isInteger(Number(trimmedAmount)))
-    ) {
-      setError("Enter a whole number of sats.");
-      return;
-    }
-
-    setIsGenerating(true);
-    try {
-      if (mode === "cashu") {
-        const numericAmount = trimmedAmount ? Number(trimmedAmount) : null;
-        const request = await createNut18PaymentRequest(numericAmount, trimmedDescription);
-        setCashuRequest(request);
-      } else {
-        const numeric = Number(trimmedAmount);
-        const invoice = await createBolt11Invoice(numeric, trimmedDescription);
-        setLightningInvoice(invoice);
-      }
-    } catch (err) {
-      console.error("Failed to create receive request", err);
-      setError(
-        mode === "cashu"
-          ? "Unable to create a Cashu payment request."
-          : "Unable to create a Lightning invoice."
-      );
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
   const handleCopy = async () => {
     if (!qrValue) return;
     await copyToClipboard(qrValue);
@@ -136,7 +150,14 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
               variant={mode === id ? "default" : "outline"}
               size="sm"
               className="flex-1 rounded-full"
-              onClick={() => resetForMode(id)}
+              onClick={() => {
+                setMode(id);
+                setAmount("");
+                setDescription("");
+                setCashuRequest(null);
+                setLightningInvoice(null);
+                setError(null);
+              }}
               disabled={isGenerating}
             >
               {label}
@@ -160,33 +181,16 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
           />
         </div>
 
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">Optional details</p>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 px-2 text-xs"
-            onClick={() => setShowDescription((value) => !value)}
+        <div className="grid gap-2">
+          <Label htmlFor="receive-description">Description (optional)</Label>
+          <Input
+            id="receive-description"
+            placeholder="Add a note for the payer"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
             disabled={isGenerating}
-          >
-            {showDescription ? "Hide" : "Add"} description
-          </Button>
+          />
         </div>
-
-        {showDescription ? (
-          <div className="grid gap-2">
-            <Label htmlFor="receive-description" className="text-xs uppercase tracking-wide text-muted-foreground">
-              Description
-            </Label>
-            <Input
-              id="receive-description"
-              placeholder="Add a note for the payer"
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              disabled={isGenerating}
-            />
-          </div>
-        ) : null}
 
         {mintLabel ? (
           <p className="text-sm text-muted-foreground">Mint: {mintLabel}</p>
@@ -213,28 +217,25 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
             <QRCode value={qrValue} className="h-full w-full" />
           ) : (
             <span className="text-xs font-medium text-muted-foreground">
-              Generate a {mode === "cashu" ? "Cashu" : "Lightning"} request to preview the QR code
+              {mode === "lightning"
+                ? "Provide an amount to generate a Lightning invoice"
+                : "Generating Cashu request..."}
             </span>
           )}
         </div>
       </div>
 
-      <div className="mt-auto grid gap-2 pb-2">
-        <Button onClick={handleGenerate} disabled={isGenerating} className="w-full">
-          {isGenerating ? "Generating…" : "Generate"}
-        </Button>
-        <div className="flex gap-3">
+      <div className="mt-auto flex gap-3 pb-2">
         <CopyButton
           onCopy={handleCopy}
-          label="Copy request"
+          label={isGenerating ? "Preparing…" : "Copy request"}
           copiedLabel="Copied"
           className="flex-1"
-          disabled={!qrValue}
+          disabled={!qrValue || isGenerating}
         />
-        <Button variant="outline" onClick={onBack} className="flex-1">
+        <Button variant="outline" onClick={onBack} className="flex-1" disabled={isGenerating}>
           Cancel
         </Button>
-        </div>
       </div>
     </Screen>
   );
