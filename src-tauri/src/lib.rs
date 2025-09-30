@@ -365,7 +365,7 @@ fn setup_macos_panel(app: &tauri::AppHandle) -> tauri::Result<()> {
         panel.set_has_shadow(true);
     }
 
-    TrayIconBuilder::with_id("meshmate-tray")
+    TrayIconBuilder::with_id("wally-tray")
         .icon(load_tray_icon()?)
         .icon_as_template(true)
         .on_tray_icon_event(|tray, event| {
