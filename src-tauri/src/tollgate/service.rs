@@ -10,7 +10,14 @@ use crate::tollgate::errors::{TollGateError, TollGateResult};
 use crate::tollgate::network::{NetworkDetector, NetworkInfo};
 use crate::tollgate::protocol::{PaymentEvent, TollGateProtocol};
 use crate::tollgate::session::{Session, SessionManager, SessionStatus};
-use crate::tollgate::wallet::TollGateWallet;
+use crate::tollgate::wallet::{
+    Bolt11InvoiceInfo,
+    Bolt11PaymentResult,
+    Nut18PaymentRequestInfo,
+    TollGateWallet,
+    WalletSummary,
+    WalletTransactionEntry,
+};
 use chrono::{DateTime, Utc};
 use nostr::Keys;
 use serde::{Deserialize, Serialize};
@@ -66,7 +73,7 @@ impl TollGateService {
         let service = Self {
             auto_tollgate_enabled: Arc::new(RwLock::new(false)),
             session_manager: Arc::new(Mutex::new(SessionManager::new())),
-            wallet: Arc::new(Mutex::new(TollGateWallet::new())),
+            wallet: Arc::new(Mutex::new(TollGateWallet::new()?)),
             network_detector: NetworkDetector::new(),
             protocol: TollGateProtocol::new(),
             current_network: Arc::new(RwLock::new(None)),
@@ -458,9 +465,8 @@ impl TollGateService {
 
     /// Add a mint to the wallet
     pub async fn add_mint(&self, mint_url: &str) -> TollGateResult<()> {
-        let seed = [0u8; 32]; // TODO: Use proper seed generation/storage
         let mut wallet = self.wallet.lock().await;
-        wallet.add_mint(mint_url, seed).await
+        wallet.add_mint(mint_url).await
     }
 
     /// Get wallet balance
@@ -468,6 +474,56 @@ impl TollGateService {
         let wallet = self.wallet.lock().await;
         let balances = wallet.get_all_balances().await?;
         Ok(balances.iter().map(|b| b.balance).sum())
+    }
+
+    /// Get wallet summary including balances and metadata
+    pub async fn get_wallet_summary(&self) -> TollGateResult<WalletSummary> {
+        let wallet = self.wallet.lock().await;
+        wallet.summary().await
+    }
+
+    /// List wallet transactions across mints
+    pub async fn list_wallet_transactions(&self) -> TollGateResult<Vec<WalletTransactionEntry>> {
+        let wallet = self.wallet.lock().await;
+        wallet.list_transactions(None).await
+    }
+
+    /// Create a Nut18 payment request
+    pub async fn create_nut18_payment_request(
+        &self,
+        amount: Option<u64>,
+        description: Option<String>,
+    ) -> TollGateResult<Nut18PaymentRequestInfo> {
+        let wallet = self.wallet.lock().await;
+        wallet.create_nut18_payment_request(amount, description)
+    }
+
+    /// Create a BOLT11 invoice
+    pub async fn create_bolt11_invoice(
+        &self,
+        amount: u64,
+        description: Option<String>,
+    ) -> TollGateResult<Bolt11InvoiceInfo> {
+        let wallet = self.wallet.lock().await;
+        wallet.create_bolt11_invoice(amount, description).await
+    }
+
+    /// Pay a Nut18 payment request
+    pub async fn pay_nut18_payment_request(
+        &self,
+        request: &str,
+        custom_amount: Option<u64>,
+    ) -> TollGateResult<()> {
+        let wallet = self.wallet.lock().await;
+        wallet
+            .pay_nut18_payment_request(request, custom_amount)
+            .await
+    }
+
+    /// Pay a BOLT11 invoice
+    pub async fn pay_bolt11_invoice(&self, invoice: &str) -> TollGateResult<Bolt11PaymentResult> {
+        let wallet = self.wallet.lock().await;
+        wallet.pay_bolt11_invoice(invoice).await
     }
 
     /// Detect if current network is a TollGate

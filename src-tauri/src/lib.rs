@@ -24,8 +24,15 @@ use tauri::{
 use tauri_nspanel::{ManagerExt, WebviewWindowExt};
 
 mod tollgate;
-use tollgate::TollGateService;
 use tollgate::session::SessionStatus;
+use tollgate::wallet::{
+    Bolt11InvoiceInfo,
+    Bolt11PaymentResult,
+    Nut18PaymentRequestInfo,
+    WalletSummary,
+    WalletTransactionEntry,
+};
+use tollgate::TollGateService;
 
 // Global state for the TollGate service
 type TollGateState = Arc<Mutex<TollGateService>>;
@@ -182,6 +189,79 @@ async fn get_active_sessions(state: State<'_, TollGateState>) -> Result<Vec<serd
     Ok(session_data)
 }
 
+#[tauri::command]
+async fn create_nut18_payment_request(
+    amount: Option<u64>,
+    description: Option<String>,
+    state: State<'_, TollGateState>,
+) -> Result<Nut18PaymentRequestInfo, String> {
+    let service = state.lock().await;
+    service
+        .create_nut18_payment_request(amount, description)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn create_bolt11_invoice(
+    amount: u64,
+    description: Option<String>,
+    state: State<'_, TollGateState>,
+) -> Result<Bolt11InvoiceInfo, String> {
+    let service = state.lock().await;
+    service
+        .create_bolt11_invoice(amount, description)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn pay_nut18_payment_request(
+    request: String,
+    custom_amount: Option<u64>,
+    state: State<'_, TollGateState>,
+) -> Result<(), String> {
+    let service = state.lock().await;
+    service
+        .pay_nut18_payment_request(&request, custom_amount)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn pay_bolt11_invoice(
+    invoice: String,
+    state: State<'_, TollGateState>,
+) -> Result<Bolt11PaymentResult, String> {
+    let service = state.lock().await;
+    service
+        .pay_bolt11_invoice(&invoice)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_wallet_summary(
+    state: State<'_, TollGateState>,
+) -> Result<WalletSummary, String> {
+    let service = state.lock().await;
+    service
+        .get_wallet_summary()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn list_wallet_transactions(
+    state: State<'_, TollGateState>,
+) -> Result<Vec<WalletTransactionEntry>, String> {
+    let service = state.lock().await;
+    service
+        .list_wallet_transactions()
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -253,6 +333,12 @@ pub fn run() {
             get_mac_address,
             get_current_wifi_details,
             get_gateway_ip,
+            create_nut18_payment_request,
+            create_bolt11_invoice,
+            pay_nut18_payment_request,
+            pay_bolt11_invoice,
+            get_wallet_summary,
+            list_wallet_transactions,
         ]);
 
     builder

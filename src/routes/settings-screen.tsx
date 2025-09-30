@@ -18,12 +18,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { ServiceStatus } from "@/lib/tollgate/types";
+import type { WalletSummary } from "@/lib/wallet/api";
 
 import type { FeatureState, Period, PeriodMetaFn } from "./types";
 import { periods } from "./types";
 
 type SettingsScreenProps = {
   status: ServiceStatus | null;
+  summary: WalletSummary | null;
   features: FeatureState[];
   mintInput: string;
   npubInput: string;
@@ -42,6 +44,7 @@ type SettingsScreenProps = {
 
 export function SettingsScreen({
   status,
+  summary,
   features,
   mintInput,
   npubInput,
@@ -56,6 +59,45 @@ export function SettingsScreen({
 }: SettingsScreenProps) {
   return (
     <Screen className="min-h-screen gap-8 overflow-y-auto">
+      {summary ? (
+        <Card className="space-y-3 border border-dashed border-primary/20 bg-background/90 p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Wallet Overview
+            </p>
+            <span className="text-lg font-semibold text-foreground">
+              {summary.total.toLocaleString()} sats
+            </span>
+          </div>
+          {summary.npub ? (
+            <CopyButton
+              onCopy={() => copyToClipboard(summary.npub ?? "")}
+              label="Copy npub"
+              copiedLabel="Copied"
+              variant="outline"
+              className="w-full justify-start border-dashed"
+            />
+          ) : null}
+          {summary.balances.length ? (
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Mints</p>
+              <ul className="space-y-1">
+                {summary.balances.map((balance) => (
+                  <li key={balance.mint_url} className="flex justify-between">
+                    <span className="truncate pr-4 text-xs uppercase tracking-wide text-muted-foreground">
+                      {balance.mint_url}
+                    </span>
+                    <span className="font-medium text-foreground">
+                      {balance.balance.toLocaleString()} {balance.unit}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
+
       <div className="grid gap-4">
         <h2 className="text-lg font-semibold uppercase tracking-[0.2em] text-muted-foreground pt-2">
           Wallet Settings

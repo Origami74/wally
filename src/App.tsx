@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { PluginListener } from "@tauri-apps/api/core";
-import { Settings2, Wallet } from "lucide-react";
+import { History, Settings2, Wallet } from "lucide-react";
 import { Route, Switch, useLocation } from "wouter";
 
 import { registerListener } from "@/lib/tollgate/network/pluginCommands";
@@ -14,6 +14,13 @@ import { SendScreen } from "@/routes/send-screen";
 import { SettingsScreen } from "@/routes/settings-screen";
 import type { FeatureState, Period, StatusBadge } from "@/routes/types";
 import { periods } from "@/routes/types";
+import { HistoryScreen } from "@/routes/history-screen";
+import {
+  fetchWalletSummary,
+  fetchWalletTransactions,
+  type WalletSummary,
+  type WalletTransactionEntry,
+} from "@/lib/wallet/api";
 
 type SessionInfo = ServiceStatus["active_sessions"][number];
 
@@ -63,6 +70,8 @@ const initialFeatures: FeatureState[] = [
 export default function App() {
   const [location, setLocation] = useLocation();
   const [status, setStatus] = useState<ServiceStatus | null>(null);
+  const [walletSummary, setWalletSummary] = useState<WalletSummary | null>(null);
+  const [transactions, setTransactions] = useState<WalletTransactionEntry[]>([]);
   const [mintInput, setMintInput] = useState("");
   const [npubInput, setNpubInput] = useState("");
   const [savingMint, setSavingMint] = useState(false);
@@ -77,23 +86,41 @@ export default function App() {
 
   const refreshStatus = useCallback(async () => {
     try {
-      const result = await invoke<ServiceStatus>("get_tollgate_status");
-      setStatus(result);
+      const [statusResult, summaryResult, transactionsResult] = await Promise.all([
+        invoke<ServiceStatus>("get_tollgate_status"),
+        fetchWalletSummary(),
+        fetchWalletTransactions(),
+      ]);
+
+      setStatus(statusResult);
+      setWalletSummary(summaryResult);
+      setTransactions(transactionsResult);
+
       if (!mintInput) {
-        const fallbackMint =
-          result.current_network?.advertisement?.pricing_options?.[0]
-            ?.mint_url ?? "";
-        if (fallbackMint) setMintInput(fallbackMint);
+        if (summaryResult.default_mint) {
+          setMintInput(summaryResult.default_mint);
+        } else {
+          const fallbackMint =
+            statusResult.current_network?.advertisement?.pricing_options?.[0]
+              ?.mint_url ?? "";
+          if (fallbackMint) setMintInput(fallbackMint);
+        }
       }
+
       if (!npubInput) {
-        const fallbackNpub =
-          result.current_network?.advertisement?.tollgate_pubkey ?? "";
-        if (fallbackNpub) setNpubInput(fallbackNpub);
+        if (summaryResult.npub) {
+          setNpubInput(summaryResult.npub);
+        } else {
+          const fallbackNpub =
+            statusResult.current_network?.advertisement?.tollgate_pubkey ?? "";
+          if (fallbackNpub) setNpubInput(fallbackNpub);
+        }
       }
+
       setFeatures((prev) =>
         prev.map((feature) =>
-          feature.id === "tollgate" && result.active_sessions?.[0]
-            ? { ...feature, spent: result.active_sessions[0].total_spent }
+          feature.id === "tollgate" && statusResult.active_sessions?.[0]
+            ? { ...feature, spent: statusResult.active_sessions[0].total_spent }
             : feature
         )
       );
@@ -146,12 +173,13 @@ export default function App() {
     setSavingMint(true);
     try {
       await invoke("add_mint", { mintUrl: mintInput.trim() });
+      await refreshStatus();
     } catch (error) {
       console.error("Failed to add mint", error);
     } finally {
       setSavingMint(false);
     }
-  }, [mintInput]);
+  }, [mintInput, refreshStatus]);
 
   const handleFeatureUpdate = useCallback(
     (
@@ -173,9 +201,16 @@ export default function App() {
     }
   }, []);
 
-  const walletBalance = status?.wallet_balance ?? 0;
+  const walletBalance =
+    walletSummary?.total ?? status?.wallet_balance ?? 0;
   const currentSession = status?.active_sessions?.[0] ?? null;
   const currentNetwork = status?.current_network ?? null;
+
+  const handlePaymentComplete = useCallback(async () => {
+    setSendRequest("");
+    await refreshStatus();
+    setLocation("/");
+  }, [refreshStatus, setLocation]);
 
   const statusBadges: StatusBadge[] = useMemo(() => {
     const badges: StatusBadge[] = [];
@@ -222,22 +257,36 @@ export default function App() {
   const goReceive = () => setLocation("/receive");
   const goSend = () => setLocation("/send");
   const goSettings = () => setLocation("/settings");
+  const goHistory = () => setLocation("/history");
 
   const sharedMainClasses =
     "relative mx-auto flex w-full max-w-md flex-col overflow-hidden bg-background";
 
   const mainClasses =
-    location === "/settings"
+    location === "/settings" || location === "/history"
       ? `${sharedMainClasses} min-h-screen`
       : `${sharedMainClasses} h-screen`;
 
-  const showHeaderButton = location === "/" || location === "/settings";
-  const primaryNavAction = location === "/settings" ? goHome : goSettings;
-  const primaryNavIcon =
+  const showSettingsButton =
+    location === "/" || location === "/settings" || location === "/history";
+  const showHistoryButton =
+    location === "/" || location === "/settings" || location === "/history";
+
+  const settingsButtonAction = location === "/settings" ? goHome : goSettings;
+  const historyButtonAction = location === "/history" ? goHome : goHistory;
+
+  const settingsButtonIcon =
     location === "/settings" ? (
       <Wallet className="h-5 w-5" />
     ) : (
       <Settings2 className="h-5 w-5" />
+    );
+
+  const historyButtonIcon =
+    location === "/history" ? (
+      <Wallet className="h-5 w-5" />
+    ) : (
+      <History className="h-5 w-5" />
     );
 
   return (
@@ -246,19 +295,34 @@ export default function App() {
       style={{ overscrollBehavior: "none" }}
     >
       <main className={mainClasses}>
-        {showHeaderButton ? (
-          <div className="absolute right-4 top-4 z-20">
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-10 w-10 rounded-full"
-              onClick={primaryNavAction}
-              aria-label={
-                location === "/settings" ? "Back to wallet" : "Open settings"
-              }
-            >
-              {primaryNavIcon}
-            </Button>
+        {showSettingsButton || showHistoryButton ? (
+          <div className="absolute right-4 top-4 z-20 flex flex-col items-end gap-2">
+            {showSettingsButton ? (
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 rounded-full"
+                onClick={settingsButtonAction}
+                aria-label={
+                  location === "/settings" ? "Back to wallet" : "Open settings"
+                }
+              >
+                {settingsButtonIcon}
+              </Button>
+            ) : null}
+            {showHistoryButton ? (
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 rounded-full"
+                onClick={historyButtonAction}
+                aria-label={
+                  location === "/history" ? "Back to wallet" : "Open history"
+                }
+              >
+                {historyButtonIcon}
+              </Button>
+            ) : null}
           </div>
         ) : null}
 
@@ -277,7 +341,8 @@ export default function App() {
           <Route path="/receive">
             <ReceiveScreen
               onBack={goHome}
-              onCopy={() => copyToClipboard("mesh-invoice-123")}
+              copyToClipboard={copyToClipboard}
+              defaultMint={walletSummary?.default_mint ?? ""}
             />
           </Route>
 
@@ -286,17 +351,14 @@ export default function App() {
               onBack={goHome}
               request={sendRequest}
               onChangeRequest={setSendRequest}
-              onSubmit={() => {
-                // TODO integrate real send logic
-                setSendRequest("");
-                goHome();
-              }}
+              onPaymentComplete={handlePaymentComplete}
             />
           </Route>
 
           <Route path="/settings">
             <SettingsScreen
               status={status}
+              summary={walletSummary}
               features={features}
               mintInput={mintInput}
               npubInput={npubInput}
@@ -305,18 +367,30 @@ export default function App() {
               savingMint={savingMint}
               onSaveMint={saveMintUrl}
               onReset={() => {
-                setMintInput(
-                  status?.current_network?.advertisement?.pricing_options?.[0]
-                    ?.mint_url ?? ""
-                );
-                setNpubInput(
-                  status?.current_network?.advertisement?.tollgate_pubkey ?? ""
-                );
+                if (walletSummary?.default_mint) {
+                  setMintInput(walletSummary.default_mint);
+                } else {
+                  setMintInput(
+                    status?.current_network?.advertisement?.pricing_options?.[0]
+                      ?.mint_url ?? ""
+                  );
+                }
+                if (walletSummary?.npub) {
+                  setNpubInput(walletSummary.npub);
+                } else {
+                  setNpubInput(
+                    status?.current_network?.advertisement?.tollgate_pubkey ?? ""
+                  );
+                }
               }}
               handleFeatureUpdate={handleFeatureUpdate}
               copyToClipboard={copyToClipboard}
               periodMeta={periodMeta}
             />
+          </Route>
+
+          <Route path="/history">
+            <HistoryScreen transactions={transactions} />
           </Route>
         </Switch>
       </main>

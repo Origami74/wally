@@ -34,7 +34,13 @@ uuid = { version = "1.0", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 anyhow = "1.0"
 thiserror = "1.0"
-cdk = { git = "https://github.com/cashubtc/cdk.git", rev = "e3fb7f9444179b41ad360885aca6864ea4da7be4", default-features = false, features = ["wallet", "mint"] }
+bip39 = { version = "2", default-features = false, features = ["std", "rand"] }
+directories = "5"
+sha2 = "0.10"
+cdk = { git = "https://github.com/cashubtc/cdk.git", rev = "f3235440409190338d81dddc85e22e9d2967c80e", default-features = false, features = ["wallet", "mint"] }
+cdk-sqlite = { git = "https://github.com/cashubtc/cdk.git", rev = "f3235440409190338d81dddc85e22e9d2967c80e", default-features = false, features = ["wallet"] }
+# Force std-enabled error types required by cdk's new thiserror usage
+bitcoin_hashes = { version = "0.13", features = ["std"], default-features = false }
 
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-sharetarget = "0.1.6"
