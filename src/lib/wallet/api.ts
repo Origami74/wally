@@ -49,6 +49,14 @@ export type WalletTransactionEntry = {
   quote_id: string | null;
 };
 
+export type SwapRequest = {
+        amount: number | null;
+    amount_split_target: number | [number];
+    proofs: [string];
+    spending_conditions: [string]| null;
+    include_fees: boolean;
+};
+
 export async function fetchWalletSummary(): Promise<WalletSummary> {
   return invoke<WalletSummary>("get_wallet_summary");
 }

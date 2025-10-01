@@ -11,6 +11,7 @@ import {
   createNut18PaymentRequest,
   type Bolt11InvoiceInfo,
   type Nut18PaymentRequestInfo,
+  type SwapRequest,
 } from "@/lib/wallet/api";
 
 const MODES = [
@@ -30,6 +31,7 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
   const [mode, setMode] = useState<ReceiveMode>("cashu");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
+  const [token, setCashuToken] = useState<SwapRequest | null>(null);
   const [cashuRequest, setCashuRequest] = useState<Nut18PaymentRequestInfo | null>(null);
   const [lightningInvoice, setLightningInvoice] = useState<Bolt11InvoiceInfo | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -97,6 +99,8 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
           setIsGenerating(false);
         }
       }
+
+     
     };
 
     run();
@@ -188,6 +192,17 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
             placeholder="Add a note for the payer"
             value={description}
             onChange={(event) => setDescription(event.target.value)}
+            disabled={isGenerating}
+          />
+        </div>
+
+        <div className="grid gap-2">
+          <Label htmlFor="cashu-token">Cashu token</Label>
+          <Input
+            id="cashu-token"
+            placeholder="Add a cashu token"
+            value={description}
+            onChange={(event) => setCashuToken(event.target.value)}
             disabled={isGenerating}
           />
         </div>
