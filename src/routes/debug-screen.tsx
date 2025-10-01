@@ -50,55 +50,37 @@ export function DebugScreen({ status, copyToClipboard }: DebugScreenProps) {
   const refreshNetworkInfo = async () => {
     setRefreshing(true);
     try {
-      // Get comprehensive network status from androidwifi plugin
-      console.log("Debug screen: Calling get_network_status...");
-      const networkStatus = await invoke("plugin:androidwifi|get_network_status", { payload: {} }) as any;
-      console.log("Debug screen: Network status response:", networkStatus);
-      
-      setNetworkInfo({
-        gateway_ip: networkStatus?.gatewayIp || networkStatus?.gateway_ip || null,
-        mac_address: networkStatus?.macAddress || networkStatus?.mac_address || null,
-        tollgate_pubkey: networkStatus?.tollgateAdvertisement?.tollgatePubkey || networkStatus?.tollgate_advertisement?.tollgate_pubkey || null,
-        supported_tips: networkStatus?.tollgateAdvertisement?.tips || networkStatus?.tollgate_advertisement?.tips || [],
-        metric: networkStatus?.tollgateAdvertisement?.metric || networkStatus?.tollgate_advertisement?.metric || null,
-        step_size: networkStatus?.tollgateAdvertisement?.stepSize || networkStatus?.tollgate_advertisement?.step_size || null,
-        pricing_options: networkStatus?.tollgateAdvertisement?.pricingOptions || networkStatus?.tollgate_advertisement?.pricing_options || [],
-        current_wifi: networkStatus?.currentWifi || networkStatus?.current_wifi || null,
-        is_tollgate: networkStatus?.isTollgate || networkStatus?.is_tollgate || false,
-        advertisement_raw: networkStatus?.tollgateAdvertisement || networkStatus?.tollgate_advertisement,
-      });
-    } catch (error) {
-      console.error("Failed to refresh network info:", error);
-      // Fallback to individual calls if the new command fails
-      try {
-        const [gatewayResult, macResult, wifiResult] = await Promise.all([
-          invoke("plugin:androidwifi|get_gateway_ip", { payload: {} }).catch(() => ({ gateway_ip: null })),
-          invoke("plugin:androidwifi|get_mac_address", { payload: { gateway_ip: "" } }).catch(() => ({ mac_address: null })),
-          invoke("plugin:androidwifi|get_current_wifi_details", { payload: {} }).catch(() => ({ wifi: null })),
-        ]);
+      // Get basic network info only (no tollgate detection to avoid duplicate work)
+      console.log("Debug screen: Getting basic network info...");
+      const [gatewayResult, macResult, wifiResult] = await Promise.all([
+        invoke("plugin:androidwifi|get_gateway_ip", { payload: {} }).catch(() => ({ gatewayIp: null })),
+        invoke("plugin:androidwifi|get_mac_address", { payload: { gateway_ip: "" } }).catch(() => ({ macAddress: null })),
+        invoke("plugin:androidwifi|get_current_wifi_details", { payload: {} }).catch(() => ({ wifi: null })),
+      ]);
 
-        // Extract tollgate info from current status
-        const tollgateInfo = status?.current_network?.advertisement;
-        
-        setNetworkInfo({
-          gateway_ip: (gatewayResult as any)?.gateway_ip || status?.current_network?.gateway_ip || null,
-          mac_address: (macResult as any)?.mac_address || status?.current_network?.mac_address || null,
-          tollgate_pubkey: tollgateInfo?.tollgate_pubkey || null,
-          supported_tips: tollgateInfo?.tips || [],
-          metric: tollgateInfo?.metric || null,
-          step_size: tollgateInfo?.step_size?.toString() || null,
-          pricing_options: tollgateInfo?.pricing_options?.map((option: any) => ({
-            mint_url: option.mint_url || option.mintUrl || '',
-            price: option.price || '',
-            unit: option.unit || ''
-          })) || [],
-          current_wifi: (wifiResult as any)?.wifi || null,
-          is_tollgate: status?.current_network?.is_tollgate || false,
-          advertisement_raw: tollgateInfo,
-        });
-      } catch (fallbackError) {
-        console.error("Fallback network info fetch also failed:", fallbackError);
-      }
+      // Extract tollgate info from current status (events will update this)
+      const tollgateInfo = status?.current_network?.advertisement;
+      
+      setNetworkInfo(prev => ({
+        ...prev,
+        gateway_ip: (gatewayResult as any)?.gatewayIp || (gatewayResult as any)?.gateway_ip || null,
+        mac_address: (macResult as any)?.macAddress || (macResult as any)?.mac_address || null,
+        current_wifi: (wifiResult as any)?.wifi || null,
+        // Keep existing tollgate info - events will update these
+        tollgate_pubkey: prev.tollgate_pubkey || tollgateInfo?.tollgate_pubkey || null,
+        supported_tips: prev.supported_tips.length > 0 ? prev.supported_tips : (tollgateInfo?.tips || []),
+        metric: prev.metric || tollgateInfo?.metric || null,
+        step_size: prev.step_size || tollgateInfo?.step_size?.toString() || null,
+        pricing_options: prev.pricing_options.length > 0 ? prev.pricing_options : (tollgateInfo?.pricing_options?.map((option: any) => ({
+          mint_url: option.mint_url || option.mintUrl || '',
+          price: option.price || '',
+          unit: option.unit || ''
+        })) || []),
+        is_tollgate: prev.is_tollgate || status?.current_network?.is_tollgate || false,
+        advertisement_raw: prev.advertisement_raw || tollgateInfo,
+      }));
+    } catch (error) {
+      console.error("Failed to refresh basic network info:", error);
     } finally {
       setRefreshing(false);
     }
@@ -114,17 +96,23 @@ export function DebugScreen({ status, copyToClipboard }: DebugScreenProps) {
         const networkStatusUnlisten = await listen('network-status-changed', (event: any) => {
           console.log('Debug screen: Network status changed', event.payload);
           const networkStatus = event.payload;
+          const tollgateAd = networkStatus?.tollgateAdvertisement;
+          
           setNetworkInfo({
-            gateway_ip: networkStatus?.gatewayIp || networkStatus?.gateway_ip || null,
-            mac_address: networkStatus?.macAddress || networkStatus?.mac_address || null,
-            tollgate_pubkey: networkStatus?.tollgateAdvertisement?.tollgatePubkey || networkStatus?.tollgate_advertisement?.tollgate_pubkey || null,
-            supported_tips: networkStatus?.tollgateAdvertisement?.tips || networkStatus?.tollgate_advertisement?.tips || [],
-            metric: networkStatus?.tollgateAdvertisement?.metric || networkStatus?.tollgate_advertisement?.metric || null,
-            step_size: networkStatus?.tollgateAdvertisement?.stepSize || networkStatus?.tollgate_advertisement?.step_size || null,
-            pricing_options: networkStatus?.tollgateAdvertisement?.pricingOptions || networkStatus?.tollgate_advertisement?.pricing_options || [],
-            current_wifi: networkStatus?.currentWifi || networkStatus?.current_wifi || null,
-            is_tollgate: networkStatus?.isTollgate || networkStatus?.is_tollgate || false,
-            advertisement_raw: networkStatus?.tollgateAdvertisement || networkStatus?.tollgate_advertisement,
+            gateway_ip: networkStatus?.gatewayIp || null,
+            mac_address: networkStatus?.macAddress || null,
+            tollgate_pubkey: tollgateAd?.tollgatePubkey || null,
+            supported_tips: tollgateAd?.tips || [],
+            metric: tollgateAd?.metric || null,
+            step_size: tollgateAd?.stepSize || null,
+            pricing_options: tollgateAd?.pricingOptions?.map((option: any) => ({
+              mint_url: option.mintUrl || '',
+              price: option.price || '',
+              unit: option.unit || ''
+            })) || [],
+            current_wifi: networkStatus?.currentWifi || null,
+            is_tollgate: networkStatus?.isTollgate || false,
+            advertisement_raw: tollgateAd,
           });
         });
 
@@ -132,19 +120,23 @@ export function DebugScreen({ status, copyToClipboard }: DebugScreenProps) {
         const tollgateUnlisten = await listen('tollgate-detected', (event: any) => {
           console.log('Debug screen: Tollgate detected', event.payload);
           const tollgateInfo = event.payload;
+          const tollgateAd = tollgateInfo?.tollgateAdvertisement;
+          
           setNetworkInfo(prev => ({
             ...prev,
-            tollgate_pubkey: tollgateInfo?.advertisement?.tollgate_pubkey || null,
-            supported_tips: tollgateInfo?.advertisement?.tips || [],
-            metric: tollgateInfo?.advertisement?.metric || null,
-            step_size: tollgateInfo?.advertisement?.step_size?.toString() || null,
-            pricing_options: tollgateInfo?.advertisement?.pricing_options?.map((option: any) => ({
-              mint_url: option.mint_url || option.mintUrl || '',
+            gateway_ip: tollgateInfo?.gatewayIp || prev.gateway_ip,
+            mac_address: tollgateInfo?.macAddress || prev.mac_address,
+            tollgate_pubkey: tollgateAd?.tollgatePubkey || null,
+            supported_tips: tollgateAd?.tips || [],
+            metric: tollgateAd?.metric || null,
+            step_size: tollgateAd?.stepSize || null,
+            pricing_options: tollgateAd?.pricingOptions?.map((option: any) => ({
+              mint_url: option.mintUrl || '',
               price: option.price || '',
               unit: option.unit || ''
             })) || [],
-            is_tollgate: tollgateInfo?.is_tollgate || false,
-            advertisement_raw: tollgateInfo?.advertisement,
+            is_tollgate: tollgateInfo?.isTollgate || false,
+            advertisement_raw: tollgateAd,
           }));
         });
 

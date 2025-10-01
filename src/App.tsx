@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { PluginListener } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 import { History, Settings2, Wallet, Bug } from "lucide-react";
 import { Route, Switch, useLocation } from "wouter";
-
-import { registerListener } from "@/lib/tollgate/network/pluginCommands";
 import type { ServiceStatus } from "@/lib/tollgate/types";
 import { statusTone } from "@/lib/tollgate/utils";
 import { Button } from "@/components/ui/button";
@@ -132,12 +131,12 @@ export default function App() {
 
   useEffect(() => {
     let mounted = true;
-    const listeners: PluginListener[] = [];
+    const listeners: UnlistenFn[] = [];
 
     const initialise = async () => {
       await refreshStatus();
       try {
-        const connected = await registerListener(
+        const connected = await listen(
           "network-connected",
           async () => {
             if (!mounted) return;
@@ -146,7 +145,7 @@ export default function App() {
         );
         listeners.push(connected);
 
-        const disconnected = await registerListener(
+        const disconnected = await listen(
           "network-disconnected",
           async () => {
             if (!mounted) return;
@@ -156,22 +155,22 @@ export default function App() {
         listeners.push(disconnected);
 
         // Listen for network status changes from the new monitoring system
-        const networkStatusChanged = await registerListener(
+        const networkStatusChanged = await listen(
           "network-status-changed",
-          async (networkStatus: any) => {
+          async (event: any) => {
             if (!mounted) return;
-            console.log("Network status changed:", networkStatus);
+            console.log("App: Network status changed:", event.payload);
             await refreshStatus();
           }
         );
         listeners.push(networkStatusChanged);
 
         // Listen for tollgate detection events
-        const tollgateDetected = await registerListener(
+        const tollgateDetected = await listen(
           "tollgate-detected",
-          async (tollgateInfo: any) => {
+          async (event: any) => {
             if (!mounted) return;
-            console.log("Tollgate detected:", tollgateInfo);
+            console.log("App: Tollgate detected:", event.payload);
             await refreshStatus();
           }
         );
@@ -187,7 +186,7 @@ export default function App() {
     return () => {
       mounted = false;
       clearInterval(interval);
-      listeners.forEach((listener) => listener.unregister());
+      listeners.forEach((listener) => listener());
     };
   }, [refreshStatus]);
 
