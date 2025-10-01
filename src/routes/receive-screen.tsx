@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import {
   createBolt11Invoice,
   createNut18PaymentRequest,
+  receiveCashuToken,
   type Bolt11InvoiceInfo,
   type Nut18PaymentRequestInfo,
   type SwapRequest,
@@ -31,11 +32,13 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
   const [mode, setMode] = useState<ReceiveMode>("cashu");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
-  const [token, setCashuToken] = useState<SwapRequest | null>(null);
+  const [cashuTokenInput, setCashuTokenInput] = useState("");
   const [cashuRequest, setCashuRequest] = useState<Nut18PaymentRequestInfo | null>(null);
   const [lightningInvoice, setLightningInvoice] = useState<Bolt11InvoiceInfo | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isReceiving, setIsReceiving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const activeRequest = mode === "cashu" ? cashuRequest : lightningInvoice;
   const qrValue = activeRequest?.request ?? "";
@@ -140,13 +143,39 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
     await copyToClipboard(qrValue);
   };
 
+  const handleReceiveToken = async () => {
+    if (!cashuTokenInput.trim()) return;
+    
+    setIsReceiving(true);
+    setError(null);
+    setSuccess(null);
+    
+    try {
+      console.log("Receiving cashu token:", cashuTokenInput);
+      const result = await receiveCashuToken(cashuTokenInput.trim());
+      
+      console.log("Token received successfully:", result);
+      setSuccess(`Successfully received ${result.amount} sats!`);
+      setCashuTokenInput(""); // Clear the input
+      
+      // Refresh wallet balance in parent component if possible
+      // The balance should update automatically via the wallet state management
+      
+    } catch (error) {
+      console.error("Failed to receive token:", error);
+      setError(`Failed to receive token: ${error}`);
+    } finally {
+      setIsReceiving(false);
+    }
+  };
+
   return (
-    <Screen className="h-screen gap-4">
+    <Screen className="min-h-screen flex flex-col gap-4">
       <h2 className="text-lg font-semibold uppercase tracking-[0.2em] text-muted-foreground">
         Receive
       </h2>
 
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3 flex-shrink-0">
         <div className="flex gap-2">
           {MODES.map(({ id, label }) => (
             <Button
@@ -197,14 +226,23 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
         </div>
 
         <div className="grid gap-2">
-          <Label htmlFor="cashu-token">Cashu token</Label>
+          <Label htmlFor="cashu-token">Paste Cashu token to receive</Label>
           <Input
             id="cashu-token"
-            placeholder="Add a cashu token"
-            value={description}
-            onChange={(event) => setCashuToken(event.target.value)}
-            disabled={isGenerating}
+            placeholder="cashuAeyJ0b2tlbiI6W3sibWludCI6Imh0dHBzOi8v..."
+            value={cashuTokenInput}
+            onChange={(event) => setCashuTokenInput(event.target.value)}
+            disabled={isGenerating || isReceiving}
           />
+          {cashuTokenInput && (
+            <Button
+              onClick={handleReceiveToken}
+              disabled={isReceiving || !cashuTokenInput.trim()}
+              className="w-full"
+            >
+              {isReceiving ? "Receiving..." : "Receive Token"}
+            </Button>
+          )}
         </div>
 
         {mintLabel ? (
@@ -224,10 +262,14 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
         {error ? (
           <p className="text-sm text-destructive">{error}</p>
         ) : null}
+
+        {success ? (
+          <p className="text-sm text-green-600">{success}</p>
+        ) : null}
       </div>
 
-      <div className="flex flex-1 flex-col items-center justify-center gap-4">
-        <div className="grid h-40 w-40 place-items-center rounded-3xl border-2 border-dashed border-primary/40 bg-muted p-5">
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 min-h-0">
+        <div className="grid h-40 w-40 place-items-center rounded-3xl border-2 border-dashed border-primary/40 bg-muted p-5 flex-shrink-0">
           {qrValue ? (
             <QRCode value={qrValue} className="h-full w-full" />
           ) : (
@@ -240,7 +282,7 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
         </div>
       </div>
 
-      <div className="mt-auto flex gap-3 pb-2">
+      <div className="flex gap-3 pb-2 flex-shrink-0">
         <CopyButton
           onCopy={handleCopy}
           label={isGenerating ? "Preparing…" : "Copy request"}

@@ -516,6 +516,41 @@ impl TollGateWallet {
         })
     }
 
+    /// Receive a cashu token and add it to the wallet
+    pub async fn receive_cashu_token(&mut self, token: &str) -> TollGateResult<u64> {
+        // Parse the token to determine which mint it belongs to
+        let cashu_token = cdk::nuts::Token::from_str(token)
+            .map_err(|e| TollGateError::wallet(format!("Invalid cashu token: {}", e)))?;
+
+        // Get the mint URL from the token
+        let mint_url = cashu_token.mint_url()
+            .map_err(|e| TollGateError::wallet(format!("Failed to get mint URL: {}", e)))?
+            .to_string();
+        
+        // Check if we have a wallet for this mint, if not add it automatically
+        if !self.wallets.contains_key(&mint_url) {
+            log::info!("Mint {} not found, adding it automatically", mint_url);
+            self.add_mint(&mint_url).await?;
+        }
+
+        // Get the wallet (should exist now)
+        let wallet = self.wallets.get(&mint_url).ok_or_else(|| {
+            TollGateError::wallet(format!("Failed to create wallet for mint: {}", mint_url))
+        })?;
+
+        // Receive the token with default options
+        let received_amount = wallet
+            .receive(token, cdk::wallet::ReceiveOptions::default())
+            .await
+            .map_err(|e| TollGateError::wallet(format!("Failed to receive token: {}", e)))?;
+
+        // Convert amount to u64
+        let total_amount: u64 = received_amount.into();
+
+        log::info!("Successfully received {} sats from token at mint {}", total_amount, mint_url);
+        Ok(total_amount)
+    }
+
     /// List transactions across all configured mints
     pub async fn list_transactions(
         &self,

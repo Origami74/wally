@@ -92,3 +92,15 @@ pub async fn list_wallet_transactions(
         .await
         .map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub async fn receive_cashu_token(
+    token: String,
+    state: State<'_, TollGateState>,
+) -> Result<serde_json::Value, String> {
+    let service = state.lock().await;
+    match service.receive_cashu_token(&token).await {
+        Ok(amount) => Ok(serde_json::json!({ "amount": amount })),
+        Err(e) => Err(e.to_string()),
+    }
+}

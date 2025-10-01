@@ -262,6 +262,7 @@ pub fn run() {
             pay_bolt11_invoice,
             get_wallet_summary,
             list_wallet_transactions,
+            receive_cashu_token,
         ]);
 
     builder

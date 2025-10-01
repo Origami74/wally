@@ -100,3 +100,9 @@ export async function payBolt11Invoice(invoice: string): Promise<Bolt11PaymentRe
     invoice,
   });
 }
+
+export async function receiveCashuToken(token: string): Promise<{ amount: number }> {
+  return invoke<{ amount: number }>("receive_cashu_token", {
+    token,
+  });
+}

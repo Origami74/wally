@@ -526,6 +526,12 @@ impl TollGateService {
         wallet.pay_bolt11_invoice(invoice).await
     }
 
+    /// Receive a cashu token
+    pub async fn receive_cashu_token(&self, token: &str) -> TollGateResult<u64> {
+        let mut wallet = self.wallet.lock().await;
+        wallet.receive_cashu_token(token).await
+    }
+
     /// Detect if current network is a TollGate
     pub async fn detect_tollgate(&self, gateway_ip: &str, mac_address: &str) -> TollGateResult<NetworkInfo> {
         self.network_detector.detect_tollgate(gateway_ip, mac_address).await
