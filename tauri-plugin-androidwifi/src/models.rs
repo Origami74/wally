@@ -75,3 +75,38 @@ pub struct GetMacAddressPayload {
 pub struct ConnectWifiResponse {
     pub response: String,
 }
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TollgateAdvertisement {
+    pub tollgate_pubkey: String,
+    pub tips: Vec<String>,
+    pub metric: Option<String>,
+    pub step_size: Option<String>,
+    pub pricing_options: Vec<PricingOption>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PricingOption {
+    pub mint_url: String,
+    pub price: String,
+    pub unit: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TollgateDetectionResponse {
+    pub is_tollgate: bool,
+    pub advertisement: Option<TollgateAdvertisement>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkStatusResponse {
+    pub gateway_ip: Option<String>,
+    pub mac_address: Option<String>,
+    pub current_wifi: Option<CurrentWifi>,
+    pub is_tollgate: bool,
+    pub tollgate_advertisement: Option<TollgateAdvertisement>,
+}

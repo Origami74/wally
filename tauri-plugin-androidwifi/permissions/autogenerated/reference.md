@@ -9,6 +9,8 @@ Default permissions for the plugin
 - `allow-connect-wifi`
 - `allow-mark-captive-portal-dismissed`
 - `allow-register-listener`
+- `allow-detect-tollgate`
+- `allow-get-network-status`
 
 ## Permission Table
 
@@ -41,6 +43,32 @@ Enables the connect_wifi command without any pre-configured scope.
 <td>
 
 Denies the connect_wifi command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`androidwifi:allow-detect-tollgate`
+
+</td>
+<td>
+
+Enables the detect_tollgate command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`androidwifi:deny-detect-tollgate`
+
+</td>
+<td>
+
+Denies the detect_tollgate command without any pre-configured scope.
 
 </td>
 </tr>
@@ -184,6 +212,32 @@ Enables the get_mac_address command without any pre-configured scope.
 <td>
 
 Denies the get_mac_address command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`androidwifi:allow-get-network-status`
+
+</td>
+<td>
+
+Enables the get_network_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`androidwifi:deny-get-network-status`
+
+</td>
+<td>
+
+Denies the get_network_status command without any pre-configured scope.
 
 </td>
 </tr>
