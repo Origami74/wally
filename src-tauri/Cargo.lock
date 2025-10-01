@@ -3611,6 +3611,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "nostr"
+version = "0.43.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62a97d745f1bd8d5e05a978632bbb87b0614567d5142906fe7c86fb2440faac6"
+dependencies = [
+ "base64 0.22.1",
+ "bech32 0.11.0",
+ "bip39",
+ "bitcoin_hashes 0.14.0",
+ "cbc",
+ "chacha20",
+ "chacha20poly1305",
+ "getrandom 0.2.15",
+ "instant",
+ "scrypt",
+ "secp256k1",
+ "serde",
+ "serde_json",
+ "unicode-normalization",
+ "url",
+]
+
+[[package]]
 name = "nu-ansi-term"
 version = "0.50.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6069,6 +6092,7 @@ dependencies = [
  "chrono",
  "default-net",
  "mac_address",
+ "nostr 0.43.1",
  "reqwest 0.12.9",
  "serde",
  "serde_json",
@@ -7055,7 +7079,7 @@ dependencies = [
  "cocoa",
  "directories",
  "log",
- "nostr",
+ "nostr 0.35.0",
  "objc",
  "reqwest 0.11.27",
  "serde",
@@ -7345,7 +7369,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

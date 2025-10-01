@@ -550,20 +550,39 @@ impl<R: Runtime> NetworkMonitor<R> {
   }
 
   async fn send_payment_to_tollgate(&self, gateway_ip: &str, tollgate_pubkey: &str, mac_address: &str, cashu_token: &str) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+    // Generate customer keys for this payment
+    let customer_keys = nostr::Keys::generate();
+    
+    // Parse tollgate pubkey
+    let tollgate_pk = nostr::PublicKey::from_hex(tollgate_pubkey)
+      .map_err(|e| format!("Invalid tollgate pubkey: {}", e))?;
+    
     // Create payment event according to TIP-01
-    let payment_event = serde_json::json!({
-      "kind": 21000,
-      "pubkey": "temp_customer_pubkey", // In real implementation, generate customer keys
-      "created_at": chrono::Utc::now().timestamp(),
-      "tags": [
-        ["p", tollgate_pubkey],
-        ["device-identifier", "mac", mac_address],
-        ["payment", cashu_token]
-      ],
-      "content": "",
-      "id": "temp_event_id",
-      "sig": "temp_signature"
-    });
+    let payment_event = nostr::EventBuilder::new(
+      nostr::Kind::Custom(21000),
+      ""
+    )
+    .tags(vec![
+      nostr::Tag::public_key(tollgate_pk),
+      nostr::Tag::custom(
+        nostr::TagKind::Custom("device-identifier".into()),
+        vec!["mac".to_string(), mac_address.to_string()]
+      ),
+      nostr::Tag::custom(
+        nostr::TagKind::Custom("payment".into()),
+        vec![cashu_token.to_string()]
+      ),
+    ])
+    .sign(&customer_keys)
+    .await
+    .map_err(|e| format!("Failed to create and sign event: {}", e))?;
+    
+    // Convert to JSON for sending
+    let payment_json = serde_json::to_value(&payment_event)
+      .map_err(|e| format!("Failed to serialize event: {}", e))?;
+    
+    println!("[Tollgate Payment] Sending payment event:");
+    println!("{}", serde_json::to_string_pretty(&payment_json).unwrap_or_default());
 
     // Send to tollgate using TIP-03 HTTP endpoint
     let client = reqwest::Client::new();
@@ -574,7 +593,7 @@ impl<R: Runtime> NetworkMonitor<R> {
     let response = client
       .post(&url)
       .header("Content-Type", "application/json")
-      .json(&payment_event)
+      .json(&payment_json)
       .timeout(std::time::Duration::from_secs(10))
       .send()
       .await?;

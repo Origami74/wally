@@ -315,9 +315,6 @@ impl TollGateWallet {
         // In the future, we could store the mint URL in the database metadata
         let common_mints = vec![
             "https://mint.minibits.cash/Bitcoin",
-            "https://8333.space:3338",
-            "https://legend.lnbits.com/cashu/api/v1/4gr9Xcmz3XEkUNwiBiQGoC",
-            "https://mint.coinos.io",
         ];
 
         for mint_url in common_mints {
