@@ -50,37 +50,32 @@ export function DebugScreen({ status, copyToClipboard }: DebugScreenProps) {
   const refreshNetworkInfo = async () => {
     setRefreshing(true);
     try {
-      // Get basic network info only (no tollgate detection to avoid duplicate work)
-      console.log("Debug screen: Getting basic network info...");
-      const [gatewayResult, macResult, wifiResult] = await Promise.all([
-        invoke("plugin:androidwifi|get_gateway_ip", { payload: {} }).catch(() => ({ gatewayIp: null })),
-        invoke("plugin:androidwifi|get_mac_address", { payload: { gateway_ip: "" } }).catch(() => ({ macAddress: null })),
-        invoke("plugin:androidwifi|get_current_wifi_details", { payload: {} }).catch(() => ({ wifi: null })),
-      ]);
-
-      // Extract tollgate info from current status (events will update this)
-      const tollgateInfo = status?.current_network?.advertisement;
+      // Use the new unified network status command instead of individual commands
+      console.log("Debug screen: Getting network status...");
+      const networkStatus = await invoke("plugin:androidwifi|get_network_status", { payload: {} });
+      console.log("Debug screen: Received network status:", networkStatus);
       
-      setNetworkInfo(prev => ({
-        ...prev,
-        gateway_ip: (gatewayResult as any)?.gatewayIp || (gatewayResult as any)?.gateway_ip || null,
-        mac_address: (macResult as any)?.macAddress || (macResult as any)?.mac_address || null,
-        current_wifi: (wifiResult as any)?.wifi || null,
-        // Keep existing tollgate info - events will update these
-        tollgate_pubkey: prev.tollgate_pubkey || tollgateInfo?.tollgate_pubkey || null,
-        supported_tips: prev.supported_tips.length > 0 ? prev.supported_tips : (tollgateInfo?.tips || []),
-        metric: prev.metric || tollgateInfo?.metric || null,
-        step_size: prev.step_size || tollgateInfo?.step_size?.toString() || null,
-        pricing_options: prev.pricing_options.length > 0 ? prev.pricing_options : (tollgateInfo?.pricing_options?.map((option: any) => ({
-          mint_url: option.mint_url || option.mintUrl || '',
+      const status = networkStatus as any;
+      const tollgateAd = status?.tollgateAdvertisement;
+      
+      setNetworkInfo({
+        gateway_ip: status?.gatewayIp || null,
+        mac_address: status?.macAddress || null,
+        tollgate_pubkey: tollgateAd?.tollgatePubkey || null,
+        supported_tips: tollgateAd?.tips || [],
+        metric: tollgateAd?.metric || null,
+        step_size: tollgateAd?.stepSize || null,
+        pricing_options: tollgateAd?.pricingOptions?.map((option: any) => ({
+          mint_url: option.mintUrl || '',
           price: option.price || '',
           unit: option.unit || ''
-        })) || []),
-        is_tollgate: prev.is_tollgate || status?.current_network?.is_tollgate || false,
-        advertisement_raw: prev.advertisement_raw || tollgateInfo,
-      }));
+        })) || [],
+        current_wifi: status?.currentWifi || null,
+        is_tollgate: status?.isTollgate || false,
+        advertisement_raw: tollgateAd,
+      });
     } catch (error) {
-      console.error("Failed to refresh basic network info:", error);
+      console.error("Failed to refresh network info:", error);
     } finally {
       setRefreshing(false);
     }

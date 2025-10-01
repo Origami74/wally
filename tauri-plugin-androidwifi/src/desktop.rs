@@ -33,6 +33,7 @@ struct NetworkMonitor<R: Runtime> {
   app: AppHandle<R>,
   last_gateway: Arc<Mutex<Option<String>>>,
   last_network_status: Arc<Mutex<Option<NetworkStatusResponse>>>,
+  last_check_time: Arc<Mutex<std::time::Instant>>,
 }
 
 impl<R: Runtime> NetworkMonitor<R> {
@@ -41,6 +42,7 @@ impl<R: Runtime> NetworkMonitor<R> {
       app,
       last_gateway: Arc::new(Mutex::new(None)),
       last_network_status: Arc::new(Mutex::new(None)),
+      last_check_time: Arc::new(Mutex::new(std::time::Instant::now())),
     }
   }
 
@@ -66,13 +68,27 @@ impl<R: Runtime> NetworkMonitor<R> {
       changed
     };
     
-    if gateway_changed {
+    // Check if we should do a periodic check (every 10 seconds) even without gateway change
+    let should_periodic_check = {
+      let mut last_check = self.last_check_time.lock().unwrap();
+      let elapsed = last_check.elapsed();
+      if elapsed.as_secs() >= 10 {
+        *last_check = std::time::Instant::now();
+        true
+      } else {
+        false
+      }
+    };
+    
+    if gateway_changed || should_periodic_check {
+      let check_reason = if gateway_changed { "gateway changed" } else { "periodic check" };
+      println!("[WiFi Debug] Checking network status (reason: {})", check_reason);
       
       // Get full network status (includes tollgate detection)
       println!("[WiFi Debug] Background monitor: Getting full network status...");
       let network_status = self.get_full_network_status().await?;
-      println!("[WiFi Debug] Background monitor: Network status - Gateway: {:?}, Tollgate: {}",
-               network_status.gateway_ip, network_status.is_tollgate);
+      println!("[WiFi Debug] Background monitor: Network status - Gateway: {:?}, MAC: {:?}, Tollgate: {}",
+               network_status.gateway_ip, network_status.mac_address, network_status.is_tollgate);
       
       // Update stored status
       {
@@ -81,7 +97,8 @@ impl<R: Runtime> NetworkMonitor<R> {
       }
       
       // Emit network change event with tollgate info included
-      println!("[WiFi Debug] Background monitor: Emitting network-status-changed event");
+      println!("[WiFi Debug] Background monitor: Emitting network-status-changed event with Gateway: {:?}, MAC: {:?}",
+               network_status.gateway_ip, network_status.mac_address);
       if let Err(e) = self.app.emit("network-status-changed", &network_status) {
         eprintln!("Failed to emit network status change: {}", e);
       } else {
@@ -90,7 +107,8 @@ impl<R: Runtime> NetworkMonitor<R> {
       
       // Also emit separate tollgate event if tollgate detected
       if network_status.is_tollgate {
-        println!("[WiFi Debug] Background monitor: Emitting tollgate-detected event");
+        println!("[WiFi Debug] Background monitor: Emitting tollgate-detected event with Gateway: {:?}, MAC: {:?}",
+                 network_status.gateway_ip, network_status.mac_address);
         if let Err(e) = self.app.emit("tollgate-detected", &network_status) {
           eprintln!("Failed to emit tollgate detection: {}", e);
         } else {
