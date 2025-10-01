@@ -277,6 +277,60 @@ impl TollGateWallet {
         })
     }
 
+    /// Load existing mints from storage on startup
+    pub async fn load_existing_mints(&mut self) -> TollGateResult<()> {
+        // Scan the wallets directory for existing database files
+        let wallets_dir = &self.storage.wallets_dir;
+        
+        if !wallets_dir.exists() {
+            return Ok(());
+        }
+
+        let entries = std::fs::read_dir(wallets_dir)
+            .map_err(|e| TollGateError::wallet(format!("Failed to read wallets directory: {}", e)))?;
+
+        for entry in entries {
+            let entry = entry.map_err(|e| TollGateError::wallet(format!("Failed to read directory entry: {}", e)))?;
+            let path = entry.path();
+            
+            if path.extension().and_then(|s| s.to_str()) == Some("sqlite") {
+                // Try to determine the mint URL from the database
+                if let Ok(mint_url) = self.get_mint_url_from_db_path(&path).await {
+                    if !self.wallets.contains_key(&mint_url) {
+                        log::info!("Loading existing mint from database: {}", mint_url);
+                        if let Err(e) = self.add_mint(&mint_url).await {
+                            log::warn!("Failed to load existing mint {}: {}", mint_url, e);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Try to determine mint URL from database path by checking known mints
+    async fn get_mint_url_from_db_path(&self, _db_path: &std::path::Path) -> TollGateResult<String> {
+        // For now, we'll use a list of common mints to try
+        // In the future, we could store the mint URL in the database metadata
+        let common_mints = vec![
+            "https://mint.minibits.cash/Bitcoin",
+            "https://8333.space:3338",
+            "https://legend.lnbits.com/cashu/api/v1/4gr9Xcmz3XEkUNwiBiQGoC",
+            "https://mint.coinos.io",
+        ];
+
+        for mint_url in common_mints {
+            if let Ok(expected_path) = self.storage.mint_db_path(mint_url) {
+                if expected_path == _db_path {
+                    return Ok(mint_url.to_string());
+                }
+            }
+        }
+
+        Err(TollGateError::wallet("Could not determine mint URL from database path".to_string()))
+    }
+
     fn default_mint_url(&self) -> TollGateResult<&String> {
         self.default_mint
             .as_ref()

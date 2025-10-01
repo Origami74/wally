@@ -6066,6 +6066,7 @@ dependencies = [
 name = "tauri-plugin-androidwifi"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "default-net",
  "mac_address",
  "reqwest 0.12.9",

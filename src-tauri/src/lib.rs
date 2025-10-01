@@ -236,6 +236,21 @@ pub fn run() {
                         file_name: Some("tollgate_logs.txt".parse().unwrap()),
                     }),
                 ])
+                .filter(|metadata| {
+                    // Filter out CDK and Cashu trace logs
+                    if metadata.level() == log::Level::Trace && (
+                        metadata.target().starts_with("cdk") ||
+                        metadata.target().starts_with("cashu") ||
+                        metadata.target().starts_with("tracing::span") ||
+                        metadata.target().starts_with("hyper") ||
+                        metadata.target().starts_with("reqwest") ||
+                        metadata.target().starts_with("h2") ||
+                        metadata.target().starts_with("rustls")
+                    ) {
+                        return false;
+                    }
+                    true
+                })
                 .build(),
         )
         .plugin(tauri_plugin_http::init())

@@ -70,10 +70,15 @@ pub struct TollGateService {
 impl TollGateService {
     /// Create a new TollGate service
     pub async fn new() -> TollGateResult<Self> {
+        let mut wallet = TollGateWallet::new()?;
+        
+        // Load existing mints from previous sessions
+        wallet.load_existing_mints().await?;
+        
         let service = Self {
             auto_tollgate_enabled: Arc::new(RwLock::new(false)),
             session_manager: Arc::new(Mutex::new(SessionManager::new())),
-            wallet: Arc::new(Mutex::new(TollGateWallet::new()?)),
+            wallet: Arc::new(Mutex::new(wallet)),
             network_detector: NetworkDetector::new(),
             protocol: TollGateProtocol::new(),
             current_network: Arc::new(RwLock::new(None)),
