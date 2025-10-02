@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { PluginListener } from "@tauri-apps/api/core";
-import { History, Settings2, Wallet } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { History, Settings2, Wallet, Bug } from "lucide-react";
 import { Route, Switch, useLocation } from "wouter";
-
-import { registerListener } from "@/lib/tollgate/network/pluginCommands";
 import type { ServiceStatus } from "@/lib/tollgate/types";
 import { statusTone } from "@/lib/tollgate/utils";
 import { Button } from "@/components/ui/button";
@@ -12,6 +11,7 @@ import { HomeScreen } from "@/routes/home-screen";
 import { ReceiveScreen } from "@/routes/receive-screen";
 import { SendScreen } from "@/routes/send-screen";
 import { SettingsScreen } from "@/routes/settings-screen";
+import { DebugScreen } from "@/routes/debug-screen";
 import type { FeatureState, Period, StatusBadge } from "@/routes/types";
 import { periods } from "@/routes/types";
 import { HistoryScreen } from "@/routes/history-screen";
@@ -131,12 +131,12 @@ export default function App() {
 
   useEffect(() => {
     let mounted = true;
-    const listeners: PluginListener[] = [];
+    const listeners: UnlistenFn[] = [];
 
     const initialise = async () => {
       await refreshStatus();
       try {
-        const connected = await registerListener(
+        const connected = await listen(
           "network-connected",
           async () => {
             if (!mounted) return;
@@ -145,7 +145,7 @@ export default function App() {
         );
         listeners.push(connected);
 
-        const disconnected = await registerListener(
+        const disconnected = await listen(
           "network-disconnected",
           async () => {
             if (!mounted) return;
@@ -153,6 +153,28 @@ export default function App() {
           }
         );
         listeners.push(disconnected);
+
+        // Listen for network status changes from the new monitoring system
+        const networkStatusChanged = await listen(
+          "network-status-changed",
+          async (event: any) => {
+            if (!mounted) return;
+            console.log("App: Network status changed:", event.payload);
+            await refreshStatus();
+          }
+        );
+        listeners.push(networkStatusChanged);
+
+        // Listen for tollgate detection events
+        const tollgateDetected = await listen(
+          "tollgate-detected",
+          async (event: any) => {
+            if (!mounted) return;
+            console.log("App: Tollgate detected:", event.payload);
+            await refreshStatus();
+          }
+        );
+        listeners.push(tollgateDetected);
       } catch (error) {
         console.warn("Failed to register androidwifi listeners", error);
       }
@@ -164,7 +186,7 @@ export default function App() {
     return () => {
       mounted = false;
       clearInterval(interval);
-      listeners.forEach((listener) => listener.remove());
+      listeners.forEach((listener) => listener());
     };
   }, [refreshStatus]);
 
@@ -258,22 +280,26 @@ export default function App() {
   const goSend = () => setLocation("/send");
   const goSettings = () => setLocation("/settings");
   const goHistory = () => setLocation("/history");
+  const goDebug = () => setLocation("/debug");
 
   const sharedMainClasses =
     "relative mx-auto flex w-full max-w-md flex-col overflow-hidden bg-background";
 
   const mainClasses =
-    location === "/settings" || location === "/history"
+    location === "/settings" || location === "/history" || location === "/debug"
       ? `${sharedMainClasses} min-h-screen`
       : `${sharedMainClasses} h-screen`;
 
   const showSettingsButton =
-    location === "/" || location === "/settings" || location === "/history";
+    location === "/" || location === "/settings" || location === "/history" || location === "/debug";
   const showHistoryButton =
-    location === "/" || location === "/settings" || location === "/history";
+    location === "/" || location === "/settings" || location === "/history" || location === "/debug";
+  const showDebugButton =
+    location === "/" || location === "/settings" || location === "/history" || location === "/debug";
 
   const settingsButtonAction = location === "/settings" ? goHome : goSettings;
   const historyButtonAction = location === "/history" ? goHome : goHistory;
+  const debugButtonAction = location === "/debug" ? goHome : goDebug;
 
   const settingsButtonIcon =
     location === "/settings" ? (
@@ -289,14 +315,34 @@ export default function App() {
       <History className="h-5 w-5" />
     );
 
+  const debugButtonIcon =
+    location === "/debug" ? (
+      <Wallet className="h-5 w-5" />
+    ) : (
+      <Bug className="h-5 w-5" />
+    );
+
   return (
     <div
       className="bg-background text-foreground"
       style={{ overscrollBehavior: "none" }}
     >
       <main className={mainClasses}>
-        {showSettingsButton || showHistoryButton ? (
+        {showSettingsButton || showHistoryButton || showDebugButton ? (
           <div className="absolute right-4 top-4 z-20 flex flex-col items-end gap-2">
+            {showDebugButton ? (
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 rounded-full"
+                onClick={debugButtonAction}
+                aria-label={
+                  location === "/debug" ? "Back to wallet" : "Open debug"
+                }
+              >
+                {debugButtonIcon}
+              </Button>
+            ) : null}
             {showSettingsButton ? (
               <Button
                 variant="outline"
@@ -391,6 +437,13 @@ export default function App() {
 
           <Route path="/history">
             <HistoryScreen transactions={transactions} />
+          </Route>
+
+          <Route path="/debug">
+            <DebugScreen
+              status={status}
+              copyToClipboard={copyToClipboard}
+            />
           </Route>
         </Switch>
       </main>

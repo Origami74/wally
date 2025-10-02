@@ -4,6 +4,14 @@ This is a multiplatform app that allows your device to discover and (auto)connec
 
 The current version is focussing on Android first. Support for Linux and MacOS will be next.
 
+## Building for Desktop
+
+```bash
+pnpm i
+
+pnpm tauri dev
+```
+
 ## Building for Android
 
 ```bash

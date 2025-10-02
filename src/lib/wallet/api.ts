@@ -49,6 +49,14 @@ export type WalletTransactionEntry = {
   quote_id: string | null;
 };
 
+export type SwapRequest = {
+        amount: number | null;
+    amount_split_target: number | [number];
+    proofs: [string];
+    spending_conditions: [string]| null;
+    include_fees: boolean;
+};
+
 export async function fetchWalletSummary(): Promise<WalletSummary> {
   return invoke<WalletSummary>("get_wallet_summary");
 }
@@ -90,5 +98,11 @@ export async function payNut18PaymentRequest(
 export async function payBolt11Invoice(invoice: string): Promise<Bolt11PaymentResult> {
   return invoke<Bolt11PaymentResult>("pay_bolt11_invoice", {
     invoice,
+  });
+}
+
+export async function receiveCashuToken(token: string): Promise<{ amount: number }> {
+  return invoke<{ amount: number }>("receive_cashu_token", {
+    token,
   });
 }

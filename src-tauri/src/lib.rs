@@ -1,9 +1,3 @@
-use std::sync::Arc;
-use tauri::{Manager, State};
-use tauri_plugin_log::{Target, TargetKind};
-use tokio::sync::Mutex;
-use tauri_plugin_androidwifi::{AndroidwifiExt, GetMacAddressPayload, Empty};
-
 #[cfg(target_os = "macos")]
 use cocoa::{
     appkit::{NSMainMenuWindowLevel, NSWindowCollectionBehavior},
@@ -12,30 +6,30 @@ use cocoa::{
 };
 #[cfg(target_os = "macos")]
 use objc::{msg_send, sel, sel_impl};
+use std::sync::Arc;
 #[cfg(target_os = "macos")]
 use tauri::{
-    ActivationPolicy,
     image::Image,
     tray::{MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    LogicalPosition,
-    PhysicalPosition,
+    ActivationPolicy, LogicalPosition, PhysicalPosition,
 };
+use tauri::{Manager, State};
 #[cfg(target_os = "macos")]
 use tauri_nspanel::{ManagerExt, WebviewWindowExt};
+use tauri_plugin_androidwifi::{AndroidwifiExt, Empty, GetMacAddressPayload};
+use tauri_plugin_log::{Target, TargetKind};
+use tokio::sync::Mutex;
 
 mod tollgate;
 use tollgate::session::SessionStatus;
-use tollgate::wallet::{
-    Bolt11InvoiceInfo,
-    Bolt11PaymentResult,
-    Nut18PaymentRequestInfo,
-    WalletSummary,
-    WalletTransactionEntry,
-};
 use tollgate::TollGateService;
 
 // Global state for the TollGate service
 type TollGateState = Arc<Mutex<TollGateService>>;
+
+mod wallet;
+
+use wallet::*;
 
 #[tauri::command]
 async fn toggle_auto_tollgate(
@@ -43,7 +37,9 @@ async fn toggle_auto_tollgate(
     state: State<'_, TollGateState>,
 ) -> Result<(), String> {
     let service = state.lock().await;
-    service.set_auto_tollgate_enabled(enabled).await
+    service
+        .set_auto_tollgate_enabled(enabled)
+        .await
         .map_err(|e| e.to_string())
 }
 
@@ -52,8 +48,7 @@ async fn get_tollgate_status(
     state: State<'_, TollGateState>,
 ) -> Result<tollgate::service::ServiceStatus, String> {
     let service = state.lock().await;
-    service.get_status().await
-        .map_err(|e| e.to_string())
+    service.get_status().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -61,7 +56,9 @@ async fn get_current_session(
     state: State<'_, TollGateState>,
 ) -> Result<Option<tollgate::service::SessionInfo>, String> {
     let service = state.lock().await;
-    service.get_current_session().await
+    service
+        .get_current_session()
+        .await
         .map_err(|e| e.to_string())
 }
 
@@ -71,26 +68,9 @@ async fn force_session_renewal(
     state: State<'_, TollGateState>,
 ) -> Result<(), String> {
     let service = state.lock().await;
-    service.force_renewal(&tollgate_pubkey).await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn add_mint(
-    mint_url: String,
-    state: State<'_, TollGateState>,
-) -> Result<(), String> {
-    let service = state.lock().await;
-    service.add_mint(&mint_url).await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn get_wallet_balance(
-    state: State<'_, TollGateState>,
-) -> Result<u64, String> {
-    let service = state.lock().await;
-    service.get_wallet_balance().await
+    service
+        .force_renewal(&tollgate_pubkey)
+        .await
         .map_err(|e| e.to_string())
 }
 
@@ -101,23 +81,29 @@ async fn handle_network_connected(
     state: State<'_, TollGateState>,
 ) -> Result<(), String> {
     let service = state.lock().await;
-    service.handle_network_connected(gateway_ip, mac_address).await
+    service
+        .handle_network_connected(gateway_ip, mac_address)
+        .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn handle_network_disconnected(
+async fn handle_network_disconnected(state: State<'_, TollGateState>) -> Result<(), String> {
+    let service = state.lock().await;
+    service
+        .handle_network_disconnected()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn detect_tollgate(
+    gateway_ip: String,
+    mac_address: String,
     state: State<'_, TollGateState>,
-) -> Result<(), String> {
+) -> Result<serde_json::Value, String> {
     let service = state.lock().await;
-    service.handle_network_disconnected().await
-        .map_err(|e| e.to_string())
-}
 
-#[tauri::command]
-async fn detect_tollgate(gateway_ip: String, mac_address: String, state: State<'_, TollGateState>) -> Result<serde_json::Value, String> {
-    let service = state.lock().await;
-    
     match service.detect_tollgate(&gateway_ip, &mac_address).await {
         Ok(network_info) => {
             let result = serde_json::json!({
@@ -126,7 +112,7 @@ async fn detect_tollgate(gateway_ip: String, mac_address: String, state: State<'
             });
             Ok(result)
         }
-        Err(e) => Err(format!("Failed to detect TollGate: {}", e))
+        Err(e) => Err(format!("Failed to detect TollGate: {}", e)),
     }
 }
 
@@ -135,168 +121,105 @@ async fn get_mac_address(app: tauri::AppHandle) -> Result<serde_json::Value, Str
     let payload = GetMacAddressPayload {
         gateway_ip: "192.168.1.1".to_string(),
     };
-    
+
     match app.androidwifi().get_mac_address(payload) {
         Ok(result) => Ok(serde_json::to_value(result).unwrap()),
-        Err(e) => Err(format!("Failed to get MAC address: {}", e))
+        Err(e) => Err(format!("Failed to get MAC address: {}", e)),
     }
 }
 
 #[tauri::command]
 async fn get_current_wifi_details(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let payload = Empty { value: None };
-    
+
     match app.androidwifi().get_current_wifi_details(payload) {
         Ok(result) => Ok(serde_json::to_value(result).unwrap()),
-        Err(e) => Err(format!("Failed to get current WiFi details: {}", e))
+        Err(e) => Err(format!("Failed to get current WiFi details: {}", e)),
     }
 }
 
 #[tauri::command]
 async fn get_gateway_ip(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let payload = Empty { value: None };
-    
+
     match app.androidwifi().get_gateway_ip(payload) {
         Ok(result) => Ok(serde_json::to_value(result).unwrap()),
-        Err(e) => Err(format!("Failed to get gateway IP: {}", e))
+        Err(e) => Err(format!("Failed to get gateway IP: {}", e)),
     }
 }
 
 #[tauri::command]
-async fn get_active_sessions(state: State<'_, TollGateState>) -> Result<Vec<serde_json::Value>, String> {
+async fn get_active_sessions(
+    state: State<'_, TollGateState>,
+) -> Result<Vec<serde_json::Value>, String> {
     let service = state.lock().await;
-    
-    let sessions = service.get_active_sessions().await.map_err(|e| e.to_string())?;
-    let session_data: Vec<serde_json::Value> = sessions.iter().map(|session| {
-        serde_json::json!({
-            "id": session.id,
-            "tollgate_pubkey": session.tollgate_pubkey,
-            "gateway_ip": session.gateway_ip,
-            "status": match session.status {
-                SessionStatus::Initializing => "initializing",
-                SessionStatus::Active => "active",
-                SessionStatus::Renewing => "renewing",
-                SessionStatus::Expired => "expired",
-                SessionStatus::Error(_) => "error"
-            },
-            "usage_percentage": session.usage_percentage,
-            "remaining_time_seconds": session.remaining_time_seconds,
-            "remaining_data_bytes": session.remaining_data_bytes,
-            "total_spent": session.total_spent
+
+    let sessions = service
+        .get_active_sessions()
+        .await
+        .map_err(|e| e.to_string())?;
+    let session_data: Vec<serde_json::Value> = sessions
+        .iter()
+        .map(|session| {
+            serde_json::json!({
+                "id": session.id,
+                "tollgate_pubkey": session.tollgate_pubkey,
+                "gateway_ip": session.gateway_ip,
+                "status": match session.status {
+                    SessionStatus::Initializing => "initializing",
+                    SessionStatus::Active => "active",
+                    SessionStatus::Renewing => "renewing",
+                    SessionStatus::Expired => "expired",
+                    SessionStatus::Error(_) => "error"
+                },
+                "usage_percentage": session.usage_percentage,
+                "remaining_time_seconds": session.remaining_time_seconds,
+                "remaining_data_bytes": session.remaining_data_bytes,
+                "total_spent": session.total_spent
+            })
         })
-    }).collect();
-    
+        .collect();
+
     Ok(session_data)
-}
-
-#[tauri::command]
-async fn create_nut18_payment_request(
-    amount: Option<u64>,
-    description: Option<String>,
-    state: State<'_, TollGateState>,
-) -> Result<Nut18PaymentRequestInfo, String> {
-    let service = state.lock().await;
-    service
-        .create_nut18_payment_request(amount, description)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn create_bolt11_invoice(
-    amount: u64,
-    description: Option<String>,
-    state: State<'_, TollGateState>,
-) -> Result<Bolt11InvoiceInfo, String> {
-    let service = state.lock().await;
-    service
-        .create_bolt11_invoice(amount, description)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn pay_nut18_payment_request(
-    request: String,
-    custom_amount: Option<u64>,
-    state: State<'_, TollGateState>,
-) -> Result<(), String> {
-    let service = state.lock().await;
-    service
-        .pay_nut18_payment_request(&request, custom_amount)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn pay_bolt11_invoice(
-    invoice: String,
-    state: State<'_, TollGateState>,
-) -> Result<Bolt11PaymentResult, String> {
-    let service = state.lock().await;
-    service
-        .pay_bolt11_invoice(&invoice)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn get_wallet_summary(
-    state: State<'_, TollGateState>,
-) -> Result<WalletSummary, String> {
-    let service = state.lock().await;
-    service
-        .get_wallet_summary()
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn list_wallet_transactions(
-    state: State<'_, TollGateState>,
-) -> Result<Vec<WalletTransactionEntry>, String> {
-    let service = state.lock().await;
-    service
-        .list_wallet_transactions()
-        .await
-        .map_err(|e| e.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
 
-    builder = builder
-        .setup(|app| {
-            // Initialize TollGate service
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let service = rt.block_on(async {
-                let mut service = TollGateService::new().await
-                    .expect("Failed to create TollGate service");
-                
-                service.start_background_service().await
-                    .expect("Failed to start background service");
-                
-                service
-            });
+    builder = builder.setup(|app| {
+        // Initialize TollGate service
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let service = rt.block_on(async {
+            let mut service = TollGateService::new()
+                .await
+                .expect("Failed to create TollGate service");
 
-            app.manage(Arc::new(Mutex::new(service)));
+            service
+                .start_background_service()
+                .await
+                .expect("Failed to start background service");
 
-            #[cfg(target_os = "macos")]
-            {
-                if let Some(window) = app.get_webview_window("main") {
-                    if let Ok(panel) = window.to_panel() {
-                        panel.set_released_when_closed(true);
-                    }
+            service
+        });
+
+        app.manage(Arc::new(Mutex::new(service)));
+
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(window) = app.get_webview_window("main") {
+                if let Ok(panel) = window.to_panel() {
+                    panel.set_released_when_closed(true);
                 }
-
-                let app_handle = app.app_handle();
-                setup_macos_panel(&app_handle)?;
             }
 
-            log::info!("TollGate service initialized");
-            Ok(())
-        });
+            let app_handle = app.app_handle();
+            setup_macos_panel(&app_handle)?;
+        }
+
+        log::info!("TollGate service initialized");
+        Ok(())
+    });
 
     #[cfg(target_os = "macos")]
     {
@@ -310,9 +233,24 @@ pub fn run() {
                     Target::new(TargetKind::Stdout),
                     Target::new(TargetKind::Webview),
                     Target::new(TargetKind::LogDir {
-                        file_name: Some("tollgate_logs.txt".parse().unwrap())
+                        file_name: Some("tollgate_logs.txt".parse().unwrap()),
                     }),
                 ])
+                .filter(|metadata| {
+                    // Filter out CDK and Cashu trace logs
+                    if metadata.level() == log::Level::Trace && (
+                        metadata.target().starts_with("cdk") ||
+                        metadata.target().starts_with("cashu") ||
+                        metadata.target().starts_with("tracing::span") ||
+                        metadata.target().starts_with("hyper") ||
+                        metadata.target().starts_with("reqwest") ||
+                        metadata.target().starts_with("h2") ||
+                        metadata.target().starts_with("rustls")
+                    ) {
+                        return false;
+                    }
+                    true
+                })
                 .build(),
         )
         .plugin(tauri_plugin_http::init())
@@ -339,6 +277,7 @@ pub fn run() {
             pay_bolt11_invoice,
             get_wallet_summary,
             list_wallet_transactions,
+            receive_cashu_token,
         ]);
 
     builder
@@ -369,7 +308,12 @@ fn setup_macos_panel(app: &tauri::AppHandle) -> tauri::Result<()> {
         .icon(load_tray_icon()?)
         .icon_as_template(true)
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click { button_state, position, .. } = event {
+            if let TrayIconEvent::Click {
+                button_state,
+                position,
+                ..
+            } = event
+            {
                 if button_state == MouseButtonState::Up {
                     toggle_panel(&tray.app_handle(), Some(position));
                 }
@@ -381,10 +325,7 @@ fn setup_macos_panel(app: &tauri::AppHandle) -> tauri::Result<()> {
 }
 
 #[cfg(target_os = "macos")]
-fn toggle_panel(
-    app: &tauri::AppHandle,
-    anchor: Option<PhysicalPosition<f64>>,
-) {
+fn toggle_panel(app: &tauri::AppHandle, anchor: Option<PhysicalPosition<f64>>) {
     let app_handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Ok(panel) = app_handle.get_webview_panel("main") {
@@ -410,10 +351,7 @@ fn load_tray_icon() -> tauri::Result<Image<'static>> {
 }
 
 #[cfg(target_os = "macos")]
-fn position_panel_at_menubar_icon(
-    window: &tauri::WebviewWindow,
-    anchor: PhysicalPosition<f64>,
-) {
+fn position_panel_at_menubar_icon(window: &tauri::WebviewWindow, anchor: PhysicalPosition<f64>) {
     if let (Ok(panel_handle), Ok(Some(monitor))) = (window.ns_window(), window.current_monitor()) {
         let scale_factor = monitor.scale_factor();
         let logical_pos: LogicalPosition<f64> = anchor.to_logical(scale_factor);
@@ -426,8 +364,7 @@ fn position_panel_at_menubar_icon(
 
         let mut frame: NSRect = unsafe { msg_send![panel_id, frame] };
 
-        frame.origin.y =
-            (monitor_pos.y + monitor_size.height) - menubar_height - frame.size.height;
+        frame.origin.y = (monitor_pos.y + monitor_size.height) - menubar_height - frame.size.height;
         frame.origin.x = logical_pos.x - frame.size.width / 2.0;
 
         let _: () = unsafe { msg_send![panel_id, setFrame: frame display: NO] };
