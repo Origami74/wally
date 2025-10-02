@@ -487,6 +487,12 @@ impl TollGateService {
         wallet.summary().await
     }
 
+    /// Get the wallet's public key in hex format
+    pub async fn get_pubkey_hex(&self) -> String {
+        let wallet = self.wallet.lock().await;
+        wallet.nostr_pubkey_hex()
+    }
+
     /// List wallet transactions across mints
     pub async fn list_wallet_transactions(&self) -> TollGateResult<Vec<WalletTransactionEntry>> {
         let wallet = self.wallet.lock().await;
