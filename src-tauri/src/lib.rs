@@ -28,6 +28,7 @@ use tollgate::TollGateService;
 type TollGateState = Arc<Mutex<TollGateService>>;
 
 mod wallet;
+mod npub_server;
 
 use wallet::*;
 
@@ -188,22 +189,40 @@ pub fn run() {
     let mut builder = tauri::Builder::default();
 
     builder = builder.setup(|app| {
-        // Initialize TollGate service
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let service = rt.block_on(async {
-            let mut service = TollGateService::new()
-                .await
-                .expect("Failed to create TollGate service");
+        // Initialize TollGate service and runtime
+        let rt = Arc::new(tokio::runtime::Runtime::new().unwrap());
+        let service_arc = {
+            let rt_clone = rt.clone();
+            rt_clone.block_on(async {
+                let mut service = TollGateService::new()
+                    .await
+                    .expect("Failed to create TollGate service");
 
-            service
-                .start_background_service()
-                .await
-                .expect("Failed to start background service");
+                service
+                    .start_background_service()
+                    .await
+                    .expect("Failed to start background service");
 
-            service
+                Arc::new(Mutex::new(service))
+            })
+        };
+        
+        // Start npub server to expose wallet's public key
+        let npub_service = service_arc.clone();
+        let rt_clone = rt.clone();
+        rt_clone.spawn(async move {
+            if let Err(e) = npub_server::start_npub_server(
+                npub_service,
+                npub_server::DEFAULT_NPUB_PORT,
+            ).await {
+                log::error!("Failed to start npub server: {}", e);
+            } else {
+                log::info!("Npub server started successfully on port {}", npub_server::DEFAULT_NPUB_PORT);
+            }
         });
 
-        app.manage(Arc::new(Mutex::new(service)));
+        app.manage(service_arc);
+        app.manage(rt);
 
         #[cfg(target_os = "macos")]
         {
@@ -218,6 +237,7 @@ pub fn run() {
         }
 
         log::info!("TollGate service initialized");
+        log::info!("Npub server available at http://127.0.0.1:{}/npub", npub_server::DEFAULT_NPUB_PORT);
         Ok(())
     });
 

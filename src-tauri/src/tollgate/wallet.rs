@@ -252,6 +252,11 @@ impl WalletSecrets {
     }
 
     #[allow(dead_code)]
+    pub(crate) fn nostr_pubkey_hex(&self) -> String {
+        self.nostr_keys.public_key().to_hex()
+    }
+
+    #[allow(dead_code)]
     pub(crate) fn nostr_keys(&self) -> &Keys {
         &self.nostr_keys
     }
@@ -401,6 +406,11 @@ impl TollGateWallet {
     /// Return the wallet's npub, if derivable
     pub fn nostr_npub(&self) -> Option<String> {
         self.secrets.nostr_npub().ok()
+    }
+
+    /// Return the wallet's public key in hex format
+    pub fn nostr_pubkey_hex(&self) -> String {
+        self.secrets.nostr_pubkey_hex()
     }
 
     /// Get available mints
