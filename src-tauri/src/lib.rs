@@ -300,11 +300,14 @@ pub fn run() {
         // Start connection server to handle wallet connection requests
         let connection_service = service_arc.clone();
         let connection_app_handle = app.handle().clone();
+        let pending_connections = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+        let pending_connections_for_server = pending_connections.clone();
         let rt_clone = rt.clone();
         rt_clone.spawn(async move {
             if let Err(e) = connection_server::start_connection_server(
                 connection_service,
                 connection_app_handle,
+                pending_connections_for_server,
                 connection_server::DEFAULT_CONNECTION_PORT,
             ).await {
                 log::error!("Failed to start connection server: {}", e);
@@ -316,6 +319,7 @@ pub fn run() {
         app.manage(service_arc);
         app.manage(nwc_arc);
         app.manage(rt);
+        app.manage(pending_connections);
 
         #[cfg(target_os = "macos")]
         {
@@ -393,6 +397,8 @@ pub fn run() {
             receive_cashu_token,
             nwc_list_connections,
             nwc_get_service_pubkey,
+            connection_server::nwc_approve_connection,
+            connection_server::nwc_reject_connection,
         ]);
 
     builder

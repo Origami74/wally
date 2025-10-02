@@ -21,8 +21,28 @@ import {
   type WalletSummary,
   type WalletTransactionEntry,
 } from "@/lib/wallet/api";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
-type SessionInfo = ServiceStatus["active_sessions"][number];
+type PendingConnectionRequest = {
+  request_id: string;
+  nwa_request: {
+    app_pubkey: string;
+    relays: string[];
+    secret: string;
+    required_commands: string[];
+    optional_commands: string[];
+    budget: string | null;
+    identity: string | null;
+  };
+  received_at: number;
+};
 
 const initialFeatures: FeatureState[] = [
   {
@@ -77,6 +97,7 @@ export default function App() {
   const [savingMint, setSavingMint] = useState(false);
   const [sendRequest, setSendRequest] = useState("");
   const [features, setFeatures] = useState<FeatureState[]>(initialFeatures);
+  const [pendingConnection, setPendingConnection] = useState<PendingConnectionRequest | null>(null);
 
   const periodMeta = useCallback(
     (period: Period) =>
@@ -175,6 +196,17 @@ export default function App() {
           }
         );
         listeners.push(tollgateDetected);
+
+        // Listen for NWC connection requests
+        const nwcConnectionRequest = await listen(
+          "nwc-connection-request",
+          async (event: any) => {
+            if (!mounted) return;
+            console.log("App: NWC connection request received:", event.payload);
+            setPendingConnection(event.payload as PendingConnectionRequest);
+          }
+        );
+        listeners.push(nwcConnectionRequest);
       } catch (error) {
         console.warn("Failed to register androidwifi listeners", error);
       }
@@ -233,6 +265,32 @@ export default function App() {
     await refreshStatus();
     setLocation("/");
   }, [refreshStatus, setLocation]);
+
+  const handleApproveConnection = async () => {
+    if (!pendingConnection) return;
+    
+    try {
+      console.log("Approving connection:", pendingConnection.request_id);
+      await invoke("nwc_approve_connection", { requestId: pendingConnection.request_id });
+      console.log("Connection approved successfully");
+      setPendingConnection(null);
+    } catch (error) {
+      console.error("Failed to approve connection:", error);
+    }
+  };
+
+  const handleRejectConnection = async () => {
+    if (!pendingConnection) return;
+    
+    try {
+      console.log("Rejecting connection:", pendingConnection.request_id);
+      await invoke("nwc_reject_connection", { requestId: pendingConnection.request_id });
+      console.log("Connection rejected successfully");
+      setPendingConnection(null);
+    } catch (error) {
+      console.error("Failed to reject connection:", error);
+    }
+  };
 
   const statusBadges: StatusBadge[] = useMemo(() => {
     const badges: StatusBadge[] = [];
@@ -447,6 +505,79 @@ export default function App() {
           </Route>
         </Switch>
       </main>
+
+      {/* NWC Connection Request Dialog */}
+      <Dialog open={!!pendingConnection} onOpenChange={(open) => !open && setPendingConnection(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Wallet Connection Request</DialogTitle>
+            <DialogDescription>
+              An application wants to connect to your wallet
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm font-medium mb-1">App Public Key</p>
+              <p className="text-xs text-muted-foreground font-mono break-all">
+                {pendingConnection?.nwa_request.app_pubkey}
+              </p>
+            </div>
+            
+            {pendingConnection?.nwa_request.identity && (
+              <div>
+                <p className="text-sm font-medium mb-1">Identity</p>
+                <p className="text-xs text-muted-foreground font-mono break-all">
+                  {pendingConnection.nwa_request.identity}
+                </p>
+              </div>
+            )}
+            
+            <div>
+              <p className="text-sm font-medium mb-1">Required Commands</p>
+              <p className="text-xs text-muted-foreground">
+                {pendingConnection?.nwa_request.required_commands.join(", ") || "None"}
+              </p>
+            </div>
+            
+            {pendingConnection?.nwa_request.optional_commands.length ? (
+              <div>
+                <p className="text-sm font-medium mb-1">Optional Commands</p>
+                <p className="text-xs text-muted-foreground">
+                  {pendingConnection.nwa_request.optional_commands.join(", ")}
+                </p>
+              </div>
+            ) : null}
+            
+            {pendingConnection?.nwa_request.budget && (
+              <div>
+                <p className="text-sm font-medium mb-1">Budget</p>
+                <p className="text-xs text-muted-foreground">
+                  {pendingConnection.nwa_request.budget}
+                </p>
+              </div>
+            )}
+            
+            <div>
+              <p className="text-sm font-medium mb-1">Relays</p>
+              <div className="text-xs text-muted-foreground space-y-1">
+                {pendingConnection?.nwa_request.relays.map((relay, idx) => (
+                  <p key={idx} className="font-mono">{relay}</p>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handleRejectConnection}>
+              Reject
+            </Button>
+            <Button onClick={handleApproveConnection}>
+              Approve
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

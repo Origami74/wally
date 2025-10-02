@@ -6,7 +6,7 @@
 use crate::TollGateState;
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{HeaderValue, Method, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
@@ -18,6 +18,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
+use tower_http::cors::CorsLayer;
 
 /// Default port for the connection server
 pub const DEFAULT_CONNECTION_PORT: u16 = 3737;
@@ -71,9 +72,17 @@ pub type PendingConnectionsState = Arc<Mutex<HashMap<String, PendingConnectionRe
 /// Server state that includes both TollGate and AppHandle
 #[derive(Clone)]
 pub struct ConnectionServerState {
+    #[allow(dead_code)]
     pub tollgate_state: TollGateState,
     pub app_handle: AppHandle,
     pub pending_connections: PendingConnectionsState,
+}
+
+/// Response for approve/reject operations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectionResponse {
+    pub success: bool,
+    pub message: String,
 }
 
 /// Response for wallet info endpoint
@@ -89,16 +98,24 @@ pub struct WalletInfoResponse {
 pub async fn start_connection_server(
     tollgate_state: Arc<Mutex<crate::tollgate::TollGateService>>,
     app_handle: AppHandle,
+    pending_connections: PendingConnectionsState,
     port: u16,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let server_state = ConnectionServerState {
         tollgate_state,
         app_handle,
-        pending_connections: Arc::new(Mutex::new(HashMap::new())),
+        pending_connections,
     };
+
+    // Configure CORS to allow any origin
+    let cors = CorsLayer::new()
+        .allow_origin(tower_http::cors::Any)
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers(tower_http::cors::Any);
 
     let app = Router::new()
         .route("/", get(get_wallet_info).post(post_wallet_connect))
+        .layer(cors)
         .with_state(server_state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
@@ -304,6 +321,61 @@ fn parse_query_string(query: &str) -> HashMap<String, Vec<String>> {
     }
     
     params
+}
+
+/// Tauri command to approve a pending connection request
+#[tauri::command]
+pub async fn nwc_approve_connection(
+    request_id: String,
+    pending_connections: tauri::State<'_, PendingConnectionsState>,
+) -> Result<ConnectionResponse, String> {
+    log::info!("Approving connection request: {}", request_id);
+    
+    let mut connections = pending_connections.lock().await;
+    
+    if let Some(pending_request) = connections.get(&request_id) {
+        log::info!("Found pending connection request:");
+        log::info!("  App pubkey: {}", pending_request.nwa_request.app_pubkey);
+        log::info!("  Required commands: {:?}", pending_request.nwa_request.required_commands);
+        
+        // TODO: Implement actual connection approval
+        // - Create NWC connection
+        // - Store connection details
+        // - Generate connection URI to send back
+        
+        // Remove from pending connections
+        connections.remove(&request_id);
+        
+        Ok(ConnectionResponse {
+            success: true,
+            message: "Connection approved successfully".to_string(),
+        })
+    } else {
+        log::warn!("Connection request not found: {}", request_id);
+        Err(format!("Connection request not found: {}", request_id))
+    }
+}
+
+/// Tauri command to reject a pending connection request
+#[tauri::command]
+pub async fn nwc_reject_connection(
+    request_id: String,
+    pending_connections: tauri::State<'_, PendingConnectionsState>,
+) -> Result<ConnectionResponse, String> {
+    log::info!("Rejecting connection request: {}", request_id);
+    
+    let mut connections = pending_connections.lock().await;
+    
+    if let Some(_) = connections.remove(&request_id) {
+        log::info!("Connection request rejected and removed: {}", request_id);
+        Ok(ConnectionResponse {
+            success: true,
+            message: "Connection request rejected".to_string(),
+        })
+    } else {
+        log::warn!("Connection request not found: {}", request_id);
+        Err(format!("Connection request not found: {}", request_id))
+    }
 }
 
 #[cfg(test)]
