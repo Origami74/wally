@@ -286,7 +286,7 @@ pub fn run() {
                     log::error!("Failed to start NWC service: {}", e);
                     return;
                 }
-                log::info!("NWC service started and connected to ws://localhost:8080");
+                log::info!("NWC service started and connected to ws://localhost:4869");
                 
                 // Process events in a loop
                 if let Err(e) = nwc.process_events_loop().await {

@@ -24,7 +24,7 @@ use tower_http::cors::CorsLayer;
 pub const DEFAULT_CONNECTION_PORT: u16 = 3737;
 
 /// NWC relay URL configuration
-pub const NWC_RELAY_URL: &str = "ws://localhost:8080";
+pub const NWC_RELAY_URL: &str = "ws://localhost:4869";
 
 /// Supported NWC commands
 pub const SUPPORTED_NWC_COMMANDS: &[&str] = &["get_balance", "make_invoice", "pay_invoice"];

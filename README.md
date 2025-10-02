@@ -10,7 +10,7 @@ The wallet exposes its Nostr public key via a local HTTP server on port **3737**
 
 ### Endpoints
 
-- **GET http://127.0.0.1:3737/npub** - Returns the wallet's Nostr public key in hex format
+- **GET http://127.0.0.1:3737** - Returns the wallet's Nostr public key in hex format
   ```json
   {
     "pubkey": "abc123...",
@@ -22,7 +22,7 @@ The wallet exposes its Nostr public key via a local HTTP server on port **3737**
 
 ```bash
 # Get the wallet's public key
-curl http://127.0.0.1:3737/npub
+curl http://127.0.0.1:3737
 ```
 
 ## Building for Desktop

@@ -21,7 +21,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Mutex, RwLock};
 
-const RELAY_URL: &str = "ws://localhost:8080";
+const RELAY_URL: &str = "ws://localhost:4869";
 const NWC_BUDGET_MSATS: u64 = 1_000_000_000; // 1,000 sats budget
 
 /// Nostr Wallet Connect service for the TollGate wallet.
