@@ -34,3 +34,13 @@ pub(crate) async fn get_mac_address<R: Runtime>(app: AppHandle<R>, payload: GetM
 pub(crate) async fn get_gateway_ip<R: Runtime>(app: AppHandle<R>, payload: Empty) -> crate::Result<GatewayIpResponse> {
     app.androidwifi().get_gateway_ip(payload)
 }
+
+#[command]
+pub(crate) async fn detect_tollgate<R: Runtime>(app: AppHandle<R>, payload: Empty) -> crate::Result<TollgateDetectionResponse> {
+    app.androidwifi().detect_tollgate(payload)
+}
+
+#[command]
+pub(crate) async fn get_network_status<R: Runtime>(app: AppHandle<R>, payload: Empty) -> crate::Result<NetworkStatusResponse> {
+    app.androidwifi().get_network_status(payload).await
+}

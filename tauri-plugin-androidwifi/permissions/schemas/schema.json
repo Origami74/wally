@@ -305,6 +305,16 @@
           "const": "deny-connect-wifi"
         },
         {
+          "description": "Enables the detect_tollgate command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-detect-tollgate"
+        },
+        {
+          "description": "Denies the detect_tollgate command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-detect-tollgate"
+        },
+        {
           "description": "Enables the getWifiDetails command without any pre-configured scope.",
           "type": "string",
           "const": "allow-getWifiDetails"
@@ -358,6 +368,16 @@
           "description": "Denies the get_mac_address command without any pre-configured scope.",
           "type": "string",
           "const": "deny-get-mac-address"
+        },
+        {
+          "description": "Enables the get_network_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-network-status"
+        },
+        {
+          "description": "Denies the get_network_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-network-status"
         },
         {
           "description": "Enables the get_wifi_details command without any pre-configured scope.",

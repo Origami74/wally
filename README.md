@@ -4,6 +4,35 @@ This is a multiplatform app that allows your device to discover and (auto)connec
 
 The current version is focussing on Android first. Support for Linux and MacOS will be next.
 
+## Wallet Public Key Access
+
+The wallet exposes its Nostr public key via a local HTTP server on port **3737**. This allows other services running on the same device to easily retrieve the wallet's public key in hex format.
+
+### Endpoints
+
+- **GET http://127.0.0.1:3737/npub** - Returns the wallet's Nostr public key in hex format
+  ```json
+  {
+    "pubkey": "abc123...",
+    "success": true
+  }
+  ```
+
+### Example Usage
+
+```bash
+# Get the wallet's public key
+curl http://127.0.0.1:3737/npub
+```
+
+## Building for Desktop
+
+```bash
+pnpm i
+
+pnpm tauri dev
+```
+
 ## Building for Android
 
 ```bash

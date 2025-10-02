@@ -13,7 +13,10 @@ use cdk::amount::SplitTarget;
 use cdk::mint_url::MintUrl;
 use cdk::nuts::nut18::payment_request::PaymentRequest;
 use cdk::nuts::CurrencyUnit;
-use cdk::wallet::{types::{Transaction, TransactionDirection}, MintQuote, SendOptions, Wallet};
+use cdk::wallet::{
+    types::{Transaction, TransactionDirection},
+    MintQuote, SendOptions, Wallet,
+};
 use cdk::Amount;
 use cdk_sqlite::wallet::WalletSqliteDatabase;
 use directories::ProjectDirs;
@@ -23,8 +26,8 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::str::FromStr;
+use std::sync::Arc;
 
 /// Cashu wallet for TollGate payments
 pub struct TollGateWallet {
@@ -242,11 +245,15 @@ impl WalletSecrets {
 
     #[allow(dead_code)]
     pub(crate) fn nostr_npub(&self) -> TollGateResult<String> {
-        self
-            .nostr_keys
+        self.nostr_keys
             .public_key()
             .to_bech32()
             .map_err(|e| TollGateError::wallet(format!("Failed to encode npub: {}", e)))
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn nostr_pubkey_hex(&self) -> String {
+        self.nostr_keys.public_key().to_hex()
     }
 
     #[allow(dead_code)]
@@ -275,17 +282,67 @@ impl TollGateWallet {
         })
     }
 
+    /// Load existing mints from storage on startup
+    pub async fn load_existing_mints(&mut self) -> TollGateResult<()> {
+        // Scan the wallets directory for existing database files
+        let wallets_dir = &self.storage.wallets_dir;
+        
+        if !wallets_dir.exists() {
+            return Ok(());
+        }
+
+        let entries = std::fs::read_dir(wallets_dir)
+            .map_err(|e| TollGateError::wallet(format!("Failed to read wallets directory: {}", e)))?;
+
+        for entry in entries {
+            let entry = entry.map_err(|e| TollGateError::wallet(format!("Failed to read directory entry: {}", e)))?;
+            let path = entry.path();
+            
+            if path.extension().and_then(|s| s.to_str()) == Some("sqlite") {
+                // Try to determine the mint URL from the database
+                if let Ok(mint_url) = self.get_mint_url_from_db_path(&path).await {
+                    if !self.wallets.contains_key(&mint_url) {
+                        log::info!("Loading existing mint from database: {}", mint_url);
+                        if let Err(e) = self.add_mint(&mint_url).await {
+                            log::warn!("Failed to load existing mint {}: {}", mint_url, e);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Try to determine mint URL from database path by checking known mints
+    async fn get_mint_url_from_db_path(&self, _db_path: &std::path::Path) -> TollGateResult<String> {
+        // For now, we'll use a list of common mints to try
+        // In the future, we could store the mint URL in the database metadata
+        let common_mints = vec![
+            "https://mint.minibits.cash/Bitcoin",
+        ];
+
+        for mint_url in common_mints {
+            if let Ok(expected_path) = self.storage.mint_db_path(mint_url) {
+                if expected_path == _db_path {
+                    return Ok(mint_url.to_string());
+                }
+            }
+        }
+
+        Err(TollGateError::wallet("Could not determine mint URL from database path".to_string()))
+    }
+
     fn default_mint_url(&self) -> TollGateResult<&String> {
-        self
-            .default_mint
+        self.default_mint
             .as_ref()
             .ok_or_else(|| TollGateError::wallet("No default mint configured"))
     }
 
     fn get_wallet_by_url(&self, mint_url: &str) -> TollGateResult<&Wallet> {
-        self.wallets.get(mint_url).ok_or_else(|| {
-            TollGateError::wallet(format!("Mint not found: {}", mint_url))
-        })
+        self.wallets
+            .get(mint_url)
+            .ok_or_else(|| TollGateError::wallet(format!("Mint not found: {}", mint_url)))
     }
 
     fn default_wallet(&self) -> TollGateResult<&Wallet> {
@@ -314,9 +371,12 @@ impl TollGateWallet {
         }
 
         let db_path = self.storage.mint_db_path(mint_url)?;
-        let localstore = WalletSqliteDatabase::new(db_path)
-            .await
-            .map_err(|e| TollGateError::wallet(format!("Failed to open wallet database for mint {}: {}", mint_url, e)))?;
+        let localstore = WalletSqliteDatabase::new(db_path).await.map_err(|e| {
+            TollGateError::wallet(format!(
+                "Failed to open wallet database for mint {}: {}",
+                mint_url, e
+            ))
+        })?;
 
         let wallet = Wallet::new(
             mint_url,
@@ -325,7 +385,12 @@ impl TollGateWallet {
             self.secrets.wallet_seed(),
             None,
         )
-        .map_err(|e| TollGateError::wallet(format!("Failed to create wallet for mint {}: {}", mint_url, e)))?;
+        .map_err(|e| {
+            TollGateError::wallet(format!(
+                "Failed to create wallet for mint {}: {}",
+                mint_url, e
+            ))
+        })?;
 
         self.wallets.insert(mint_url.to_string(), wallet);
 
@@ -343,6 +408,11 @@ impl TollGateWallet {
         self.secrets.nostr_npub().ok()
     }
 
+    /// Return the wallet's public key in hex format
+    pub fn nostr_pubkey_hex(&self) -> String {
+        self.secrets.nostr_pubkey_hex()
+    }
+
     /// Get available mints
     #[allow(dead_code)]
     pub fn get_available_mints(&self) -> Vec<String> {
@@ -351,10 +421,14 @@ impl TollGateWallet {
 
     /// Get balance for a specific mint
     pub async fn get_balance(&self, mint_url: &str) -> TollGateResult<u64> {
-        let wallet = self.wallets.get(mint_url)
+        let wallet = self
+            .wallets
+            .get(mint_url)
             .ok_or_else(|| TollGateError::wallet(format!("Mint not found: {}", mint_url)))?;
 
-        let balance = wallet.total_balance().await
+        let balance = wallet
+            .total_balance()
+            .await
             .map_err(|e| TollGateError::wallet(format!("Failed to get balance: {}", e)))?;
 
         Ok(balance.into())
@@ -365,14 +439,15 @@ impl TollGateWallet {
         let mut balances = Vec::new();
 
         for (mint_url, wallet) in &self.wallets {
-            let balance = wallet.total_balance().await
-                .map_err(|e| TollGateError::wallet(format!("Failed to get balance for {}: {}", mint_url, e)))?;
+            let balance = wallet.total_balance().await.map_err(|e| {
+                TollGateError::wallet(format!("Failed to get balance for {}: {}", mint_url, e))
+            })?;
 
             balances.push(WalletBalance {
                 mint_url: mint_url.clone(),
                 balance: balance.into(),
                 unit: "sat".to_string(), // TODO: Get actual unit from wallet
-                pending: 0, // TODO: Get pending balance
+                pending: 0,              // TODO: Get pending balance
             });
         }
 
@@ -408,8 +483,10 @@ impl TollGateWallet {
         let mint_urls: Vec<MintUrl> = self
             .wallets
             .keys()
-            .map(|url| MintUrl::from_str(url)
-                .map_err(|e| TollGateError::wallet(format!("Invalid mint URL {}: {}", url, e))))
+            .map(|url| {
+                MintUrl::from_str(url)
+                    .map_err(|e| TollGateError::wallet(format!("Invalid mint URL {}: {}", url, e)))
+            })
             .collect::<Result<_, _>>()?;
 
         let mut builder = PaymentRequest::builder()
@@ -500,6 +577,41 @@ impl TollGateWallet {
         })
     }
 
+    /// Receive a cashu token and add it to the wallet
+    pub async fn receive_cashu_token(&mut self, token: &str) -> TollGateResult<u64> {
+        // Parse the token to determine which mint it belongs to
+        let cashu_token = cdk::nuts::Token::from_str(token)
+            .map_err(|e| TollGateError::wallet(format!("Invalid cashu token: {}", e)))?;
+
+        // Get the mint URL from the token
+        let mint_url = cashu_token.mint_url()
+            .map_err(|e| TollGateError::wallet(format!("Failed to get mint URL: {}", e)))?
+            .to_string();
+        
+        // Check if we have a wallet for this mint, if not add it automatically
+        if !self.wallets.contains_key(&mint_url) {
+            log::info!("Mint {} not found, adding it automatically", mint_url);
+            self.add_mint(&mint_url).await?;
+        }
+
+        // Get the wallet (should exist now)
+        let wallet = self.wallets.get(&mint_url).ok_or_else(|| {
+            TollGateError::wallet(format!("Failed to create wallet for mint: {}", mint_url))
+        })?;
+
+        // Receive the token with default options
+        let received_amount = wallet
+            .receive(token, cdk::wallet::ReceiveOptions::default())
+            .await
+            .map_err(|e| TollGateError::wallet(format!("Failed to receive token: {}", e)))?;
+
+        // Convert amount to u64
+        let total_amount: u64 = received_amount.into();
+
+        log::info!("Successfully received {} sats from token at mint {}", total_amount, mint_url);
+        Ok(total_amount)
+    }
+
     /// List transactions across all configured mints
     pub async fn list_transactions(
         &self,
@@ -508,10 +620,10 @@ impl TollGateWallet {
         let mut transactions: Vec<WalletTransactionEntry> = Vec::new();
 
         for wallet in self.wallets.values() {
-            let mut wallet_transactions = wallet
-                .list_transactions(direction)
-                .await
-                .map_err(|e| TollGateError::wallet(format!("Failed to list transactions: {}", e)))?;
+            let mut wallet_transactions =
+                wallet.list_transactions(direction).await.map_err(|e| {
+                    TollGateError::wallet(format!("Failed to list transactions: {}", e))
+                })?;
             transactions.extend(wallet_transactions.drain(..).map(Into::into));
         }
 
@@ -520,10 +632,14 @@ impl TollGateWallet {
     }
 
     /// Check if we can afford a payment
-    pub async fn can_afford(&self, pricing_option: &PricingOption, steps: u64) -> TollGateResult<bool> {
+    pub async fn can_afford(
+        &self,
+        pricing_option: &PricingOption,
+        steps: u64,
+    ) -> TollGateResult<bool> {
         let required_amount = pricing_option.price_per_step * steps;
         let balance = self.get_balance(&pricing_option.mint_url).await?;
-        
+
         Ok(balance >= required_amount)
     }
 
@@ -534,20 +650,22 @@ impl TollGateWallet {
         steps: u64,
     ) -> TollGateResult<PaymentToken> {
         let amount = pricing_option.price_per_step * steps;
-        
+
         if amount < pricing_option.min_steps * pricing_option.price_per_step {
             return Err(TollGateError::wallet(format!(
                 "Amount {} is below minimum {} steps",
-                steps,
-                pricing_option.min_steps
+                steps, pricing_option.min_steps
             )));
         }
 
-        let wallet = self.wallets.get(&pricing_option.mint_url)
-            .ok_or_else(|| TollGateError::wallet(format!("Mint not found: {}", pricing_option.mint_url)))?;
+        let wallet = self.wallets.get(&pricing_option.mint_url).ok_or_else(|| {
+            TollGateError::wallet(format!("Mint not found: {}", pricing_option.mint_url))
+        })?;
 
         // Check balance
-        let balance = wallet.total_balance().await
+        let balance = wallet
+            .total_balance()
+            .await
             .map_err(|e| TollGateError::wallet(format!("Failed to get balance: {}", e)))?;
 
         if balance < Amount::from(amount) {
@@ -561,12 +679,13 @@ impl TollGateWallet {
         let prepared_send = wallet
             .prepare_send(Amount::from(amount), SendOptions::default())
             .await
-            .map_err(|e| TollGateError::wallet(format!("Failed to prepare payment token: {}", e)))?;
+            .map_err(|e| {
+                TollGateError::wallet(format!("Failed to prepare payment token: {}", e))
+            })?;
 
-        let token = prepared_send
-            .confirm(None)
-            .await
-            .map_err(|e| TollGateError::wallet(format!("Failed to confirm payment token: {}", e)))?;
+        let token = prepared_send.confirm(None).await.map_err(|e| {
+            TollGateError::wallet(format!("Failed to confirm payment token: {}", e))
+        })?;
 
         Ok(PaymentToken {
             token: token.to_string(),
@@ -577,31 +696,43 @@ impl TollGateWallet {
     }
 
     /// Request a mint quote for loading the wallet
-    #[allow(dead_code)]
-    pub async fn request_mint_quote(&self, mint_url: &str, amount: u64) -> TollGateResult<MintQuote> {
-        let wallet = self.wallets.get(mint_url)
+    pub async fn request_mint_quote(
+        &self,
+        mint_url: &str,
+        amount: u64,
+    ) -> TollGateResult<MintQuote> {
+        let wallet = self
+            .wallets
+            .get(mint_url)
             .ok_or_else(|| TollGateError::wallet(format!("Mint not found: {}", mint_url)))?;
 
-        let quote = wallet.mint_quote(Amount::from(amount), None).await
+        let quote = wallet
+            .mint_quote(Amount::from(amount), None)
+            .await
             .map_err(|e| TollGateError::wallet(format!("Failed to request mint quote: {}", e)))?;
 
         Ok(quote)
     }
 
     /// Check mint quote status and mint tokens if paid
-    #[allow(dead_code)]
     pub async fn check_mint_quote(&self, mint_url: &str, quote_id: &str) -> TollGateResult<bool> {
-        let wallet = self.wallets.get(mint_url)
+        let wallet = self
+            .wallets
+            .get(mint_url)
             .ok_or_else(|| TollGateError::wallet(format!("Mint not found: {}", mint_url)))?;
 
-        let status = wallet.mint_quote_state(quote_id).await
+        let status = wallet
+            .mint_quote_state(quote_id)
+            .await
             .map_err(|e| TollGateError::wallet(format!("Failed to check mint quote: {}", e)))?;
 
         if status.state == cdk::nuts::MintQuoteState::Paid {
             // Mint the tokens
-            wallet.mint(&status.quote, SplitTarget::default(), None).await
+            wallet
+                .mint(&status.quote, SplitTarget::default(), None)
+                .await
                 .map_err(|e| TollGateError::wallet(format!("Failed to mint tokens: {}", e)))?;
-            
+
             log::info!("Successfully minted tokens for quote {}", quote_id);
             return Ok(true);
         }
@@ -628,7 +759,9 @@ impl TollGateWallet {
         }
 
         if compatible_options.is_empty() {
-            return Err(TollGateError::wallet("No compatible pricing options with sufficient balance"));
+            return Err(TollGateError::wallet(
+                "No compatible pricing options with sufficient balance",
+            ));
         }
 
         // Select the option with the lowest total cost
@@ -659,7 +792,10 @@ impl TollGateWallet {
     #[allow(dead_code)]
     pub fn set_default_mint(&mut self, mint_url: &str) -> TollGateResult<()> {
         if !self.wallets.contains_key(mint_url) {
-            return Err(TollGateError::wallet(format!("Mint not found: {}", mint_url)));
+            return Err(TollGateError::wallet(format!(
+                "Mint not found: {}",
+                mint_url
+            )));
         }
 
         self.default_mint = Some(mint_url.to_string());

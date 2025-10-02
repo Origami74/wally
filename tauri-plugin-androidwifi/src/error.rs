@@ -9,6 +9,8 @@ pub enum Error {
   #[cfg(mobile)]
   #[error(transparent)]
   PluginInvoke(#[from] tauri::plugin::mobile::PluginInvokeError),
+  #[error("Network error")]
+  Network,
 }
 
 impl Serialize for Error {
