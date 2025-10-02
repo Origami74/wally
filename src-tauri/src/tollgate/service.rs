@@ -568,6 +568,12 @@ impl TollGateService {
         Ok(active_sessions)
     }
 
+    /// Get the wallet's Nostr keys
+    pub async fn get_wallet_keys(&self) -> nostr::Keys {
+        let wallet = self.wallet.lock().await;
+        wallet.get_keys()
+    }
+
     /// Load persisted state from storage
     async fn load_persisted_state(&self) -> TollGateResult<()> {
         // TODO: Implement persistence loading from file/database

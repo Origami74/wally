@@ -413,6 +413,11 @@ impl TollGateWallet {
         self.secrets.nostr_pubkey_hex()
     }
 
+    /// Get the wallet's Nostr keys
+    pub fn get_keys(&self) -> nostr::Keys {
+        self.secrets.nostr_keys.clone()
+    }
+
     /// Get available mints
     #[allow(dead_code)]
     pub fn get_available_mints(&self) -> Vec<String> {
