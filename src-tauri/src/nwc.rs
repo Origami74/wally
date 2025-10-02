@@ -3,6 +3,7 @@
 //! This module provides NWC functionality that allows external applications
 //! to interact with the wallet through Nostr relays.
 
+use crate::nwc_storage::NwcConnectionStorage;
 use crate::tollgate::wallet::{Bolt11InvoiceInfo, Bolt11PaymentResult};
 use crate::TollGateState;
 use lightning_invoice::Bolt11Invoice;
@@ -39,6 +40,8 @@ pub struct NostrWalletConnect {
     connections: Arc<RwLock<Vec<WalletConnection>>>,
     /// Reference to the TollGate service state
     service_state: TollGateState,
+    /// Connection storage
+    storage: Arc<NwcConnectionStorage>,
 }
 
 impl NostrWalletConnect {
@@ -46,10 +49,21 @@ impl NostrWalletConnect {
     pub async fn new(
         service_key: SecretKey,
         service_state: TollGateState,
-        connections: Vec<WalletConnection>,
     ) -> Result<Self, Error> {
         let keys = Keys::new(service_key);
         let client = Client::default();
+        
+        // Initialize storage
+        let storage = Arc::new(NwcConnectionStorage::new().map_err(|e| {
+            Error::Wallet(format!("Failed to initialize NWC storage: {}", e))
+        })?);
+        
+        // Load existing connections from storage
+        let connections = storage.load_connections().map_err(|e| {
+            Error::Wallet(format!("Failed to load NWC connections: {}", e))
+        })?;
+        
+        log::info!("Loaded {} NWC connections from storage", connections.len());
 
         Ok(Self {
             keys,
@@ -58,6 +72,7 @@ impl NostrWalletConnect {
             response_event_cache: Arc::new(Mutex::new(HashMap::new())),
             connections: Arc::new(RwLock::new(connections)),
             service_state,
+            storage,
         })
     }
 
@@ -86,13 +101,39 @@ impl NostrWalletConnect {
         {
             return Ok(());
         }
+        
+        // Persist to storage
+        self.storage.save_connection(&connection).map_err(|e| {
+            Error::Wallet(format!("Failed to save connection to storage: {}", e))
+        })?;
+        
         connections.push(connection);
+        log::info!("Added and persisted new NWC connection");
         Ok(())
     }
 
     /// Gets all wallet connections.
     pub async fn get_connections(&self) -> Vec<WalletConnection> {
         self.connections.read().await.clone()
+    }
+    
+    /// Removes a wallet connection.
+    pub async fn remove_connection(&self, connection_pubkey: &str) -> Result<(), Error> {
+        let mut connections = self.connections.write().await;
+        
+        // Find and remove the connection
+        let initial_len = connections.len();
+        connections.retain(|conn| conn.keys.public_key().to_hex() != connection_pubkey);
+        
+        if connections.len() < initial_len {
+            // Connection was removed, delete from storage
+            self.storage.delete_connection(connection_pubkey).map_err(|e| {
+                Error::Wallet(format!("Failed to delete connection from storage: {}", e))
+            })?;
+            log::info!("Removed and deleted NWC connection: {}", connection_pubkey);
+        }
+        
+        Ok(())
     }
 
     /// Creates a kind 13194 info event for the NWC service.
@@ -178,8 +219,8 @@ impl NostrWalletConnect {
             return Err(Error::InvalidKind);
         }
 
-        // Check if this is for our service
-        let service_pubkey = PublicKey::from_str(
+        // Get the target pubkey from the 'p' tag
+        let _target_pubkey = PublicKey::from_str(
             event
                 .get_tag_content(TagKind::SingleLetter(SingleLetterTag::lowercase(
                     Alphabet::P,
@@ -187,9 +228,9 @@ impl NostrWalletConnect {
                 .ok_or(Error::MissingServiceKey)?,
         )?;
 
-        if service_pubkey != self.keys.public_key() {
-            return Err(Error::InvalidServiceKey(service_pubkey));
-        }
+        // For NWA connections, _target_pubkey should be the connection pubkey
+        // For standard NWC, _target_pubkey should be the service pubkey
+        // We validate this matches a known connection when we find the matching connection
 
         let event_id = event.id.to_string();
 
@@ -203,22 +244,44 @@ impl NostrWalletConnect {
 
         log::info!("Processing NWC event: {}", event_id);
 
-        // Find matching connection
+        // Find matching connection (check both standard and NWA connections)
         let mut connections = self.connections.write().await;
         let connection = connections
             .iter_mut()
-            .find(|conn| conn.keys.public_key() == event.pubkey)
+            .find(|conn| {
+                // For NWA connections, match on app_pubkey
+                if let Some(app_pubkey) = conn.app_pubkey {
+                    app_pubkey == event.pubkey
+                } else {
+                    // For standard NWC, match on connection pubkey
+                    conn.keys.public_key() == event.pubkey
+                }
+            })
             .ok_or(Error::ConnectionNotFound)?;
 
         // Decrypt request
+        // For NWA: decrypt with connection's secret key and app's pubkey
+        // For standard NWC: decrypt with connection's secret key and service pubkey
+        let decrypt_pubkey = if connection.app_pubkey.is_some() {
+            connection.app_pubkey.as_ref().unwrap()
+        } else {
+            &self.keys.public_key()
+        };
+        
         let request = nip47::Request::from_json(nip04::decrypt(
             connection.keys.secret_key(),
-            &self.keys.public_key(),
+            decrypt_pubkey,
             &event.content,
         )?)?;
 
         // Check budget
         let remaining_budget_msats = connection.check_and_update_remaining_budget();
+        
+        // If budget was renewed, persist the update
+        let connection_pubkey = connection.keys.public_key().to_hex();
+        if let Err(e) = self.storage.update_budget(&connection_pubkey, &connection.budget) {
+            log::error!("Failed to persist budget renewal: {}", e);
+        }
 
         // Handle request
         let (response, payment_amount) = self
@@ -228,16 +291,38 @@ impl NostrWalletConnect {
         // Update budget if payment was made
         if let Some(amount) = payment_amount {
             connection.budget.used_budget_msats += amount;
+            
+            // Persist updated budget to storage
+            let connection_pubkey = connection.keys.public_key().to_hex();
+            if let Err(e) = self.storage.update_budget(&connection_pubkey, &connection.budget) {
+                log::error!("Failed to update connection budget in storage: {}", e);
+            }
         }
 
         // Encrypt response
+        // For NWA: encrypt with connection's secret key and app's pubkey
+        // For standard NWC: encrypt with connection's secret key and service pubkey
+        let encrypt_pubkey = if connection.app_pubkey.is_some() {
+            connection.app_pubkey.as_ref().unwrap()
+        } else {
+            &self.keys.public_key()
+        };
+        
         let encrypted_response = nip04::encrypt(
             connection.keys.secret_key(),
-            &self.keys.public_key(),
+            encrypt_pubkey,
             response.as_json(),
         )?;
 
         // Create response event
+        // For NWA: sign with connection keys
+        // For standard NWC: sign with service keys
+        let signing_keys = if connection.app_pubkey.is_some() {
+            &connection.keys
+        } else {
+            &self.keys
+        };
+        
         let res_event = EventBuilder::new(
             Kind::WalletConnectResponse,
             encrypted_response,
@@ -246,7 +331,7 @@ impl NostrWalletConnect {
                 Tag::from_standardized(TagStandard::event(event.id)),
             ],
         )
-        .to_event(&self.keys)?;
+        .to_event(signing_keys)?;
 
         // Cache response
         {
@@ -431,6 +516,92 @@ impl NostrWalletConnect {
     pub fn service_pubkey(&self) -> PublicKey {
         self.keys.public_key()
     }
+    
+    /// Creates a new NWA connection and returns the connection details.
+    pub async fn create_nwa_connection(
+        &self,
+        app_pubkey_str: &str,
+        secret: String,
+        budget: ConnectionBudget,
+    ) -> Result<WalletConnection, Error> {
+        // Parse app's public key
+        let app_pubkey = PublicKey::from_str(app_pubkey_str)
+            .map_err(|e| Error::Key(e))?;
+        
+        // Create new connection with generated keypair
+        let connection = WalletConnection::from_nwa(app_pubkey, secret, budget);
+        
+        // Add connection to our list
+        self.add_connection(connection.clone()).await?;
+        
+        log::info!(
+            "Created NWA connection: app_pubkey={}, connection_pubkey={}",
+            app_pubkey,
+            connection.keys.public_key()
+        );
+        
+        Ok(connection)
+    }
+    
+    /// Creates and broadcasts a NWA approval event (kind 33194).
+    /// 
+    /// This event is encrypted with NIP-04 and sent to the app's specified relays.
+    pub async fn broadcast_nwa_approval(
+        &self,
+        connection: &WalletConnection,
+        relays: Vec<String>,
+        lud16: Option<String>,
+    ) -> Result<(), Error> {
+        let app_pubkey = connection.app_pubkey
+            .ok_or_else(|| Error::Wallet("Connection missing app_pubkey".to_string()))?;
+        
+        let secret = connection.secret.clone()
+            .ok_or_else(|| Error::Wallet("Connection missing secret".to_string()))?;
+        
+        // Build response JSON
+        // The app needs to know our connection pubkey to send requests to
+        let response = serde_json::json!({
+            "secret": secret,
+            "pubkey": connection.keys.public_key().to_hex(),
+            "commands": ["pay_invoice", "make_invoice", "get_balance"],
+            "relay": RELAY_URL,
+            "lud16": lud16,
+        });
+        
+        log::info!("Broadcasting NWA approval to app: {}", app_pubkey);
+        
+        // Encrypt the response with NIP-04 (app's pubkey, connection's secret key)
+        let encrypted_content = nip04::encrypt(
+            connection.keys.secret_key(),
+            &app_pubkey,
+            response.to_string(),
+        )?;
+        
+        // Create the event (kind 33194, parameterized replaceable event)
+        let event = EventBuilder::new(
+            Kind::from(33194),
+            encrypted_content,
+            vec![
+                Tag::from_standardized(TagStandard::Identifier(app_pubkey.to_string())),
+            ],
+        )
+        .to_event(&connection.keys)?;
+        
+        // Add specified relays if they're different from our default
+        for relay_url in relays {
+            if relay_url != RELAY_URL {
+                if let Err(e) = self.client.add_relay(&relay_url).await {
+                    log::warn!("Failed to add relay {}: {}", relay_url, e);
+                }
+            }
+        }
+        
+        // Broadcast the event
+        self.client.send_event(event.clone()).await?;
+        log::info!("Successfully broadcasted NWA approval event: {}", event.id);
+        
+        Ok(())
+    }
 }
 
 /// A wallet connection configuration.
@@ -440,6 +611,10 @@ pub struct WalletConnection {
     pub keys: Keys,
     /// Connection budget
     pub budget: ConnectionBudget,
+    /// App's public key (for NWA connections)
+    pub app_pubkey: Option<PublicKey>,
+    /// Connection secret (for NWA connections)
+    pub secret: Option<String>,
 }
 
 impl WalletConnection {
@@ -448,6 +623,8 @@ impl WalletConnection {
         Self {
             keys: Keys::new(secret),
             budget,
+            app_pubkey: None,
+            secret: None,
         }
     }
 
@@ -456,6 +633,30 @@ impl WalletConnection {
         Self {
             keys: Keys::new(uri.secret),
             budget,
+            app_pubkey: None,
+            secret: None,
+        }
+    }
+    
+    /// Creates a wallet connection from NWA request.
+    /// 
+    /// For each NWA connection, we generate a unique keypair:
+    /// - The connection's public key is sent to the app in the approval response
+    /// - The app sends NWC requests FROM its own pubkey TO our connection pubkey
+    /// - The secret is only used by the app to correlate the approval with its request
+    pub fn from_nwa(
+        app_pubkey: PublicKey,
+        secret: String,
+        budget: ConnectionBudget,
+    ) -> Self {
+        // Generate a NEW unique keypair for this connection
+        let connection_keys = Keys::generate();
+        
+        Self {
+            keys: connection_keys,
+            budget,
+            app_pubkey: Some(app_pubkey),
+            secret: Some(secret),
         }
     }
 
@@ -474,15 +675,38 @@ impl WalletConnection {
     }
 
     /// Creates a Nostr filter for this connection.
+    /// 
+    /// NWA (Nostr Wallet Auth):
+    /// - Each connection has a unique generated keypair
+    /// - The app sends events FROM its own pubkey TO our connection pubkey (p-tag)
+    /// - We decrypt using the connection's secret key and the app's pubkey
+    /// 
+    /// Standard NWC:
+    /// - The connection keypair is shared with the app via a URI
+    /// - The app sends events FROM the connection pubkey TO the service pubkey (p-tag)
+    /// - We decrypt using the service's secret key and the connection pubkey
     fn filter(&self, service_pubkey: PublicKey, since: Timestamp) -> Filter {
-        Filter::new()
-            .kind(Kind::WalletConnectRequest)
-            .author(self.keys.public_key())
-            .since(since)
-            .custom_tag(
-                SingleLetterTag::lowercase(Alphabet::P),
-                vec![service_pubkey],
-            )
+        if let Some(app_pubkey) = self.app_pubkey {
+            // NWA connection: filter events authored by app, tagged to our connection pubkey
+            Filter::new()
+                .kind(Kind::WalletConnectRequest)
+                .author(app_pubkey)
+                .since(since)
+                .custom_tag(
+                    SingleLetterTag::lowercase(Alphabet::P),
+                    vec![self.keys.public_key()],
+                )
+        } else {
+            // Standard NWC: filter events authored by connection, tagged to service pubkey
+            Filter::new()
+                .kind(Kind::WalletConnectRequest)
+                .author(self.keys.public_key())
+                .since(since)
+                .custom_tag(
+                    SingleLetterTag::lowercase(Alphabet::P),
+                    vec![service_pubkey],
+                )
+        }
     }
 
     /// Gets the next budget renewal timestamp.

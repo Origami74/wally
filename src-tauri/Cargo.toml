@@ -44,6 +44,7 @@ urlencoding = "2.1"
 bip39 = { version = "2", default-features = false, features = ["std", "rand"] }
 directories = "5"
 sha2 = "0.10"
+rusqlite = { version = "0.31", features = ["bundled"] }
 cdk = { git = "https://github.com/cashubtc/cdk.git", rev = "f3235440409190338d81dddc85e22e9d2967c80e", default-features = false, features = ["wallet", "mint"] }
 cdk-sqlite = { git = "https://github.com/cashubtc/cdk.git", rev = "f3235440409190338d81dddc85e22e9d2967c80e", default-features = false, features = ["wallet"] }
 # Force std-enabled error types required by cdk's new thiserror usage

@@ -33,6 +33,7 @@ type NwcState = Arc<Mutex<Option<NostrWalletConnect>>>;
 mod wallet;
 mod connection_server;
 mod nwc;
+mod nwc_storage;
 
 use nwc::{BudgetRenewalPeriod, NostrWalletConnect};
 use wallet::*;
@@ -262,7 +263,7 @@ pub fn run() {
                 let nwc_secret = wallet_keys.secret_key().clone();
                 drop(service); // Release lock before creating NWC
                 
-                match NostrWalletConnect::new(nwc_secret, service_clone.clone(), vec![]).await {
+                match NostrWalletConnect::new(nwc_secret, service_clone.clone()).await {
                     Ok(nwc) => {
                         log::info!("NWC service initialized");
                         Arc::new(Mutex::new(Some(nwc)))
@@ -279,8 +280,13 @@ pub fn run() {
         let nwc_clone = nwc_arc.clone();
         let rt_clone = rt.clone();
         rt_clone.spawn(async move {
-            let nwc_lock = nwc_clone.lock().await;
-            if let Some(nwc) = nwc_lock.as_ref() {
+            // Clone the NWC service out of the Arc<Mutex<>> to avoid holding the lock
+            let nwc_service = {
+                let nwc_lock = nwc_clone.lock().await;
+                nwc_lock.as_ref().cloned()
+            }; // Lock is released here
+            
+            if let Some(nwc) = nwc_service {
                 // Start the NWC service (connect to relay)
                 if let Err(e) = nwc.start().await {
                     log::error!("Failed to start NWC service: {}", e);

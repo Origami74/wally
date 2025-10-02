@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { History, Settings2, Wallet, Bug } from "lucide-react";
+import { History, Settings2, Wallet, Bug, Link } from "lucide-react";
 import { Route, Switch, useLocation } from "wouter";
 import type { ServiceStatus } from "@/lib/tollgate/types";
 import { statusTone } from "@/lib/tollgate/utils";
@@ -12,6 +12,7 @@ import { ReceiveScreen } from "@/routes/receive-screen";
 import { SendScreen } from "@/routes/send-screen";
 import { SettingsScreen } from "@/routes/settings-screen";
 import { DebugScreen } from "@/routes/debug-screen";
+import { ConnectionsScreen } from "@/routes/connections-screen";
 import type { FeatureState, Period, StatusBadge } from "@/routes/types";
 import { periods } from "@/routes/types";
 import { HistoryScreen } from "@/routes/history-screen";
@@ -270,12 +271,16 @@ export default function App() {
     if (!pendingConnection) return;
     
     try {
-      console.log("Approving connection:", pendingConnection.request_id);
       await invoke("nwc_approve_connection", { requestId: pendingConnection.request_id });
       console.log("Connection approved successfully");
       setPendingConnection(null);
+      await refreshStatus(); // Refresh to show the new connection
+      setLocation("/");
     } catch (error) {
       console.error("Failed to approve connection:", error);
+      alert(`Failed to approve connection: ${error}`);
+      setPendingConnection(null);
+      setLocation("/");
     }
   };
 
@@ -283,12 +288,13 @@ export default function App() {
     if (!pendingConnection) return;
     
     try {
-      console.log("Rejecting connection:", pendingConnection.request_id);
       await invoke("nwc_reject_connection", { requestId: pendingConnection.request_id });
-      console.log("Connection rejected successfully");
       setPendingConnection(null);
+      setLocation("/");
     } catch (error) {
       console.error("Failed to reject connection:", error);
+      setPendingConnection(null);
+      setLocation("/");
     }
   };
 
@@ -339,25 +345,29 @@ export default function App() {
   const goSettings = () => setLocation("/settings");
   const goHistory = () => setLocation("/history");
   const goDebug = () => setLocation("/debug");
+  const goConnections = () => setLocation("/connections");
 
   const sharedMainClasses =
     "relative mx-auto flex w-full max-w-md flex-col overflow-hidden bg-background";
 
   const mainClasses =
-    location === "/settings" || location === "/history" || location === "/debug"
+    location === "/settings" || location === "/history" || location === "/debug" || location === "/connections"
       ? `${sharedMainClasses} min-h-screen`
       : `${sharedMainClasses} h-screen`;
 
   const showSettingsButton =
-    location === "/" || location === "/settings" || location === "/history" || location === "/debug";
+    location === "/" || location === "/settings" || location === "/history" || location === "/debug" || location === "/connections";
   const showHistoryButton =
-    location === "/" || location === "/settings" || location === "/history" || location === "/debug";
+    location === "/" || location === "/settings" || location === "/history" || location === "/debug" || location === "/connections";
   const showDebugButton =
-    location === "/" || location === "/settings" || location === "/history" || location === "/debug";
+    location === "/" || location === "/settings" || location === "/history" || location === "/debug" || location === "/connections";
+  const showConnectionsButton =
+    location === "/" || location === "/settings" || location === "/history" || location === "/debug" || location === "/connections";
 
   const settingsButtonAction = location === "/settings" ? goHome : goSettings;
   const historyButtonAction = location === "/history" ? goHome : goHistory;
   const debugButtonAction = location === "/debug" ? goHome : goDebug;
+  const connectionsButtonAction = location === "/connections" ? goHome : goConnections;
 
   const settingsButtonIcon =
     location === "/settings" ? (
@@ -380,13 +390,20 @@ export default function App() {
       <Bug className="h-5 w-5" />
     );
 
+  const connectionsButtonIcon =
+    location === "/connections" ? (
+      <Wallet className="h-5 w-5" />
+    ) : (
+      <Link className="h-5 w-5" />
+    );
+
   return (
     <div
       className="bg-background text-foreground"
       style={{ overscrollBehavior: "none" }}
     >
       <main className={mainClasses}>
-        {showSettingsButton || showHistoryButton || showDebugButton ? (
+        {showSettingsButton || showHistoryButton || showDebugButton || showConnectionsButton ? (
           <div className="absolute right-4 top-4 z-20 flex flex-col items-end gap-2">
             {showDebugButton ? (
               <Button
@@ -399,6 +416,19 @@ export default function App() {
                 }
               >
                 {debugButtonIcon}
+              </Button>
+            ) : null}
+            {showConnectionsButton ? (
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 rounded-full"
+                onClick={connectionsButtonAction}
+                aria-label={
+                  location === "/connections" ? "Back to wallet" : "View connections"
+                }
+              >
+                {connectionsButtonIcon}
               </Button>
             ) : null}
             {showSettingsButton ? (
@@ -500,6 +530,12 @@ export default function App() {
           <Route path="/debug">
             <DebugScreen
               status={status}
+              copyToClipboard={copyToClipboard}
+            />
+          </Route>
+
+          <Route path="/connections">
+            <ConnectionsScreen
               copyToClipboard={copyToClipboard}
             />
           </Route>

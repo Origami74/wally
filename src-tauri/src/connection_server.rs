@@ -6,7 +6,7 @@
 use crate::TollGateState;
 use axum::{
     extract::State,
-    http::{HeaderValue, Method, StatusCode},
+    http::{Method, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
@@ -328,32 +328,99 @@ fn parse_query_string(query: &str) -> HashMap<String, Vec<String>> {
 pub async fn nwc_approve_connection(
     request_id: String,
     pending_connections: tauri::State<'_, PendingConnectionsState>,
+    nwc_state: tauri::State<'_, crate::NwcState>,
 ) -> Result<ConnectionResponse, String> {
     log::info!("Approving connection request: {}", request_id);
     
     let mut connections = pending_connections.lock().await;
     
-    if let Some(pending_request) = connections.get(&request_id) {
-        log::info!("Found pending connection request:");
+    if let Some(pending_request) = connections.get(&request_id).cloned() {
         log::info!("  App pubkey: {}", pending_request.nwa_request.app_pubkey);
         log::info!("  Required commands: {:?}", pending_request.nwa_request.required_commands);
+        log::info!("  Relays: {:?}", pending_request.nwa_request.relays);
         
-        // TODO: Implement actual connection approval
-        // - Create NWC connection
-        // - Store connection details
-        // - Generate connection URI to send back
-        
-        // Remove from pending connections
+        // Remove from pending connections immediately
         connections.remove(&request_id);
+        drop(connections); // Release lock
+        
+        // Get the NWC service
+        let nwc_lock = nwc_state.lock().await;
+        let nwc = nwc_lock.as_ref()
+            .ok_or_else(|| {
+                log::error!("NWC service not initialized");
+                "NWC service not initialized".to_string()
+            })?;
+        
+        // Parse budget if provided, or use default
+        let budget = if let Some(budget_str) = &pending_request.nwa_request.budget {
+            parse_budget(budget_str).unwrap_or_else(|| {
+                log::warn!("Failed to parse budget '{}', using default", budget_str);
+                crate::nwc::ConnectionBudget::default()
+            })
+        } else {
+            crate::nwc::ConnectionBudget::default()
+        };
+        
+        // Create the NWA connection
+        let connection = nwc.create_nwa_connection(
+            &pending_request.nwa_request.app_pubkey,
+            pending_request.nwa_request.secret.clone(),
+            budget,
+        ).await.map_err(|e| {
+            log::error!("Failed to create connection: {}", e);
+            format!("Failed to create connection: {}", e)
+        })?;
+        
+        log::info!("Created connection: pubkey={}, budget={} msats", 
+            connection.keys.public_key(), connection.budget.total_budget_msats);
+        
+        // Broadcast the approval event to the app's relays
+        nwc.broadcast_nwa_approval(
+            &connection,
+            pending_request.nwa_request.relays.clone(),
+            None, // TODO: Add lud16 support if needed
+        ).await.map_err(|e| {
+            log::error!("Failed to broadcast approval: {}", e);
+            format!("Failed to broadcast approval: {}", e)
+        })?;
+        
+        log::info!("Connection approved successfully for request: {}", request_id);
         
         Ok(ConnectionResponse {
             success: true,
-            message: "Connection approved successfully".to_string(),
+            message: "Connection approved and broadcasted successfully".to_string(),
         })
     } else {
         log::warn!("Connection request not found: {}", request_id);
         Err(format!("Connection request not found: {}", request_id))
     }
+}
+
+/// Parse budget string in format "amount/period" (e.g., "10000/daily")
+fn parse_budget(budget_str: &str) -> Option<crate::nwc::ConnectionBudget> {
+    let parts: Vec<&str> = budget_str.split('/').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    
+    let amount_sats = parts[0].parse::<u64>().ok()?;
+    let amount_msats = amount_sats * 1000;
+    
+    let renewal_period = match parts[1].to_lowercase().as_str() {
+        "daily" => crate::nwc::BudgetRenewalPeriod::Daily,
+        "weekly" => crate::nwc::BudgetRenewalPeriod::Weekly,
+        "monthly" => crate::nwc::BudgetRenewalPeriod::Monthly,
+        "yearly" => crate::nwc::BudgetRenewalPeriod::Yearly,
+        "never" => crate::nwc::BudgetRenewalPeriod::Never,
+        _ => return None,
+    };
+    
+    Some(crate::nwc::ConnectionBudget {
+        renewal_period,
+        renews_at: None,
+        total_budget_msats: amount_msats,
+        used_budget_msats: 0,
+    })
 }
 
 /// Tauri command to reject a pending connection request
