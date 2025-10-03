@@ -5,7 +5,7 @@
 
 use crate::TollGateState;
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::{Method, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
@@ -63,10 +63,16 @@ pub struct NostrWalletAuthRequest {
 pub struct PendingConnectionRequest {
     /// Unique ID for this pending request
     pub request_id: String,
-    /// The parsed NWA request
-    pub nwa_request: NostrWalletAuthRequest,
+    /// The parsed NWA request (optional for standard NWC flow)
+    pub nwa_request: Option<NostrWalletAuthRequest>,
     /// Timestamp when the request was received
     pub received_at: u64,
+    /// The approved NWC connection URI (set after approval)
+    pub nwc_uri: Option<String>,
+    /// Whether this request has been approved
+    pub approved: bool,
+    /// Whether this request has been rejected
+    pub rejected: bool,
 }
 
 /// State for managing pending connection requests
@@ -118,6 +124,7 @@ pub async fn start_connection_server(
 
     let app = Router::new()
         .route("/", get(get_wallet_info).post(post_wallet_connect))
+        .route("/poll/:request_id", get(poll_connection_status))
         .layer(cors)
         .with_state(server_state);
 
@@ -137,8 +144,9 @@ pub async fn start_connection_server(
     };
     
     log::info!("Connection server listening on http://{}", addr);
-    log::info!("  GET  / - Get wallet relays and supported commands");
-    log::info!("  POST / - Connect via Nostr Wallet Auth");
+    log::info!("  GET  / - Create a new connection request (returns request_id)");
+    log::info!("  GET  /poll/:request_id - Poll connection status and retrieve NWC URI");
+    log::info!("  POST / - Connect via Nostr Wallet Auth (NWA)");
     
     tokio::spawn(async move {
         log::info!("Connection server task started, beginning to serve requests");
@@ -151,19 +159,79 @@ pub async fn start_connection_server(
     Ok(())
 }
 
-/// Handler for GET /
-async fn get_wallet_info(State(_state): State<ConnectionServerState>) -> Response {
-    log::info!("Received GET request to / endpoint");
+/// Handler for GET / - Creates a pending connection request
+async fn get_wallet_info(State(state): State<ConnectionServerState>) -> Response {
+    log::info!("Received GET request to create connection");
     
-    let response = WalletInfoResponse {
-        relays: vec![NWC_RELAY_URL.to_string()],
-        supported_commands: SUPPORTED_NWC_COMMANDS.iter().map(|s| s.to_string()).collect(),
+    // Generate a unique request ID
+    let request_id = uuid::Uuid::new_v4().to_string();
+    
+    // Create pending connection request for standard NWC flow
+    let pending_request = PendingConnectionRequest {
+        request_id: request_id.clone(),
+        nwa_request: None, // Standard NWC flow doesn't use NWA
+        received_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        nwc_uri: None,
+        approved: false,
+        rejected: false,
     };
     
-    log::info!("Returning wallet info: relays={:?}, commands={:?}", 
-               response.relays, response.supported_commands);
+    // Store pending request
+    {
+        let mut pending_connections = state.pending_connections.lock().await;
+        pending_connections.insert(request_id.clone(), pending_request.clone());
+    }
     
-    Json(response).into_response()
+    // Emit event to frontend to prompt user
+    {
+        #[cfg(target_os = "macos")]
+        {
+            let app_handle = state.app_handle.clone();
+            let app_handle_for_closure = app_handle.clone();
+            let _ = app_handle.run_on_main_thread(move || {
+                if let Ok(panel) = app_handle_for_closure.get_webview_panel("main") {
+                    if !panel.is_visible() {
+                        panel.order_front_regardless();
+                    }
+                    panel.make_key_and_order_front(None);
+                } else if let Some(window) = app_handle_for_closure.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            });
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            if let Some(window) = state.app_handle.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }
+    }
+    
+    if let Err(e) = state.app_handle.emit("nwc-connection-request", &pending_request) {
+        log::error!("Failed to emit connection request event: {}", e);
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "success": false,
+                "error": "Failed to process connection request"
+            }))
+        ).into_response();
+    }
+    
+    log::info!("Created standard NWC connection request with ID: {}", request_id);
+    
+    Json(json!({
+        "success": true,
+        "request_id": request_id,
+        "message": "Connection request created, awaiting user approval",
+        "poll_url": format!("/poll/{}", request_id)
+    })).into_response()
 }
 
 /// Handler for POST /
@@ -192,11 +260,14 @@ async fn post_wallet_connect(
             // Create pending connection request
             let pending_request = PendingConnectionRequest {
                 request_id: request_id.clone(),
-                nwa_request: nwa_request.clone(),
+                nwa_request: Some(nwa_request.clone()),
                 received_at: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs(),
+                nwc_uri: None,
+                approved: false,
+                rejected: false,
             };
             
             // Store pending request
@@ -262,6 +333,55 @@ async fn post_wallet_connect(
                 }))
             ).into_response()
         }
+    }
+}
+
+/// Handler for GET /poll/:request_id - Poll connection status
+async fn poll_connection_status(
+    State(state): State<ConnectionServerState>,
+    Path(request_id): Path<String>,
+) -> Response {
+    log::debug!("Polling connection status for request: {}", request_id);
+    
+    let pending_connections = state.pending_connections.lock().await;
+    
+    if let Some(pending_request) = pending_connections.get(&request_id) {
+        if pending_request.approved {
+            if let Some(ref nwc_uri) = pending_request.nwc_uri {
+                log::info!("Connection approved, returning NWC URI for request: {}", request_id);
+                return Json(json!({
+                    "status": "approved",
+                    "nwc_uri": nwc_uri
+                })).into_response();
+            } else {
+                log::warn!("Connection approved but NWC URI not set for request: {}", request_id);
+                return Json(json!({
+                    "status": "approved",
+                    "error": "NWC URI not available yet"
+                })).into_response();
+            }
+        } else if pending_request.rejected {
+            log::info!("Connection rejected for request: {}", request_id);
+            return Json(json!({
+                "status": "rejected",
+                "message": "Connection request was rejected by user"
+            })).into_response();
+        } else {
+            log::debug!("Connection still pending for request: {}", request_id);
+            return Json(json!({
+                "status": "pending",
+                "message": "Waiting for user approval"
+            })).into_response();
+        }
+    } else {
+        log::warn!("Connection request not found: {}", request_id);
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "status": "not_found",
+                "error": "Connection request not found or expired"
+            }))
+        ).into_response();
     }
 }
 
@@ -379,15 +499,7 @@ pub async fn nwc_approve_connection(
     
     let mut connections = pending_connections.lock().await;
     
-    if let Some(pending_request) = connections.get(&request_id).cloned() {
-        log::info!("  App pubkey: {}", pending_request.nwa_request.app_pubkey);
-        log::info!("  Required commands: {:?}", pending_request.nwa_request.required_commands);
-        log::info!("  Relays: {:?}", pending_request.nwa_request.relays);
-        
-        // Remove from pending connections immediately
-        connections.remove(&request_id);
-        drop(connections); // Release lock
-        
+    if let Some(mut pending_request) = connections.get(&request_id).cloned() {
         // Get the NWC service
         let nwc_lock = nwc_state.lock().await;
         let nwc = nwc_lock.as_ref()
@@ -396,46 +508,85 @@ pub async fn nwc_approve_connection(
                 "NWC service not initialized".to_string()
             })?;
         
-        // Parse budget if provided, or use default
-        let budget = if let Some(budget_str) = &pending_request.nwa_request.budget {
-            parse_budget(budget_str).unwrap_or_else(|| {
-                log::warn!("Failed to parse budget '{}', using default", budget_str);
+        // Check if this is NWA or standard NWC flow
+        if let Some(nwa_request) = &pending_request.nwa_request {
+            // NWA flow
+            log::info!("  App pubkey: {}", nwa_request.app_pubkey);
+            log::info!("  Required commands: {:?}", nwa_request.required_commands);
+            log::info!("  Relays: {:?}", nwa_request.relays);
+            
+            // Parse budget if provided, or use default
+            let budget = if let Some(budget_str) = &nwa_request.budget {
+                parse_budget(budget_str).unwrap_or_else(|| {
+                    log::warn!("Failed to parse budget '{}', using default", budget_str);
+                    crate::nwc::ConnectionBudget::default()
+                })
+            } else {
                 crate::nwc::ConnectionBudget::default()
+            };
+            
+            // Create the NWA connection
+            let connection = nwc.create_nwa_connection(
+                &nwa_request.app_pubkey,
+                nwa_request.secret.clone(), // App's secret for correlation
+                budget,
+            ).await.map_err(|e| {
+                log::error!("Failed to create connection: {}", e);
+                format!("Failed to create connection: {}", e)
+            })?;
+            
+            log::info!("Created NWA connection: pubkey={}, budget={} msats", 
+                connection.keys.public_key(), connection.budget.total_budget_msats);
+            
+            // Broadcast the approval event to the app's relays
+            nwc.broadcast_nwa_approval(
+                &connection,
+                nwa_request.relays.clone(),
+                None, // TODO: Add lud16 support if needed
+            ).await.map_err(|e| {
+                log::error!("Failed to broadcast approval: {}", e);
+                format!("Failed to broadcast approval: {}", e)
+            })?;
+            
+            // Mark as approved and remove from pending
+            connections.remove(&request_id);
+            drop(connections);
+            
+            log::info!("NWA connection approved successfully for request: {}", request_id);
+            
+            Ok(ConnectionResponse {
+                success: true,
+                message: "Connection approved and broadcasted successfully".to_string(),
             })
         } else {
-            crate::nwc::ConnectionBudget::default()
-        };
-        
-        // Create the NWA connection
-        let connection = nwc.create_nwa_connection(
-            &pending_request.nwa_request.app_pubkey,
-            pending_request.nwa_request.secret.clone(), // App's secret for correlation
-            budget,
-        ).await.map_err(|e| {
-            log::error!("Failed to create connection: {}", e);
-            format!("Failed to create connection: {}", e)
-        })?;
-        
-        log::info!("Created connection: pubkey={}, budget={} msats", 
-            connection.keys.public_key(), connection.budget.total_budget_msats);
-        
-        // Broadcast the approval event to the app's relays
-        nwc.broadcast_nwa_approval(
-            &connection,
-            pending_request.nwa_request.relays.clone(),
-            None, // TODO: Add lud16 support if needed
-        ).await.map_err(|e| {
-            log::error!("Failed to broadcast approval: {}", e);
-            format!("Failed to broadcast approval: {}", e)
-        })?;
-        
-        log::info!("Connection approved successfully for request: {}", request_id);
-        
-        Ok(ConnectionResponse {
-            success: true,
-            message: "Connection approved and broadcasted successfully".to_string(),
-        })
+            // Standard NWC flow - create a standard NWC connection and return URI
+            log::info!("Creating standard NWC connection");
+            
+            // Create standard NWC connection
+            let nwc_uri = nwc.create_standard_nwc_uri()
+                .await
+                .map_err(|e| {
+                    log::error!("Failed to create NWC URI: {}", e);
+                    format!("Failed to create NWC URI: {}", e)
+                })?;
+            
+            log::info!("Created standard NWC connection with URI");
+            
+            // Update pending request with the URI and mark as approved
+            pending_request.nwc_uri = Some(nwc_uri.clone());
+            pending_request.approved = true;
+            connections.insert(request_id.clone(), pending_request);
+            drop(connections);
+            
+            log::info!("Standard NWC connection approved successfully for request: {}", request_id);
+            
+            Ok(ConnectionResponse {
+                success: true,
+                message: "Connection approved, NWC URI available for polling".to_string(),
+            })
+        }
     } else {
+        drop(connections);
         log::warn!("Connection request not found: {}", request_id);
         Err(format!("Connection request not found: {}", request_id))
     }
@@ -478,13 +629,19 @@ pub async fn nwc_reject_connection(
     
     let mut connections = pending_connections.lock().await;
     
-    if let Some(_) = connections.remove(&request_id) {
-        log::info!("Connection request rejected and removed: {}", request_id);
+    if let Some(mut pending_request) = connections.get(&request_id).cloned() {
+        // Mark as rejected instead of removing it
+        pending_request.rejected = true;
+        connections.insert(request_id.clone(), pending_request);
+        drop(connections);
+        
+        log::info!("Connection request rejected: {}", request_id);
         Ok(ConnectionResponse {
             success: true,
             message: "Connection request rejected".to_string(),
         })
     } else {
+        drop(connections);
         log::warn!("Connection request not found: {}", request_id);
         Err(format!("Connection request not found: {}", request_id))
     }

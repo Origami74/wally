@@ -5,6 +5,13 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CopyButton } from "@/components/copy-button";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 type NwcConnection = {
   pubkey: string;
@@ -21,6 +28,8 @@ export function ConnectionsScreen({ copyToClipboard }: ConnectionsScreenProps) {
   const [connections, setConnections] = useState<NwcConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [newNwcUri, setNewNwcUri] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
     const loadConnections = async () => {
@@ -58,6 +67,20 @@ export function ConnectionsScreen({ copyToClipboard }: ConnectionsScreenProps) {
     }
   };
 
+  const handleCreateConnection = async () => {
+    setIsCreating(true);
+    setError(null);
+    try {
+      const uri = await invoke<string>("nwc_create_standard_connection");
+      setNewNwcUri(uri);
+    } catch (err) {
+      console.error("Failed to create NWC URI:", err);
+      setError(String(err));
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
   const formatBudget = (msats: number) => {
     const sats = Math.floor(msats / 1000);
     return sats.toLocaleString();
@@ -81,6 +104,12 @@ export function ConnectionsScreen({ copyToClipboard }: ConnectionsScreenProps) {
         <p className="text-sm text-muted-foreground">
           Manage your NWC wallet connections
         </p>
+      </div>
+
+      <div className="flex justify-end">
+        <Button onClick={handleCreateConnection} disabled={isCreating}>
+          {isCreating ? "Creating..." : "Create New Connection"}
+        </Button>
       </div>
 
       {loading && connections.length === 0 ? (
@@ -197,6 +226,29 @@ export function ConnectionsScreen({ copyToClipboard }: ConnectionsScreenProps) {
           })}
         </div>
       )}
+      
+      <Dialog open={!!newNwcUri} onOpenChange={(open) => !open && setNewNwcUri(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New Connection String</DialogTitle>
+            <DialogDescription>
+              Copy this connection string and paste it into the client application.
+              This string contains a secret key, so treat it like a password.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="break-all rounded-md bg-muted p-3 font-mono text-sm">
+              {newNwcUri}
+            </p>
+            <CopyButton
+              onCopy={() => newNwcUri ? copyToClipboard(newNwcUri) : Promise.resolve()}
+              label="Copy Connection String"
+              copiedLabel="Copied!"
+              className="w-full"
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </Screen>
   );
 }
