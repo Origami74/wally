@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Screen } from "@/components/layout/screen";
+import { SectionHeader } from "@/components/layout/section-header";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CopyButton } from "@/components/copy-button";
@@ -21,6 +22,7 @@ export function ConnectionsScreen({ copyToClipboard }: ConnectionsScreenProps) {
   const [connections, setConnections] = useState<NwcConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [copying, setCopying] = useState(false);
 
   useEffect(() => {
     const loadConnections = async () => {
@@ -73,15 +75,28 @@ export function ConnectionsScreen({ copyToClipboard }: ConnectionsScreenProps) {
   };
 
   return (
-    <Screen className="min-h-screen gap-6 overflow-y-auto">
-      <div className="space-y-3">
-        <h1 className="text-2xl font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-          Active Connections
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Manage your NWC wallet connections
-        </p>
-      </div>
+    <Screen className="min-h-screen gap-6 overflow-y-auto pt-6">
+      <SectionHeader
+        title="NWC Settings"
+        description="Manage your NWC wallet connections"
+        actions={
+          <CopyButton
+            onCopy={async () => {
+              try {
+                setCopying(true);
+                const pubkey = await invoke<string>("nwc_get_service_pubkey");
+                await copyToClipboard(pubkey);
+              } finally {
+                setCopying(false);
+              }
+            }}
+            label={copying ? "Copying…" : "Copy NWC string"}
+            copiedLabel="Copied"
+            variant="outline"
+            className="w-max"
+          />
+        }
+      />
 
       {loading && connections.length === 0 ? (
         <Card className="border border-dashed border-primary/20 bg-background/90 p-6">
@@ -200,4 +215,3 @@ export function ConnectionsScreen({ copyToClipboard }: ConnectionsScreenProps) {
     </Screen>
   );
 }
-

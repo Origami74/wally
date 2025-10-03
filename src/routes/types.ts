@@ -16,6 +16,7 @@ export type StatusBadge = {
   label: string;
   value: string;
   tone: ComponentProps<typeof Badge>["tone"];
+  onClick?: () => void;
 };
 
 export type FeatureState = {
