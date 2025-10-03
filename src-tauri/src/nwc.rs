@@ -518,26 +518,33 @@ impl NostrWalletConnect {
     }
     
     /// Creates a new NWA connection and returns the connection details.
+    ///
+    /// According to NIP-47, the wallet generates its own secret and returns it to the app.
+    /// The app's secret from the URI is just an identifier for correlation.
     pub async fn create_nwa_connection(
         &self,
         app_pubkey_str: &str,
-        secret: String,
+        _app_secret: String, // App's secret is just for correlation, we generate our own
         budget: ConnectionBudget,
     ) -> Result<WalletConnection, Error> {
         // Parse app's public key
         let app_pubkey = PublicKey::from_str(app_pubkey_str)
             .map_err(|e| Error::Key(e))?;
         
-        // Create new connection with generated keypair
-        let connection = WalletConnection::from_nwa(app_pubkey, secret, budget);
+        // Generate our own secret for this connection (as per NIP-47 spec)
+        let wallet_secret = uuid::Uuid::new_v4().to_string();
+        
+        // Create new connection with generated keypair and our own secret
+        let connection = WalletConnection::from_nwa(app_pubkey, wallet_secret, budget);
         
         // Add connection to our list
         self.add_connection(connection.clone()).await?;
         
         log::info!(
-            "Created NWA connection: app_pubkey={}, connection_pubkey={}",
+            "Created NWA connection: app_pubkey={}, connection_pubkey={}, wallet_secret={}",
             app_pubkey,
-            connection.keys.public_key()
+            connection.keys.public_key(),
+            connection.secret.as_ref().unwrap_or(&"None".to_string())
         );
         
         Ok(connection)

@@ -266,11 +266,14 @@ fn parse_nwa_uri(uri: &str) -> Result<NostrWalletAuthRequest, String> {
         .map(|s| urlencoding::decode(s).unwrap_or_default().to_string())
         .collect();
     
-    // Extract secret
+    // Extract secret (this is just an identifier from the app, not the actual connection secret)
     let secret = params.get("secret")
         .and_then(|v| v.first())
-        .ok_or("Missing required parameter: secret")?
-        .to_string();
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            // Generate a random identifier if not provided
+            uuid::Uuid::new_v4().to_string()
+        });
     
     // Extract required commands
     let required_commands: Vec<String> = params.get("required_commands")
@@ -364,7 +367,7 @@ pub async fn nwc_approve_connection(
         // Create the NWA connection
         let connection = nwc.create_nwa_connection(
             &pending_request.nwa_request.app_pubkey,
-            pending_request.nwa_request.secret.clone(),
+            pending_request.nwa_request.secret.clone(), // App's secret for correlation
             budget,
         ).await.map_err(|e| {
             log::error!("Failed to create connection: {}", e);
