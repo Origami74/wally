@@ -202,13 +202,13 @@ export default function App() {
           "nwc-connection-request",
           async (event: any) => {
             if (!mounted) return;
-            console.log("App: NWC connection request received:", event.payload);
+            console.log("App: Connection request received:", event.payload);
             setPendingConnection(event.payload as PendingConnectionRequest);
           }
         );
         listeners.push(nwcConnectionRequest);
       } catch (error) {
-        console.warn("Failed to register androidwifi listeners", error);
+        console.warn("Failed to register listeners", error);
       }
     };
 
@@ -265,7 +265,7 @@ export default function App() {
     setLocation("/");
   }, [refreshStatus, setLocation]);
 
-  const handleApproveConnection = async () => {
+  const handleApproveConnection = useCallback(async () => {
     if (!pendingConnection) return;
 
     try {
@@ -279,9 +279,9 @@ export default function App() {
       setPendingConnection(null);
       setLocation("/");
     }
-  };
+  }, [pendingConnection, refreshStatus, setLocation]);
 
-  const handleRejectConnection = async () => {
+  const handleRejectConnection = useCallback(async () => {
     if (!pendingConnection) return;
 
     try {
@@ -293,8 +293,7 @@ export default function App() {
       setPendingConnection(null);
       setLocation("/");
     }
-  };
-
+  }, [pendingConnection, setLocation]);
   const statusBadges: StatusBadge[] = useMemo(() => {
     const badges: StatusBadge[] = [];
 
@@ -327,12 +326,12 @@ export default function App() {
       });
     }
 
-    // Always show connections button (regardless of NWC feature state)
+    const nwcEnabled = featureEnabled("nwc");
     badges.push({
       id: "connections",
       label: "Connections",
-      value: featureEnabled("nwc") ? "Enabled" : "Available",
-      tone: featureEnabled("nwc") ? "info" : "default",
+      value: nwcEnabled ? "Enabled" : "Available",
+      tone: nwcEnabled ? "info" : "default",
       onClick: () => setLocation("/connections"),
     });
 
@@ -457,13 +456,10 @@ export default function App() {
                 if (walletSummary?.npub) {
                   setNpubInput(walletSummary.npub);
                 } else {
-                  setNpubInput(
-                    status?.current_network?.advertisement?.tollgate_pubkey ?? ""
-                  );
+                  setNpubInput(status?.current_network?.advertisement?.tollgate_pubkey ?? "");
                 }
               }}
               handleFeatureUpdate={handleFeatureUpdate}
-              copyToClipboard={copyToClipboard}
               periodMeta={periodMeta}
             />
           </Route>
@@ -490,7 +486,7 @@ export default function App() {
           <DialogHeader>
             <DialogTitle>Wallet Connection Request</DialogTitle>
             <DialogDescription>
-              {pendingConnection?.nwa_request 
+              {pendingConnection?.nwa_request
                 ? "An application wants to connect to your wallet (NWA)"
                 : "An application wants to connect to your wallet (Standard NWC)"}
             </DialogDescription>
@@ -498,52 +494,51 @@ export default function App() {
 
           <div className="space-y-4">
             {pendingConnection?.nwa_request ? (
-              // NWA connection request
               <>
                 <div>
-                  <p className="text-sm font-medium mb-1">App Public Key</p>
-                  <p className="text-xs text-muted-foreground font-mono break-all">
+                  <p className="mb-1 text-sm font-medium">App Public Key</p>
+                  <p className="break-all font-mono text-xs text-muted-foreground">
                     {pendingConnection.nwa_request.app_pubkey}
                   </p>
                 </div>
-                
-                {pendingConnection.nwa_request.identity && (
+
+                {pendingConnection.nwa_request.identity ? (
                   <div>
-                    <p className="text-sm font-medium mb-1">Identity</p>
-                    <p className="text-xs text-muted-foreground font-mono break-all">
+                    <p className="mb-1 text-sm font-medium">Identity</p>
+                    <p className="break-all font-mono text-xs text-muted-foreground">
                       {pendingConnection.nwa_request.identity}
                     </p>
                   </div>
-                )}
-                
+                ) : null}
+
                 <div>
-                  <p className="text-sm font-medium mb-1">Required Commands</p>
+                  <p className="mb-1 text-sm font-medium">Required Commands</p>
                   <p className="text-xs text-muted-foreground">
                     {pendingConnection.nwa_request.required_commands.join(", ") || "None"}
                   </p>
                 </div>
-                
-                {pendingConnection.nwa_request.optional_commands.length > 0 && (
+
+                {pendingConnection.nwa_request.optional_commands.length ? (
                   <div>
-                    <p className="text-sm font-medium mb-1">Optional Commands</p>
+                    <p className="mb-1 text-sm font-medium">Optional Commands</p>
                     <p className="text-xs text-muted-foreground">
                       {pendingConnection.nwa_request.optional_commands.join(", ")}
                     </p>
                   </div>
-                )}
-                
-                {pendingConnection.nwa_request.budget && (
+                ) : null}
+
+                {pendingConnection.nwa_request.budget ? (
                   <div>
-                    <p className="text-sm font-medium mb-1">Budget</p>
+                    <p className="mb-1 text-sm font-medium">Budget</p>
                     <p className="text-xs text-muted-foreground">
                       {pendingConnection.nwa_request.budget}
                     </p>
                   </div>
-                )}
-                
+                ) : null}
+
                 <div>
-                  <p className="text-sm font-medium mb-1">Relays</p>
-                  <div className="text-xs text-muted-foreground space-y-1">
+                  <p className="mb-1 text-sm font-medium">Relays</p>
+                  <div className="space-y-1 text-xs text-muted-foreground">
                     {pendingConnection.nwa_request.relays.map((relay, idx) => (
                       <p key={idx} className="font-mono">{relay}</p>
                     ))}
@@ -551,18 +546,13 @@ export default function App() {
                 </div>
               </>
             ) : (
-              // Standard NWC connection request
               <div>
                 <p className="text-sm text-muted-foreground">
-                  A client is requesting a standard Nostr Wallet Connect connection.
-                  Approving will generate a connection string that the client can use to 
-                  interact with your wallet.
+                  A client is requesting a standard Nostr Wallet Connect connection. Approving will
+                  generate a connection string the client can use to interact with your wallet.
                 </p>
                 <div className="mt-4 rounded-md bg-muted p-3">
-                  <p className="text-xs font-medium mb-1">Default Budget</p>
-                  <p className="text-xs text-muted-foreground">
-                    1,000 sats / day
-                  </p>
+                  <p className="text-xs text-muted-foreground">Default budget: 1,000 sats / day</p>
                 </div>
               </div>
             )}
