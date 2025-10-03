@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{Mutex, RwLock};
 
 const RELAY_URL: &str = "wss://nostrue.com";
@@ -1018,12 +1018,65 @@ impl NostrWalletConnect {
         description: Option<String>,
     ) -> Result<Bolt11InvoiceInfo, Error> {
         let service = self.service_state.lock().await;
-        // Convert msats to sats
         let amount_sats = amount_msats / 1000;
-        service
+        let invoice_info = service
             .create_bolt11_invoice(amount_sats, description)
             .await
-            .map_err(|e| Error::Wallet(format!("Failed to create invoice: {}", e)))
+            .map_err(|e| Error::Wallet(format!("Failed to create invoice: {}", e)))?;
+
+        let quote_id = invoice_info.quote_id.clone();
+        let mint_url = invoice_info.mint_url.clone();
+        let expiry = invoice_info.expiry;
+        let service_state = self.service_state.clone();
+
+        tokio::spawn(async move {
+            let poll_interval = Duration::from_secs(3);
+            loop {
+                // Stop if invoice has expired
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                if now >= expiry {
+                    log::warn!(
+                        "Mint quote {} for mint {} expired before being paid",
+                        quote_id,
+                        mint_url
+                    );
+                    break;
+                }
+
+                // Check quote status
+                let minted = {
+                    let service = service_state.lock().await;
+                    match service.check_mint_quote(&mint_url, &quote_id).await {
+                        Ok(done) => done,
+                        Err(err) => {
+                            log::warn!(
+                                "Failed to check mint quote {} at {}: {}",
+                                quote_id,
+                                mint_url,
+                                err
+                            );
+                            false
+                        }
+                    }
+                };
+
+                if minted {
+                    log::info!(
+                        "Minted tokens for quote {} at mint {} after payment",
+                        quote_id,
+                        mint_url
+                    );
+                    break;
+                }
+
+                tokio::time::sleep(poll_interval).await;
+            }
+        });
+
+        Ok(invoice_info)
     }
 
     /// Pays a BOLT11 invoice.

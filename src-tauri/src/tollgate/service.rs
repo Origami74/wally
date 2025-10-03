@@ -1,5 +1,5 @@
 //! Main TollGate service coordinator
-//! 
+//!
 //! This is the central service that manages all TollGate operations:
 //! - Background monitoring and purchasing
 //! - Session management and persistence
@@ -11,14 +11,8 @@ use crate::tollgate::network::{NetworkDetector, NetworkInfo};
 use crate::tollgate::protocol::{PaymentEvent, TollGateProtocol};
 use crate::tollgate::session::{Session, SessionManager, SessionStatus};
 use crate::tollgate::wallet::{
-    Bolt11InvoiceInfo,
-    Bolt11PaymentResult,
-    CashuReceiveResult,
-    Nut18PaymentRequestInfo,
-    PayNut18Result,
-    TollGateWallet,
-    WalletSummary,
-    WalletTransactionEntry,
+    Bolt11InvoiceInfo, Bolt11PaymentResult, CashuReceiveResult, Nut18PaymentRequestInfo,
+    PayNut18Result, TollGateWallet, WalletSummary, WalletTransactionEntry,
 };
 use chrono::{DateTime, Utc};
 use nostr::Keys;
@@ -73,10 +67,10 @@ impl TollGateService {
     /// Create a new TollGate service
     pub async fn new() -> TollGateResult<Self> {
         let mut wallet = TollGateWallet::new()?;
-        
+
         // Load existing mints from previous sessions
         wallet.load_existing_mints().await?;
-        
+
         let service = Self {
             auto_tollgate_enabled: Arc::new(RwLock::new(false)),
             session_manager: Arc::new(Mutex::new(SessionManager::new())),
@@ -107,10 +101,10 @@ impl TollGateService {
 
         let task = tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(10));
-            
+
             loop {
                 interval.tick().await;
-                
+
                 // Only run if auto-tollgate is enabled
                 if !*auto_enabled.read().await {
                     continue;
@@ -122,7 +116,9 @@ impl TollGateService {
                     &wallet,
                     &current_network,
                     &protocol,
-                ).await {
+                )
+                .await
+                {
                     log::error!("Error checking sessions for renewal: {}", e);
                 }
 
@@ -157,7 +153,10 @@ impl TollGateService {
     /// Enable or disable auto-tollgate functionality
     pub async fn set_auto_tollgate_enabled(&self, enabled: bool) -> TollGateResult<()> {
         *self.auto_tollgate_enabled.write().await = enabled;
-        log::info!("Auto-tollgate {}", if enabled { "enabled" } else { "disabled" });
+        log::info!(
+            "Auto-tollgate {}",
+            if enabled { "enabled" } else { "disabled" }
+        );
         Ok(())
     }
 
@@ -183,7 +182,9 @@ impl TollGateService {
             })
             .collect();
 
-        let wallet_balance = wallet.get_all_balances().await
+        let wallet_balance = wallet
+            .get_all_balances()
+            .await
             .unwrap_or_default()
             .iter()
             .map(|b| b.balance)
@@ -199,12 +200,23 @@ impl TollGateService {
     }
 
     /// Handle network connection event
-    pub async fn handle_network_connected(&self, gateway_ip: String, mac_address: String) -> TollGateResult<()> {
-        log::info!("Network connected: gateway={}, mac={}", gateway_ip, mac_address);
+    pub async fn handle_network_connected(
+        &self,
+        gateway_ip: String,
+        mac_address: String,
+    ) -> TollGateResult<()> {
+        log::info!(
+            "Network connected: gateway={}, mac={}",
+            gateway_ip,
+            mac_address
+        );
 
         // Detect if this is a TollGate network
-        let network_info = self.network_detector.detect_tollgate(&gateway_ip, &mac_address).await?;
-        
+        let network_info = self
+            .network_detector
+            .detect_tollgate(&gateway_ip, &mac_address)
+            .await?;
+
         // Update current network
         *self.current_network.write().await = Some(network_info.clone());
 
@@ -218,7 +230,8 @@ impl TollGateService {
         // If auto-tollgate is enabled, start a session
         if *self.auto_tollgate_enabled.read().await {
             if let Some(advertisement) = &network_info.advertisement.clone() {
-                self.start_tollgate_session(network_info, advertisement.clone()).await?;
+                self.start_tollgate_session(network_info, advertisement.clone())
+                    .await?;
             }
         }
 
@@ -237,7 +250,10 @@ impl TollGateService {
         for session in session_manager.get_all_sessions_mut() {
             if session.is_active() {
                 session.status = SessionStatus::Expired;
-                log::info!("Marked session {} as expired due to network disconnect", session.id);
+                log::info!(
+                    "Marked session {} as expired due to network disconnect",
+                    session.id
+                );
             }
         }
 
@@ -254,20 +270,25 @@ impl TollGateService {
         let wallet = self.wallet.lock().await;
 
         // Check if we already have an active session for this TollGate
-        if let Some(existing_session) = session_manager.get_session(&advertisement.tollgate_pubkey) {
+        if let Some(existing_session) = session_manager.get_session(&advertisement.tollgate_pubkey)
+        {
             if existing_session.is_active() {
-                log::info!("Already have active session for TollGate {}", advertisement.tollgate_pubkey);
+                log::info!(
+                    "Already have active session for TollGate {}",
+                    advertisement.tollgate_pubkey
+                );
                 return Ok(());
             }
         }
 
         // Calculate initial purchase (minimum steps or 5 minutes, whichever is larger)
-        let min_steps = advertisement.pricing_options
+        let min_steps = advertisement
+            .pricing_options
             .iter()
             .map(|opt| opt.min_steps)
             .min()
             .unwrap_or(1);
-        
+
         let five_minutes_steps = if advertisement.metric == "milliseconds" {
             300000 / advertisement.step_size // 5 minutes in milliseconds
         } else {
@@ -277,13 +298,20 @@ impl TollGateService {
         let initial_steps = min_steps.max(five_minutes_steps);
 
         // Select best pricing option
-        let pricing_option = wallet.select_best_pricing_option(&advertisement.pricing_options, initial_steps).await?;
+        let pricing_option = wallet
+            .select_best_pricing_option(&advertisement.pricing_options, initial_steps)
+            .await?;
 
         // Create payment token
-        let payment_token = wallet.create_payment_token(&pricing_option, initial_steps).await?;
+        let payment_token = wallet
+            .create_payment_token(&pricing_option, initial_steps)
+            .await?;
 
         // Get device identifier from TollGate
-        let (device_type, device_value) = self.protocol.get_device_identifier(&network_info.gateway_ip).await?;
+        let (device_type, device_value) = self
+            .protocol
+            .get_device_identifier(&network_info.gateway_ip)
+            .await?;
 
         // Create payment event
         let customer_keys = Keys::generate();
@@ -294,18 +322,21 @@ impl TollGateService {
             steps: initial_steps,
         };
 
-        let payment_event = self.protocol.create_payment_event(
-            &payment,
-            &customer_keys,
-            &device_type,
-            &device_value,
-        ).await?;
+        let payment_event = self
+            .protocol
+            .create_payment_event(&payment, &customer_keys, &device_type, &device_value)
+            .await?;
 
         // Send payment and get session response
-        let session_response = self.protocol.send_payment(&network_info.gateway_ip, &payment_event).await?;
+        let session_response = self
+            .protocol
+            .send_payment(&network_info.gateway_ip, &payment_event)
+            .await?;
 
         // Calculate allotment and session end
-        let allotment = self.protocol.calculate_allotment(initial_steps, advertisement.step_size);
+        let allotment = self
+            .protocol
+            .calculate_allotment(initial_steps, advertisement.step_size);
         let cost = self.protocol.calculate_cost(&pricing_option, initial_steps);
 
         // Create session
@@ -326,7 +357,10 @@ impl TollGateService {
         // Add to session manager
         session_manager.add_session(session);
 
-        log::info!("Successfully started TollGate session for {}", advertisement.tollgate_pubkey);
+        log::info!(
+            "Successfully started TollGate session for {}",
+            advertisement.tollgate_pubkey
+        );
         Ok(())
     }
 
@@ -339,21 +373,20 @@ impl TollGateService {
     ) -> TollGateResult<()> {
         let sessions_needing_renewal: Vec<Session> = {
             let manager = session_manager.lock().await;
-            manager.get_sessions_needing_renewal()
+            manager
+                .get_sessions_needing_renewal()
                 .into_iter()
                 .cloned()
                 .collect()
         };
 
         for session in sessions_needing_renewal {
-            if let Err(e) = Self::renew_session(
-                session_manager,
-                wallet,
-                protocol,
-                &session.tollgate_pubkey,
-            ).await {
+            if let Err(e) =
+                Self::renew_session(session_manager, wallet, protocol, &session.tollgate_pubkey)
+                    .await
+            {
                 log::error!("Failed to renew session {}: {}", session.id, e);
-                
+
                 // Mark session as error
                 let mut manager = session_manager.lock().await;
                 if let Some(session) = manager.get_session_mut(&session.tollgate_pubkey) {
@@ -374,7 +407,8 @@ impl TollGateService {
     ) -> TollGateResult<()> {
         let (session_clone, renewal_steps) = {
             let manager = session_manager.lock().await;
-            let session = manager.get_session(tollgate_pubkey)
+            let session = manager
+                .get_session(tollgate_pubkey)
                 .ok_or_else(|| TollGateError::session("Session not found for renewal"))?;
 
             // Calculate renewal steps (same as initial or based on remaining time)
@@ -397,11 +431,15 @@ impl TollGateService {
 
         // Create renewal payment
         let wallet_guard = wallet.lock().await;
-        let payment_token = wallet_guard.create_payment_token(&session_clone.pricing_option, renewal_steps).await?;
+        let payment_token = wallet_guard
+            .create_payment_token(&session_clone.pricing_option, renewal_steps)
+            .await?;
         drop(wallet_guard);
 
         // Get device identifier
-        let (device_type, device_value) = protocol.get_device_identifier(&session_clone.gateway_ip).await?;
+        let (device_type, device_value) = protocol
+            .get_device_identifier(&session_clone.gateway_ip)
+            .await?;
 
         // Create payment event
         let customer_keys = session_clone.get_customer_keys()?;
@@ -412,28 +450,32 @@ impl TollGateService {
             steps: renewal_steps,
         };
 
-        let payment_event = protocol.create_payment_event(
-            &payment,
-            &customer_keys,
-            &device_type,
-            &device_value,
-        ).await?;
+        let payment_event = protocol
+            .create_payment_event(&payment, &customer_keys, &device_type, &device_value)
+            .await?;
 
         // Send renewal payment
-        let session_response = protocol.send_payment(&session_clone.gateway_ip, &payment_event).await?;
+        let session_response = protocol
+            .send_payment(&session_clone.gateway_ip, &payment_event)
+            .await?;
 
         // Update session with renewal
         {
             let mut manager = session_manager.lock().await;
             if let Some(session) = manager.get_session_mut(tollgate_pubkey) {
-                let additional_allotment = protocol.calculate_allotment(renewal_steps, session.advertisement.step_size);
-                let additional_cost = protocol.calculate_cost(&session.pricing_option, renewal_steps);
-                
+                let additional_allotment =
+                    protocol.calculate_allotment(renewal_steps, session.advertisement.step_size);
+                let additional_cost =
+                    protocol.calculate_cost(&session.pricing_option, renewal_steps);
+
                 session.mark_renewed(additional_allotment, additional_cost);
                 session.session_end = session_response.session_end;
-                
-                log::info!("Successfully renewed session {} with {} additional allotment", 
-                    session.id, additional_allotment);
+
+                log::info!(
+                    "Successfully renewed session {} with {} additional allotment",
+                    session.id,
+                    additional_allotment
+                );
             }
         }
 
@@ -447,14 +489,15 @@ impl TollGateService {
             &self.wallet,
             &self.protocol,
             tollgate_pubkey,
-        ).await
+        )
+        .await
     }
 
     /// Get current session information
     pub async fn get_current_session(&self) -> TollGateResult<Option<SessionInfo>> {
         let manager = self.session_manager.lock().await;
         let active_sessions = manager.get_active_sessions();
-        
+
         // Return the most recent active session
         let session_info = active_sessions.first().map(|session| SessionInfo {
             id: session.id.clone(),
@@ -521,6 +564,12 @@ impl TollGateService {
         wallet.create_bolt11_invoice(amount, description).await
     }
 
+    /// Check a mint quote status and mint tokens if paid.
+    pub async fn check_mint_quote(&self, mint_url: &str, quote_id: &str) -> TollGateResult<bool> {
+        let wallet = self.wallet.lock().await;
+        wallet.check_mint_quote(mint_url, quote_id).await
+    }
+
     /// Pay a Nut18 payment request
     pub async fn pay_nut18_payment_request(
         &self,
@@ -558,8 +607,14 @@ impl TollGateService {
     }
 
     /// Detect if current network is a TollGate
-    pub async fn detect_tollgate(&self, gateway_ip: &str, mac_address: &str) -> TollGateResult<NetworkInfo> {
-        self.network_detector.detect_tollgate(gateway_ip, mac_address).await
+    pub async fn detect_tollgate(
+        &self,
+        gateway_ip: &str,
+        mac_address: &str,
+    ) -> TollGateResult<NetworkInfo> {
+        self.network_detector
+            .detect_tollgate(gateway_ip, mac_address)
+            .await
     }
 
     /// Get all active sessions
@@ -601,7 +656,7 @@ impl TollGateService {
         // TODO: Implement persistence saving to file/database
         let manager = session_manager.lock().await;
         let _serialized = manager.serialize()?;
-        
+
         // For now, just log that we're persisting state
         log::debug!("Persisting state with {} sessions", manager.session_count());
         Ok(())
@@ -630,16 +685,16 @@ mod tests {
     #[tokio::test]
     async fn test_auto_tollgate_toggle() {
         let service = TollGateService::new().await.unwrap();
-        
+
         // Initially disabled
         let status = service.get_status().await.unwrap();
         assert!(!status.auto_tollgate_enabled);
-        
+
         // Enable
         service.set_auto_tollgate_enabled(true).await.unwrap();
         let status = service.get_status().await.unwrap();
         assert!(status.auto_tollgate_enabled);
-        
+
         // Disable
         service.set_auto_tollgate_enabled(false).await.unwrap();
         let status = service.get_status().await.unwrap();
