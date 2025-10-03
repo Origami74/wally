@@ -324,15 +324,14 @@ export default function App() {
       });
     }
 
-    if (featureEnabled("nwc")) {
-      badges.push({
-        id: "nwc",
-        label: "NWC",
-        value: "Enabled",
-        tone: "info",
-        onClick: () => setLocation("/connections"),
-      });
-    }
+    // Always show connections button (regardless of NWC feature state)
+    badges.push({
+      id: "connections",
+      label: "Connections",
+      value: featureEnabled("nwc") ? "Enabled" : "Available",
+      tone: featureEnabled("nwc") ? "info" : "default",
+      onClick: () => setLocation("/connections"),
+    });
 
     return badges;
   }, [currentSession, currentNetwork, features, setLocation]);
