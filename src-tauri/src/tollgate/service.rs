@@ -14,6 +14,7 @@ use crate::tollgate::wallet::{
     Bolt11InvoiceInfo, Bolt11PaymentResult, CashuReceiveResult, Nut18PaymentRequestInfo,
     PayNut18Result, TollGateWallet, WalletSummary, WalletTransactionEntry,
 };
+use cdk::amount::SplitTarget;
 use chrono::{DateTime, Utc};
 use nostr::Keys;
 use serde::{Deserialize, Serialize};
@@ -561,13 +562,98 @@ impl TollGateService {
         description: Option<String>,
     ) -> TollGateResult<Bolt11InvoiceInfo> {
         let wallet = self.wallet.lock().await;
-        wallet.create_bolt11_invoice(amount, description).await
+        let invoice = wallet.create_bolt11_invoice(amount, description).await?;
+        drop(wallet);
+
+        self.spawn_mint_quote_monitor(
+            invoice.mint_url.clone(),
+            invoice.quote_id.clone(),
+            invoice.expiry,
+        );
+
+        Ok(invoice)
     }
 
     /// Check a mint quote status and mint tokens if paid.
     pub async fn check_mint_quote(&self, mint_url: &str, quote_id: &str) -> TollGateResult<bool> {
         let wallet = self.wallet.lock().await;
         wallet.check_mint_quote(mint_url, quote_id).await
+    }
+
+    fn spawn_mint_quote_monitor(&self, mint_url: String, quote_id: String, expiry: u64) {
+        let wallet = self.wallet.clone();
+
+        tokio::spawn(async move {
+            let poll_interval = Duration::from_secs(3);
+
+            loop {
+                let now = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+                    Ok(duration) => duration.as_secs(),
+                    Err(_) => 0,
+                };
+
+                if now >= expiry {
+                    log::warn!(
+                        "Mint quote {} for mint {} expired before payment was detected",
+                        quote_id,
+                        mint_url
+                    );
+                    break;
+                }
+
+                let mint_wallet = {
+                    let guard = wallet.lock().await;
+                    guard.clone_wallet_for_mint(&mint_url)
+                };
+
+                let Some(mint_wallet) = mint_wallet else {
+                    log::warn!(
+                        "Mint {} no longer available while monitoring quote {}",
+                        mint_url,
+                        quote_id
+                    );
+                    break;
+                };
+
+                match mint_wallet.mint_quote_state(&quote_id).await {
+                    Ok(status) => {
+                        if status.state == cdk::nuts::MintQuoteState::Paid {
+                            match mint_wallet
+                                .mint(&status.quote, SplitTarget::default(), None)
+                                .await
+                            {
+                                Ok(_) => {
+                                    log::info!(
+                                        "Minted tokens for quote {} at mint {}",
+                                        quote_id,
+                                        mint_url
+                                    );
+                                    break;
+                                }
+                                Err(err) => {
+                                    log::error!(
+                                        "Failed to mint tokens for quote {} at mint {}: {}",
+                                        quote_id,
+                                        mint_url,
+                                        err
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "Failed to check quote {} at mint {}: {}",
+                            quote_id,
+                            mint_url,
+                            err
+                        );
+                    }
+                }
+
+                tokio::time::sleep(poll_interval).await;
+            }
+        });
     }
 
     /// Pay a Nut18 payment request
