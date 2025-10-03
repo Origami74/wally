@@ -136,6 +136,30 @@ impl NostrWalletConnect {
         Ok(())
     }
 
+    /// Creates a new standard NWC connection and returns the connection URI.
+    pub async fn create_standard_nwc_uri(&self) -> Result<String, Error> {
+        // Generate new keys for the connection
+        let connection_key = SecretKey::generate();
+
+        // Create a default budget
+        let budget = ConnectionBudget::default();
+
+        // Create a new WalletConnection
+        let connection = WalletConnection::new(connection_key, budget);
+        let connection_pubkey = connection.keys.public_key();
+
+        // Add and persist the connection
+        self.add_connection(connection.clone()).await?;
+
+        // Create the URI
+        let relay_url = Url::from_str(RELAY_URL).map_err(|e| Error::Url(e.to_string()))?;
+        let uri = connection.uri(self.service_pubkey(), relay_url)?;
+        
+        log::info!("Created new standard NWC URI for connection: {}", connection_pubkey);
+
+        Ok(uri)
+    }
+
     /// Creates a kind 13194 info event for the NWC service.
     pub fn info_event(&self) -> Result<Event, Error> {
         let event = EventBuilder::new(
@@ -1177,6 +1201,9 @@ pub enum Error {
     #[error("NIP-47 error: {0}")]
     Nip47(#[from] nip47::Error),
     
+    #[error("URL parse error: {0}")]
+    Url(String),
+
     #[error("Wallet error: {0}")]
     Wallet(String),
 }

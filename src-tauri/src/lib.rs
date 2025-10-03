@@ -240,6 +240,18 @@ async fn nwc_remove_connection(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn nwc_create_standard_connection(
+    nwc_state: State<'_, NwcState>,
+) -> Result<String, String> {
+    let nwc_lock = nwc_state.lock().await;
+    let nwc = nwc_lock.as_ref().ok_or("NWC service not initialized")?;
+
+    nwc.create_standard_nwc_uri()
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -417,6 +429,7 @@ pub fn run() {
             nwc_list_connections,
             nwc_remove_connection,
             nwc_get_service_pubkey,
+            nwc_create_standard_connection,
             connection_server::nwc_approve_connection,
             connection_server::nwc_reject_connection,
         ]);

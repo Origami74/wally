@@ -41,8 +41,11 @@ type PendingConnectionRequest = {
     optional_commands: string[];
     budget: string | null;
     identity: string | null;
-  };
+  } | null;
   received_at: number;
+  nwc_uri: string | null;
+  approved: boolean;
+  rejected: boolean;
 };
 
 const initialFeatures: FeatureState[] = [
@@ -487,62 +490,82 @@ export default function App() {
           <DialogHeader>
             <DialogTitle>Wallet Connection Request</DialogTitle>
             <DialogDescription>
-              An application wants to connect to your wallet
+              {pendingConnection?.nwa_request 
+                ? "An application wants to connect to your wallet (NWA)"
+                : "An application wants to connect to your wallet (Standard NWC)"}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
-            <div>
-              <p className="mb-1 text-sm font-medium">App Public Key</p>
-              <p className="break-all font-mono text-xs text-muted-foreground">
-                {pendingConnection?.nwa_request.app_pubkey}
-              </p>
-            </div>
-
-            {pendingConnection?.nwa_request.identity ? (
-              <div>
-                <p className="mb-1 text-sm font-medium">Identity</p>
-                <p className="break-all font-mono text-xs text-muted-foreground">
-                  {pendingConnection.nwa_request.identity}
-                </p>
-              </div>
-            ) : null}
-
-            <div>
-              <p className="mb-1 text-sm font-medium">Required Commands</p>
-              <p className="text-xs text-muted-foreground">
-                {pendingConnection?.nwa_request.required_commands.join(", ") || "None"}
-              </p>
-            </div>
-
-            {pendingConnection?.nwa_request.optional_commands.length ? (
-              <div>
-                <p className="mb-1 text-sm font-medium">Optional Commands</p>
-                <p className="text-xs text-muted-foreground">
-                  {pendingConnection.nwa_request.optional_commands.join(", ")}
-                </p>
-              </div>
-            ) : null}
-
-            {pendingConnection?.nwa_request.budget ? (
-              <div>
-                <p className="mb-1 text-sm font-medium">Budget</p>
-                <p className="text-xs text-muted-foreground">
-                  {pendingConnection.nwa_request.budget}
-                </p>
-              </div>
-            ) : null}
-
-            <div>
-              <p className="mb-1 text-sm font-medium">Relays</p>
-              <div className="space-y-1 text-xs text-muted-foreground">
-                {pendingConnection?.nwa_request.relays.map((relay, idx) => (
-                  <p key={idx} className="font-mono">
-                    {relay}
+            {pendingConnection?.nwa_request ? (
+              // NWA connection request
+              <>
+                <div>
+                  <p className="text-sm font-medium mb-1">App Public Key</p>
+                  <p className="text-xs text-muted-foreground font-mono break-all">
+                    {pendingConnection.nwa_request.app_pubkey}
                   </p>
-                ))}
+                </div>
+                
+                {pendingConnection.nwa_request.identity && (
+                  <div>
+                    <p className="text-sm font-medium mb-1">Identity</p>
+                    <p className="text-xs text-muted-foreground font-mono break-all">
+                      {pendingConnection.nwa_request.identity}
+                    </p>
+                  </div>
+                )}
+                
+                <div>
+                  <p className="text-sm font-medium mb-1">Required Commands</p>
+                  <p className="text-xs text-muted-foreground">
+                    {pendingConnection.nwa_request.required_commands.join(", ") || "None"}
+                  </p>
+                </div>
+                
+                {pendingConnection.nwa_request.optional_commands.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium mb-1">Optional Commands</p>
+                    <p className="text-xs text-muted-foreground">
+                      {pendingConnection.nwa_request.optional_commands.join(", ")}
+                    </p>
+                  </div>
+                )}
+                
+                {pendingConnection.nwa_request.budget && (
+                  <div>
+                    <p className="text-sm font-medium mb-1">Budget</p>
+                    <p className="text-xs text-muted-foreground">
+                      {pendingConnection.nwa_request.budget}
+                    </p>
+                  </div>
+                )}
+                
+                <div>
+                  <p className="text-sm font-medium mb-1">Relays</p>
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    {pendingConnection.nwa_request.relays.map((relay, idx) => (
+                      <p key={idx} className="font-mono">{relay}</p>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : (
+              // Standard NWC connection request
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  A client is requesting a standard Nostr Wallet Connect connection.
+                  Approving will generate a connection string that the client can use to 
+                  interact with your wallet.
+                </p>
+                <div className="mt-4 rounded-md bg-muted p-3">
+                  <p className="text-xs font-medium mb-1">Default Budget</p>
+                  <p className="text-xs text-muted-foreground">
+                    1,000 sats / day
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           <DialogFooter>
