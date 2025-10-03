@@ -101,8 +101,8 @@ export async function payBolt11Invoice(invoice: string): Promise<Bolt11PaymentRe
   });
 }
 
-export async function receiveCashuToken(token: string): Promise<{ amount: number }> {
-  return invoke<{ amount: number }>("receive_cashu_token", {
+export async function receiveCashuToken(token: string): Promise<{ amount: number; mint_url: string }> {
+  return invoke<{ amount: number; mint_url: string }>("receive_cashu_token", {
     token,
   });
 }
