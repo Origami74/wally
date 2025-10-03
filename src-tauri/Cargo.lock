@@ -944,7 +944,7 @@ dependencies = [
 [[package]]
 name = "cashu"
 version = "0.13.0"
-source = "git+https://github.com/cashubtc/cdk.git?rev=f3235440409190338d81dddc85e22e9d2967c80e#f3235440409190338d81dddc85e22e9d2967c80e"
+source = "git+https://github.com/gudnuf/cdk?branch=nut18-no-transport#27ff8d9e74d8bc15b0bff15c79185dbce90cec4e"
 dependencies = [
  "bitcoin",
  "cbor-diag",
@@ -1009,12 +1009,11 @@ dependencies = [
 [[package]]
 name = "cdk"
 version = "0.13.0"
-source = "git+https://github.com/cashubtc/cdk.git?rev=f3235440409190338d81dddc85e22e9d2967c80e#f3235440409190338d81dddc85e22e9d2967c80e"
+source = "git+https://github.com/gudnuf/cdk?branch=nut18-no-transport#27ff8d9e74d8bc15b0bff15c79185dbce90cec4e"
 dependencies = [
  "anyhow",
  "arc-swap",
  "async-trait",
- "bech32 0.9.1",
  "bitcoin",
  "cbor-diag",
  "cdk-common",
@@ -1032,7 +1031,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "sync_wrapper 0.1.2",
  "thiserror 2.0.8",
  "tokio",
  "tokio-tungstenite 0.26.2",
@@ -1049,7 +1047,7 @@ dependencies = [
 [[package]]
 name = "cdk-common"
 version = "0.13.0"
-source = "git+https://github.com/cashubtc/cdk.git?rev=f3235440409190338d81dddc85e22e9d2967c80e#f3235440409190338d81dddc85e22e9d2967c80e"
+source = "git+https://github.com/gudnuf/cdk?branch=nut18-no-transport#27ff8d9e74d8bc15b0bff15c79185dbce90cec4e"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1073,7 +1071,7 @@ dependencies = [
 [[package]]
 name = "cdk-signatory"
 version = "0.13.0"
-source = "git+https://github.com/cashubtc/cdk.git?rev=f3235440409190338d81dddc85e22e9d2967c80e#f3235440409190338d81dddc85e22e9d2967c80e"
+source = "git+https://github.com/gudnuf/cdk?branch=nut18-no-transport#27ff8d9e74d8bc15b0bff15c79185dbce90cec4e"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1097,7 +1095,7 @@ dependencies = [
 [[package]]
 name = "cdk-sql-common"
 version = "0.13.0"
-source = "git+https://github.com/cashubtc/cdk.git?rev=f3235440409190338d81dddc85e22e9d2967c80e#f3235440409190338d81dddc85e22e9d2967c80e"
+source = "git+https://github.com/gudnuf/cdk?branch=nut18-no-transport#27ff8d9e74d8bc15b0bff15c79185dbce90cec4e"
 dependencies = [
  "async-trait",
  "bitcoin",
@@ -1114,7 +1112,7 @@ dependencies = [
 [[package]]
 name = "cdk-sqlite"
 version = "0.13.0"
-source = "git+https://github.com/cashubtc/cdk.git?rev=f3235440409190338d81dddc85e22e9d2967c80e#f3235440409190338d81dddc85e22e9d2967c80e"
+source = "git+https://github.com/gudnuf/cdk?branch=nut18-no-transport#27ff8d9e74d8bc15b0bff15c79185dbce90cec4e"
 dependencies = [
  "async-trait",
  "bitcoin",
