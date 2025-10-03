@@ -15,7 +15,7 @@ type HistoryScreenProps = {
 
 export function HistoryScreen({ transactions }: HistoryScreenProps) {
   return (
-    <Screen className="min-h-screen gap-6 overflow-y-auto pb-4">
+    <Screen className="min-h-screen gap-6 overflow-y-auto pb-4 pr-16 pt-6">
       <h2 className="text-lg font-semibold uppercase tracking-[0.2em] text-muted-foreground">
         History
       </h2>
@@ -35,7 +35,7 @@ export function HistoryScreen({ transactions }: HistoryScreenProps) {
                 key={tx.id}
                 className="space-y-3 border border-dashed border-primary/20 bg-background/90 p-4"
               >
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-2">
                     <Badge tone={isIncoming ? "success" : "destructive"}>
                       {isIncoming ? "Incoming" : "Outgoing"}
@@ -44,7 +44,9 @@ export function HistoryScreen({ transactions }: HistoryScreenProps) {
                       {formatTimestamp(tx.timestamp)}
                     </span>
                   </div>
-                  <span className="text-sm font-semibold text-foreground">{amountDisplay}</span>
+                  <span className="text-sm font-semibold text-foreground sm:text-right">
+                    {amountDisplay}
+                  </span>
                 </div>
 
                 <div className="space-y-1 text-xs text-muted-foreground">
