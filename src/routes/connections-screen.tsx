@@ -231,12 +231,16 @@ export function ConnectionsScreen({ copyToClipboard }: ConnectionsScreenProps) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New NWC Connection</DialogTitle>
-            <DialogDescription>Share this URI with the application you want to connect.</DialogDescription>
+            <DialogDescription>
+              Share this URI with the application you want to connect. Treat it like a password.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <p className="break-all font-mono text-xs text-muted-foreground">{newNwcUri}</p>
+            <p className="break-all rounded-md bg-muted p-3 font-mono text-xs text-muted-foreground">
+              {newNwcUri}
+            </p>
             <CopyButton
-              onCopy={() => newNwcUri && copyToClipboard(newNwcUri)}
+              onCopy={() => (newNwcUri ? copyToClipboard(newNwcUri) : Promise.resolve())}
               label="Copy URI"
               copiedLabel="Copied"
               variant="outline"

@@ -12,7 +12,7 @@ use nostr_sdk::{
         nip04,
         nip47::{self, MakeInvoiceResponseResult, NostrWalletConnectURI},
     },
-    Client, Event, EventBuilder, EventSource, Filter, JsonUtil, Keys, Kind, PublicKey, SecretKey,
+    Client, Event, EventBuilder, Filter, JsonUtil, Keys, Kind, PublicKey, SecretKey,
     SingleLetterTag, Tag, TagKind, TagStandard, Timestamp, Url, Alphabet,
 };
 use serde::{Deserialize, Serialize};
@@ -78,16 +78,35 @@ impl NostrWalletConnect {
 
     /// Starts the NWC service.
     pub async fn start(&self) -> Result<(), Error> {
-        // Add relay
-        self.client.add_relay(RELAY_URL).await?;
+        log::info!("Starting NWC service, adding relay: {}", RELAY_URL);
         
-        // Connect to relay
+        // Add relay
+        match self.client.add_relay(RELAY_URL).await {
+            Ok(_) => log::info!("Successfully added relay: {}", RELAY_URL),
+            Err(e) => {
+                log::error!("Failed to add relay {}: {}", RELAY_URL, e);
+                return Err(e.into());
+            }
+        }
+        
+        // Connect to relay with timeout
+        log::info!("Connecting to relay...");
         self.client.connect().await;
+        
+        // Wait a moment for connection to establish
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
         log::info!("NWC service connected to relay: {}", RELAY_URL);
 
         // Publish info event
-        self.publish_info_event().await?;
+        log::info!("Publishing NWC info event...");
+        match self.publish_info_event().await {
+            Ok(_) => log::info!("Successfully published info event"),
+            Err(e) => {
+                log::error!("Failed to publish info event: {}", e);
+                return Err(e);
+            }
+        }
 
         Ok(())
     }
@@ -181,11 +200,12 @@ impl NostrWalletConnect {
 
     /// Gets the Nostr filters for NWC requests.
     pub async fn filters(&self) -> Vec<Filter> {
-        let last_check = *self.last_check.lock().await;
+        // Use a timestamp from 5 minutes ago to catch any recent events
+        let since = Timestamp::now() - Duration::from_secs(300);
         let connections = self.connections.read().await;
         connections
             .iter()
-            .map(|conn| conn.filter(self.keys.public_key(), last_check))
+            .map(|conn| conn.filter(self.keys.public_key(), since))
             .collect()
     }
 
@@ -203,54 +223,97 @@ impl NostrWalletConnect {
                 continue;
             }
 
-            // Query events from relay
-            match self
-                .client
-                .get_events_of(filters, EventSource::relays(Some(Duration::from_secs(5))))
-                .await
-            {
-                Ok(events) => {
-                    log::debug!("Received {} events", events.len());
-                    for event in events {
-                        match self.handle_event(event).await {
-                            Ok(Some(response)) => {
-                                if let Err(e) = self.client.send_event(response).await {
-                                    log::error!("Failed to send response: {}", e);
+            log::debug!("Subscribing with {} filter(s)", filters.len());
+            
+            // Subscribe to events matching our filters
+            let subscription_output = match self.client.subscribe(filters.clone(), None).await {
+                Ok(sub_output) => {
+                    log::info!("Subscribed to NWC events with subscription ID: {:?}", sub_output.val);
+                    sub_output
+                }
+                Err(e) => {
+                    log::error!("Failed to subscribe to NWC events: {}", e);
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
+
+            // Create a channel to receive notifications
+            let mut notifications = self.client.notifications();
+
+            // Process events from the subscription
+            loop {
+                tokio::select! {
+                    // Check for new events
+                    notification = notifications.recv() => {
+                        if let Ok(notification) = notification {
+                            use nostr_sdk::RelayPoolNotification;
+                            match notification {
+                                RelayPoolNotification::Event { event, .. } => {
+                                    log::debug!("Received event: {} kind={}", event.id, event.kind);
+                                    
+                                    // Check if this is a WalletConnectRequest event
+                                    if event.kind == Kind::WalletConnectRequest {
+                                        match self.handle_event(*event).await {
+                                            Ok(Some(response)) => {
+                                                log::info!("Sending response event: {}", response.id);
+                                                if let Err(e) = self.client.send_event(response).await {
+                                                    log::error!("Failed to send response: {}", e);
+                                                }
+                                            }
+                                            Ok(None) => {
+                                                log::debug!("Event already processed, skipping");
+                                            }
+                                            Err(e) => {
+                                                log::error!("Error handling event: {}", e);
+                                            }
+                                        }
+                                    }
                                 }
-                            }
-                            Ok(None) => {
-                                // Already processed, skip
-                            }
-                            Err(e) => {
-                                log::error!("Error handling event: {}", e);
+                                RelayPoolNotification::RelayStatus { relay_url, status } => {
+                                    log::debug!("Relay {} status: {:?}", relay_url, status);
+                                }
+                                _ => {}
                             }
                         }
                     }
-                }
-                Err(e) => {
-                    log::error!("Error querying events: {}", e);
+                    // Periodically check if filters need updating
+                    _ = tokio::time::sleep(Duration::from_secs(10)) => {
+                        let new_filters = self.filters().await;
+                        if new_filters.len() != filters.len() || new_filters.is_empty() {
+                            log::info!("Connection count changed, resubscribing...");
+                            // Unsubscribe from old filters
+                            let _ = self.client.unsubscribe(subscription_output.val.clone()).await;
+                            break; // Break inner loop to resubscribe with new filters
+                        }
+                    }
                 }
             }
-
-            // Wait before next check
-            tokio::time::sleep(Duration::from_secs(2)).await;
         }
     }
 
     /// Handles a single NWC request event.
     pub async fn handle_event(&self, event: Event) -> Result<Option<Event>, Error> {
         if event.kind != Kind::WalletConnectRequest {
+            log::warn!("Ignoring non-WalletConnectRequest event: kind={}", event.kind);
             return Err(Error::InvalidKind);
         }
 
         // Get the target pubkey from the 'p' tag
-        let _target_pubkey = PublicKey::from_str(
-            event
-                .get_tag_content(TagKind::SingleLetter(SingleLetterTag::lowercase(
-                    Alphabet::P,
-                )))
-                .ok_or(Error::MissingServiceKey)?,
-        )?;
+        let target_pubkey_str = event
+            .get_tag_content(TagKind::SingleLetter(SingleLetterTag::lowercase(
+                Alphabet::P,
+            )))
+            .ok_or(Error::MissingServiceKey)?;
+            
+        let _target_pubkey = PublicKey::from_str(target_pubkey_str)?;
+
+        log::info!(
+            "Received NWC request: event_id={}, from={}, to={}", 
+            event.id,
+            event.pubkey,
+            target_pubkey_str
+        );
 
         // For NWA connections, _target_pubkey should be the connection pubkey
         // For standard NWC, _target_pubkey should be the service pubkey
@@ -262,26 +325,64 @@ impl NostrWalletConnect {
         {
             let cache = self.response_event_cache.lock().await;
             if let Some(cached_response) = cache.get(&event_id) {
+                log::debug!("Event {} already processed, returning cached response", event_id);
                 return Ok(Some(cached_response.clone()));
             }
         }
 
-        log::info!("Processing NWC event: {}", event_id);
+        log::info!("Processing new NWC event: {}", event_id);
 
         // Find matching connection (check both standard and NWA connections)
         let mut connections = self.connections.write().await;
+        
+        log::debug!(
+            "Searching for connection among {} connections for event from {}", 
+            connections.len(),
+            event.pubkey
+        );
+        
+        // Pre-compute available connections list for error message
+        let available_connections_str: String = connections.iter().map(|c| {
+            if let Some(app_pk) = c.app_pubkey {
+                format!("NWA(app={})", app_pk)
+            } else {
+                format!("Standard(conn={})", c.keys.public_key())
+            }
+        }).collect::<Vec<_>>().join(", ");
+        
         let connection = connections
             .iter_mut()
             .find(|conn| {
                 // For NWA connections, match on app_pubkey
                 if let Some(app_pubkey) = conn.app_pubkey {
-                    app_pubkey == event.pubkey
+                    let matches = app_pubkey == event.pubkey;
+                    log::debug!(
+                        "Checking NWA connection: app_pubkey={}, matches={}", 
+                        app_pubkey,
+                        matches
+                    );
+                    matches
                 } else {
                     // For standard NWC, match on connection pubkey
-                    conn.keys.public_key() == event.pubkey
+                    let matches = conn.keys.public_key() == event.pubkey;
+                    log::debug!(
+                        "Checking standard NWC connection: conn_pubkey={}, matches={}", 
+                        conn.keys.public_key(),
+                        matches
+                    );
+                    matches
                 }
             })
-            .ok_or(Error::ConnectionNotFound)?;
+            .ok_or_else(|| {
+                log::error!(
+                    "Connection not found for event from {}. Available connections: {}", 
+                    event.pubkey,
+                    available_connections_str
+                );
+                Error::ConnectionNotFound
+            })?;
+        
+        log::info!("Found matching connection for event {}", event_id);
 
         // Decrypt request
         // For NWA: decrypt with connection's secret key and app's pubkey
@@ -292,20 +393,35 @@ impl NostrWalletConnect {
             &self.keys.public_key()
         };
         
+        log::debug!("Decrypting content with pubkey: {}", decrypt_pubkey);
+        
         let decrypted_content = nip04::decrypt(
             connection.keys.secret_key(),
             decrypt_pubkey,
             &event.content,
-        )?;
+        ).map_err(|e| {
+            log::error!("Failed to decrypt NWC request: {}", e);
+            e
+        })?;
+        
+        log::debug!("Decrypted content: {}", decrypted_content);
         
         // Try to parse as JSON first to check for custom methods
         let json_value: serde_json::Value = serde_json::from_str(&decrypted_content)
-            .map_err(|e| Error::Wallet(format!("Failed to parse request JSON: {}", e)))?;
+            .map_err(|e| {
+                log::error!("Failed to parse request JSON: {}", e);
+                Error::Wallet(format!("Failed to parse request JSON: {}", e))
+            })?;
         
         // Check if this is a custom method
         let method = json_value.get("method")
             .and_then(|m| m.as_str())
-            .ok_or_else(|| Error::Wallet("Missing method field in request".to_string()))?;
+            .ok_or_else(|| {
+                log::error!("Missing method field in request");
+                Error::Wallet("Missing method field in request".to_string())
+            })?;
+        
+        log::info!("NWC request method: {}", method);
         
         // Handle custom methods
         if method == "receive_cashu" {
@@ -413,6 +529,21 @@ impl NostrWalletConnect {
             ],
         )
         .to_event(signing_keys)?;
+
+        log::info!(
+            "📤 Created response event: id={}, kind={}, author={}, p_tag={}, e_tag={}",
+            res_event.id,
+            res_event.kind,
+            res_event.pubkey,
+            event.pubkey,
+            event.id
+        );
+        
+        log::info!(
+            "💡 Client should subscribe with: kinds=[23195], authors=[{}], #p=[{}]",
+            res_event.pubkey,
+            event.pubkey
+        );
 
         // Cache response
         {
