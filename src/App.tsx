@@ -236,41 +236,43 @@ export default function App() {
 
   const statusBadges: StatusBadge[] = useMemo(() => {
     const badges: StatusBadge[] = [];
-    const tollgateState = currentSession
-      ? String(currentSession.status)
-      : currentNetwork?.is_tollgate
-      ? "Available"
-      : "Idle";
 
-    badges.push({
-      id: "tollgate",
-      label: "Tollgate",
-      value: tollgateState,
-      tone: statusTone(tollgateState),
-    });
-
-    const featureState = (featureId: FeatureState["id"]) =>
-      features.find((feature) => feature.id === featureId)?.enabled
-        ? "Enabled"
+    const tollgateFeatureEnabled = features.find((feature) => feature.id === "tollgate")?.enabled;
+    if (tollgateFeatureEnabled) {
+      const tollgateState = currentSession
+        ? String(currentSession.status)
+        : currentNetwork?.is_tollgate
+        ? "Available"
         : "Idle";
 
-    badges.push({
-      id: "402",
-      label: "402",
-      value: featureState("402"),
-      tone: features.find((feature) => feature.id === "402")?.enabled
-        ? "info"
-        : "default",
-    });
+      badges.push({
+        id: "tollgate",
+        label: "Tollgate",
+        value: tollgateState,
+        tone: statusTone(tollgateState),
+      });
+    }
 
-    badges.push({
-      id: "nwc",
-      label: "NWC",
-      value: featureState("nwc"),
-      tone: features.find((feature) => feature.id === "nwc")?.enabled
-        ? "info"
-        : "default",
-    });
+    const featureEnabled = (featureId: FeatureState["id"]) =>
+      features.find((feature) => feature.id === featureId)?.enabled ?? false;
+
+    if (featureEnabled("402")) {
+      badges.push({
+        id: "402",
+        label: "402",
+        value: "Enabled",
+        tone: "info",
+      });
+    }
+
+    if (featureEnabled("nwc")) {
+      badges.push({
+        id: "nwc",
+        label: "NWC",
+        value: "Enabled",
+        tone: "info",
+      });
+    }
 
     return badges;
   }, [currentSession, currentNetwork, features]);
@@ -330,19 +332,6 @@ export default function App() {
       <main className={mainClasses}>
         {showSettingsButton || showHistoryButton || showDebugButton ? (
           <div className="absolute right-4 top-4 z-20 flex flex-col items-end gap-2">
-            {showDebugButton ? (
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-10 w-10 rounded-full"
-                onClick={debugButtonAction}
-                aria-label={
-                  location === "/debug" ? "Back to wallet" : "Open debug"
-                }
-              >
-                {debugButtonIcon}
-              </Button>
-            ) : null}
             {showSettingsButton ? (
               <Button
                 variant="outline"
@@ -367,6 +356,19 @@ export default function App() {
                 }
               >
                 {historyButtonIcon}
+              </Button>
+            ) : null}
+            {showDebugButton ? (
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 rounded-full"
+                onClick={debugButtonAction}
+                aria-label={
+                  location === "/debug" ? "Back to wallet" : "Open debug"
+                }
+              >
+                {debugButtonIcon}
               </Button>
             ) : null}
           </div>
@@ -404,7 +406,6 @@ export default function App() {
           <Route path="/settings">
             <SettingsScreen
               status={status}
-              summary={walletSummary}
               features={features}
               mintInput={mintInput}
               npubInput={npubInput}
