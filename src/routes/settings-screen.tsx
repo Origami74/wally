@@ -1,3 +1,4 @@
+import { BudgetControls, BudgetUsage } from "@/components/budget";
 import { Screen } from "@/components/layout/screen";
 import { SectionHeader } from "@/components/layout/section-header";
 import { Button } from "@/components/ui/button";
@@ -5,13 +6,6 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import type { ServiceStatus } from "@/lib/tollgate/types";
 import { useLocation } from "wouter";
 
@@ -158,25 +152,34 @@ export function SettingsScreen({
             </div>
 
             {!isComingSoon ? (
-              <FeatureBudgetControls
-                featureId={feature.id}
-                budget={feature.budget}
-                period={feature.period}
-                spent={feature.spent}
-                onBudgetChange={(value) =>
-                  handleFeatureUpdate(feature.id, (current) => ({
-                    ...current,
-                    budget: value,
-                  }))
-                }
-                onPeriodChange={(value) =>
-                  handleFeatureUpdate(feature.id, (current) => ({
-                    ...current,
-                    period: value,
-                  }))
-                }
-                periodMeta={periodMeta}
-              />
+              <div className="grid gap-4">
+                <BudgetUsage
+                  used={feature.spent ?? 0}
+                  total={Number(feature.budget) || 0}
+                  periodLabel={periodMeta(feature.period).label.toUpperCase()}
+                />
+                <BudgetControls
+                  idPrefix={feature.id}
+                  budgetValue={feature.budget}
+                  onBudgetChange={(value) =>
+                    handleFeatureUpdate(feature.id, (current) => ({
+                      ...current,
+                      budget: value,
+                    }))
+                  }
+                  periodValue={feature.period}
+                  onPeriodChange={(value) =>
+                    handleFeatureUpdate(feature.id, (current) => ({
+                      ...current,
+                      period: value as Period,
+                    }))
+                  }
+                  periodOptions={periods.map((option) => ({
+                    value: option.value,
+                    label: option.label,
+                  }))}
+                />
+              </div>
             ) : null}
 
             <div className="flex justify-end">
@@ -199,61 +202,5 @@ export function SettingsScreen({
           })}
       </div>
     </Screen>
-  );
-}
-
-function FeatureBudgetControls({
-  featureId,
-  budget,
-  period,
-  spent,
-  onBudgetChange,
-  onPeriodChange,
-  periodMeta,
-}: {
-  featureId: FeatureState["id"];
-  budget: string;
-  period: Period;
-  spent: number;
-  onBudgetChange: (value: string) => void;
-  onPeriodChange: (value: Period) => void;
-  periodMeta: PeriodMetaFn;
-}) {
-  return (
-    <div className="grid gap-3 text-sm">
-      <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
-        <div className="grid gap-2">
-          <Label htmlFor={`${featureId}-budget`}>Budget</Label>
-          <Input
-            id={`${featureId}-budget`}
-            type="number"
-            min={0}
-            value={budget}
-            onChange={(event) => onBudgetChange(event.target.value)}
-          />
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor={`${featureId}-period`}>Per</Label>
-          <Select
-            value={period}
-            onValueChange={(value) => onPeriodChange(value as Period)}
-          >
-            <SelectTrigger id={`${featureId}-period`}>
-              <SelectValue placeholder="day" />
-            </SelectTrigger>
-            <SelectContent>
-              {periods.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      <div className="text-xs text-muted-foreground">
-        Spent so far {periodMeta(period).human}: {spent} sats
-      </div>
-    </div>
   );
 }

@@ -14,9 +14,18 @@ type CopyButtonProps = {
   disabled?: boolean;
   className?: string;
   variant?: ComponentProps<typeof Button>["variant"];
+  size?: ComponentProps<typeof Button>["size"];
 };
 
-export function CopyButton({ onCopy, label, copiedLabel, disabled, className, variant }: CopyButtonProps) {
+export function CopyButton({
+  onCopy,
+  label,
+  copiedLabel,
+  disabled,
+  className,
+  variant,
+  size,
+}: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
 
   const handleClick = async () => {
@@ -28,6 +37,7 @@ export function CopyButton({ onCopy, label, copiedLabel, disabled, className, va
   return (
     <Button
       variant={variant}
+      size={size}
       onClick={handleClick}
       disabled={disabled}
       className={cn("flex items-center justify-center gap-2", className)}

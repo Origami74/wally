@@ -1,5 +1,5 @@
 //! Cashu wallet integration for TollGate payments
-//! 
+//!
 //! Handles:
 //! - Cashu token creation and management
 //! - Mint compatibility checking
@@ -293,6 +293,10 @@ fn derive_nostr_keys_from_seed(seed: &[u8; 64]) -> TollGateResult<Keys> {
 }
 
 impl TollGateWallet {
+    pub fn clone_wallet_for_mint(&self, mint_url: &str) -> Option<Wallet> {
+        self.wallets.get(mint_url).cloned()
+    }
+
     pub fn new() -> TollGateResult<Self> {
         let storage = WalletStoragePaths::new()?;
         let secrets = WalletSecrets::load_or_create(&storage)?;
@@ -309,8 +313,7 @@ impl TollGateWallet {
     fn load_mints_config(&self) -> TollGateResult<StoredMints> {
         if self.storage.mints_file.exists() {
             let data = fs::read(&self.storage.mints_file)?;
-            let stored: StoredMints = serde_json::from_slice(&data)
-                .unwrap_or_default();
+            let stored: StoredMints = serde_json::from_slice(&data).unwrap_or_default();
             Ok(stored)
         } else {
             Ok(StoredMints::default())
@@ -327,14 +330,17 @@ impl TollGateWallet {
         if let Some(parent) = self.storage.mints_file.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&self.storage.mints_file, serde_json::to_vec_pretty(&stored)?)?;
+        fs::write(
+            &self.storage.mints_file,
+            serde_json::to_vec_pretty(&stored)?,
+        )?;
         Ok(())
     }
 
     /// Load existing mints from storage on startup
     pub async fn load_existing_mints(&mut self) -> TollGateResult<()> {
         let stored_mints = self.load_mints_config()?;
-        
+
         for mint_url in stored_mints.mints {
             if !self.wallets.contains_key(&mint_url) {
                 log::info!("Loading existing mint from storage: {}", mint_url);
@@ -569,7 +575,7 @@ impl TollGateWallet {
     }
 
     /// Pay a NUT-18 payment request
-    /// 
+    ///
     /// This will error if the payment request has no transport defined.
     pub async fn pay_nut18_payment_request(
         &self,
@@ -598,7 +604,7 @@ impl TollGateWallet {
     }
 
     /// Pay a NUT-18 payment request, returning a Token if no transport is defined
-    /// 
+    ///
     /// If the payment request has a transport (Nostr or HTTP), the wallet will pay it
     /// via that transport and return None. If no transport is defined, this method
     /// returns the encoded token that should be delivered out-of-band.
@@ -613,12 +619,16 @@ impl TollGateWallet {
             .map_err(|e| TollGateError::wallet(format!("Invalid payment request: {}", e)))?;
 
         let wallet = self.wallet_for_payment_request(&payment_request)?;
-        
+
         let amount = match payment_request.amount {
             Some(amount) => amount,
             None => match custom_amount {
                 Some(a) => Amount::from(a),
-                None => return Err(TollGateError::wallet("Amount not specified in request and no custom amount provided")),
+                None => {
+                    return Err(TollGateError::wallet(
+                        "Amount not specified in request and no custom amount provided",
+                    ))
+                }
             },
         };
 
@@ -633,7 +643,7 @@ impl TollGateWallet {
                 .pay_request(payment_request, custom_amount.map(Amount::from))
                 .await
                 .map_err(|e| TollGateError::wallet(format!("Failed to pay request: {}", e)))?;
-            
+
             Ok(PayNut18Result {
                 amount: amount_u64,
                 token: None,
@@ -651,7 +661,9 @@ impl TollGateWallet {
                 .await
                 .map_err(|e| TollGateError::wallet(format!("Failed to prepare send: {}", e)))?;
 
-            let token = prepared_send.confirm(None).await
+            let token = prepared_send
+                .confirm(None)
+                .await
                 .map_err(|e| TollGateError::wallet(format!("Failed to confirm send: {}", e)))?;
 
             Ok(PayNut18Result {
@@ -691,10 +703,11 @@ impl TollGateWallet {
             .map_err(|e| TollGateError::wallet(format!("Invalid cashu token: {}", e)))?;
 
         // Get the mint URL from the token
-        let mint_url = cashu_token.mint_url()
+        let mint_url = cashu_token
+            .mint_url()
             .map_err(|e| TollGateError::wallet(format!("Failed to get mint URL: {}", e)))?
             .to_string();
-        
+
         // Check if we have a wallet for this mint, if not add it automatically
         // Note: add_mint() now persists the config automatically
         if !self.wallets.contains_key(&mint_url) {
@@ -716,7 +729,11 @@ impl TollGateWallet {
         // Convert amount to u64
         let total_amount: u64 = received_amount.into();
 
-        log::info!("Successfully received {} sats from token at mint {}", total_amount, mint_url);
+        log::info!(
+            "Successfully received {} sats from token at mint {}",
+            total_amount,
+            mint_url
+        );
         Ok(CashuReceiveResult {
             amount: total_amount,
             mint_url,

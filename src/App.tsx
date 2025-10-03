@@ -329,7 +329,7 @@ export default function App() {
     const nwcEnabled = featureEnabled("nwc");
     badges.push({
       id: "connections",
-      label: "Connections",
+      label: "NWC",
       value: nwcEnabled ? "Enabled" : "Available",
       tone: nwcEnabled ? "info" : "default",
       onClick: () => setLocation("/connections"),
