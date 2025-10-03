@@ -25,7 +25,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Mutex, RwLock};
 
-const RELAY_URL: &str = "ws://localhost:4869";
+const RELAY_URL: &str = "wss://nostrue.com";
 const NWC_BUDGET_MSATS: u64 = 1_000_000_000; // 1,000 sats budget
 
 fn parse_connection_pubkey(value: &str) -> Result<PublicKey, Error> {

@@ -397,7 +397,7 @@ pub fn run() {
                     log::error!("Failed to start NWC service: {}", e);
                     return;
                 }
-                log::info!("✓ NWC service started and connected to ws://localhost:4869");
+                log::info!("✓ NWC service started and connected to wss://nostrue.com");
 
                 // Process events in a loop
                 log::info!("Starting NWC event processing loop...");
