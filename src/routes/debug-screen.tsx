@@ -1,32 +1,10 @@
-import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { Screen } from "@/components/layout/screen";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/copy-button";
 import type { ServiceStatus } from "@/lib/tollgate/types";
-
-type NetworkDebugInfo = {
-  gateway_ip: string | null;
-  mac_address: string | null;
-  tollgate_pubkey: string | null;
-  supported_tips: string[];
-  metric: string | null;
-  step_size: string | null;
-  pricing_options: Array<{
-    mint_url: string;
-    price: string;
-    unit: string;
-  }>;
-  current_wifi: {
-    ssid: string;
-    bssid: string;
-  } | null;
-  is_tollgate: boolean;
-  advertisement_raw?: any;
-};
+import { useNetworkDebugInfo } from "@/lib/tollgate/use-network-debug-info";
 
 type DebugScreenProps = {
   status: ServiceStatus | null;
@@ -34,122 +12,7 @@ type DebugScreenProps = {
 };
 
 export function DebugScreen({ status, copyToClipboard }: DebugScreenProps) {
-  const [networkInfo, setNetworkInfo] = useState<NetworkDebugInfo>({
-    gateway_ip: null,
-    mac_address: null,
-    tollgate_pubkey: null,
-    supported_tips: [],
-    metric: null,
-    step_size: null,
-    pricing_options: [],
-    current_wifi: null,
-    is_tollgate: false,
-  });
-  const [refreshing, setRefreshing] = useState(false);
-
-  const refreshNetworkInfo = async () => {
-    setRefreshing(true);
-    try {
-      // Use the new unified network status command instead of individual commands
-      console.log("Debug screen: Getting network status...");
-      const networkStatus = await invoke("plugin:androidwifi|get_network_status", { payload: {} });
-      console.log("Debug screen: Received network status:", networkStatus);
-      
-      const status = networkStatus as any;
-      const tollgateAd = status?.tollgateAdvertisement;
-      
-      setNetworkInfo({
-        gateway_ip: status?.gatewayIp || null,
-        mac_address: status?.macAddress || null,
-        tollgate_pubkey: tollgateAd?.tollgatePubkey || null,
-        supported_tips: tollgateAd?.tips || [],
-        metric: tollgateAd?.metric || null,
-        step_size: tollgateAd?.stepSize || null,
-        pricing_options: tollgateAd?.pricingOptions?.map((option: any) => ({
-          mint_url: option.mintUrl || '',
-          price: option.price || '',
-          unit: option.unit || ''
-        })) || [],
-        current_wifi: status?.currentWifi || null,
-        is_tollgate: status?.isTollgate || false,
-        advertisement_raw: tollgateAd,
-      });
-    } catch (error) {
-      console.error("Failed to refresh network info:", error);
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  useEffect(() => {
-    refreshNetworkInfo();
-    
-    // Listen for real-time network events
-    const setupEventListeners = async () => {
-      try {
-        // Listen for network status changes
-        const networkStatusUnlisten = await listen('network-status-changed', (event: any) => {
-          console.log('Debug screen: Network status changed', event.payload);
-          const networkStatus = event.payload;
-          const tollgateAd = networkStatus?.tollgateAdvertisement;
-          
-          setNetworkInfo({
-            gateway_ip: networkStatus?.gatewayIp || null,
-            mac_address: networkStatus?.macAddress || null,
-            tollgate_pubkey: tollgateAd?.tollgatePubkey || null,
-            supported_tips: tollgateAd?.tips || [],
-            metric: tollgateAd?.metric || null,
-            step_size: tollgateAd?.stepSize || null,
-            pricing_options: tollgateAd?.pricingOptions?.map((option: any) => ({
-              mint_url: option.mintUrl || '',
-              price: option.price || '',
-              unit: option.unit || ''
-            })) || [],
-            current_wifi: networkStatus?.currentWifi || null,
-            is_tollgate: networkStatus?.isTollgate || false,
-            advertisement_raw: tollgateAd,
-          });
-        });
-
-        // Listen for tollgate detection events
-        const tollgateUnlisten = await listen('tollgate-detected', (event: any) => {
-          console.log('Debug screen: Tollgate detected', event.payload);
-          const tollgateInfo = event.payload;
-          const tollgateAd = tollgateInfo?.tollgateAdvertisement;
-          
-          setNetworkInfo(prev => ({
-            ...prev,
-            gateway_ip: tollgateInfo?.gatewayIp || prev.gateway_ip,
-            mac_address: tollgateInfo?.macAddress || prev.mac_address,
-            tollgate_pubkey: tollgateAd?.tollgatePubkey || null,
-            supported_tips: tollgateAd?.tips || [],
-            metric: tollgateAd?.metric || null,
-            step_size: tollgateAd?.stepSize || null,
-            pricing_options: tollgateAd?.pricingOptions?.map((option: any) => ({
-              mint_url: option.mintUrl || '',
-              price: option.price || '',
-              unit: option.unit || ''
-            })) || [],
-            is_tollgate: tollgateInfo?.isTollgate || false,
-            advertisement_raw: tollgateAd,
-          }));
-        });
-
-        return () => {
-          networkStatusUnlisten();
-          tollgateUnlisten();
-        };
-      } catch (error) {
-        console.error('Failed to setup event listeners:', error);
-      }
-    };
-
-    const cleanup = setupEventListeners();
-    
-    return () => {
-      cleanup.then(fn => fn && fn());
-    };
-  }, [status]);
+  const { networkInfo, refreshNetworkInfo, refreshing } = useNetworkDebugInfo();
 
   const formatValue = (value: any): string => {
     if (value === null || value === undefined) return "--";
