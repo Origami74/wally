@@ -34,6 +34,7 @@ mod wallet;
 mod connection_server;
 mod nwc;
 mod nwc_storage;
+mod relay;
 
 use nwc::{BudgetRenewalPeriod, NostrWalletConnect};
 use wallet::*;
@@ -259,6 +260,23 @@ pub fn run() {
     builder = builder.setup(|app| {
         // Initialize TollGate service and runtime
         let rt = Arc::new(tokio::runtime::Runtime::new().unwrap());
+        
+        // Start local Nostr relay before NWC service
+        {
+            let rt_clone = rt.clone();
+            rt_clone.block_on(async {
+                log::info!("=== Starting local Nostr relay ===");
+                if let Err(e) = relay::start_relay_server(relay::DEFAULT_RELAY_PORT).await {
+                    log::error!("Failed to start local Nostr relay: {}", e);
+                } else {
+                    log::info!("Local Nostr relay started on port {}", relay::DEFAULT_RELAY_PORT);
+                    // Give the relay a moment to fully initialize
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    log::info!("=== Relay ready ===");
+                }
+            });
+        }
+        
         let service_arc = {
             let rt_clone = rt.clone();
             rt_clone.block_on(async {
@@ -305,6 +323,8 @@ pub fn run() {
         let nwc_clone = nwc_arc.clone();
         let rt_clone = rt.clone();
         rt_clone.spawn(async move {
+            log::info!("=== Starting NWC event processing task ===");
+            
             // Clone the NWC service out of the Arc<Mutex<>> to avoid holding the lock
             let nwc_service = {
                 let nwc_lock = nwc_clone.lock().await;
@@ -313,15 +333,19 @@ pub fn run() {
             
             if let Some(nwc) = nwc_service {
                 // Start the NWC service (connect to relay)
+                log::info!("Starting NWC service and connecting to relay...");
                 if let Err(e) = nwc.start().await {
                     log::error!("Failed to start NWC service: {}", e);
                     return;
                 }
-                log::info!("NWC service started and connected to ws://localhost:4869");
+                log::info!("✓ NWC service started and connected to ws://localhost:4869");
                 
                 // Process events in a loop
+                log::info!("Starting NWC event processing loop...");
                 if let Err(e) = nwc.process_events_loop().await {
                     log::error!("NWC event processing loop ended with error: {}", e);
+                } else {
+                    log::warn!("NWC event processing loop ended (should run indefinitely)");
                 }
             } else {
                 log::warn!("NWC service not initialized, skipping event processing");
