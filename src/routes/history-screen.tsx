@@ -15,7 +15,7 @@ type HistoryScreenProps = {
 
 export function HistoryScreen({ transactions }: HistoryScreenProps) {
   return (
-    <Screen className="min-h-screen gap-6 overflow-y-auto pb-4 pr-16 pt-6">
+    <Screen className="min-h-screen gap-6 overflow-y-auto pb-4 pt-6">
       <h2 className="text-lg font-semibold uppercase tracking-[0.2em] text-muted-foreground">
         History
       </h2>
@@ -29,6 +29,7 @@ export function HistoryScreen({ transactions }: HistoryScreenProps) {
           {transactions.map((tx) => {
             const isIncoming = tx.direction === "incoming";
             const amountDisplay = `${isIncoming ? "+" : "-"}${tx.amount.toLocaleString()} ${tx.unit}`;
+            const directionTone = isIncoming ? "success" : "warning";
 
             return (
               <Card
@@ -37,10 +38,10 @@ export function HistoryScreen({ transactions }: HistoryScreenProps) {
               >
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-2">
-                    <Badge tone={isIncoming ? "success" : "destructive"}>
+                    <Badge tone={directionTone} className="uppercase">
                       {isIncoming ? "Incoming" : "Outgoing"}
                     </Badge>
-                    <span className="text-xs text-muted-foreground">
+                    <span className="truncate text-xs text-muted-foreground" title={formatTimestamp(tx.timestamp)}>
                       {formatTimestamp(tx.timestamp)}
                     </span>
                   </div>
@@ -50,13 +51,26 @@ export function HistoryScreen({ transactions }: HistoryScreenProps) {
                 </div>
 
                 <div className="space-y-1 text-xs text-muted-foreground">
-                  <p className="truncate">Mint: {tx.mint_url}</p>
+                  <p className="truncate" title={tx.mint_url}>
+                    Mint: {tx.mint_url}
+                  </p>
                   {tx.fee > 0 ? (
                     <p>Fee: {tx.fee.toLocaleString()} {tx.unit}</p>
                   ) : null}
-                  {tx.memo ? <p>Memo: {tx.memo}</p> : null}
-                  {tx.quote_id ? <p>Quote ID: {tx.quote_id}</p> : null}
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground/80">
+                  {tx.memo ? (
+                    <p className="truncate" title={tx.memo}>
+                      Memo: {tx.memo}
+                    </p>
+                  ) : null}
+                  {tx.quote_id ? (
+                    <p className="truncate" title={tx.quote_id}>
+                      Quote ID: {tx.quote_id}
+                    </p>
+                  ) : null}
+                  <p
+                    className="truncate text-[11px] uppercase tracking-wide text-muted-foreground/80"
+                    title={tx.id}
+                  >
                     Tx ID: {tx.id}
                   </p>
                 </div>

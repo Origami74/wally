@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { History, Settings2, Wallet, Bug, Link } from "lucide-react";
+import { History, Settings2, Wallet } from "lucide-react";
 import { Route, Switch, useLocation } from "wouter";
 import type { ServiceStatus } from "@/lib/tollgate/types";
 import { statusTone } from "@/lib/tollgate/utils";
@@ -308,6 +308,7 @@ export default function App() {
         label: "Tollgate",
         value: tollgateState,
         tone: statusTone(tollgateState),
+        onClick: () => setLocation("/debug"),
       });
     }
 
@@ -329,19 +330,18 @@ export default function App() {
         label: "NWC",
         value: "Enabled",
         tone: "info",
+        onClick: () => setLocation("/connections"),
       });
     }
 
     return badges;
-  }, [currentSession, currentNetwork, features]);
+  }, [currentSession, currentNetwork, features, setLocation]);
 
   const goHome = () => setLocation("/");
   const goReceive = () => setLocation("/receive");
   const goSend = () => setLocation("/send");
   const goSettings = () => setLocation("/settings");
   const goHistory = () => setLocation("/history");
-  const goDebug = () => setLocation("/debug");
-  const goConnections = () => setLocation("/connections");
 
   const sharedMainClasses =
     "relative mx-auto flex w-full max-w-md flex-col overflow-hidden bg-background";
@@ -354,48 +354,33 @@ export default function App() {
       ? `${sharedMainClasses} min-h-screen`
       : `${sharedMainClasses} h-screen`;
 
-  const showSettingsButton =
-    location === "/" ||
-    location === "/settings" ||
-    location === "/history" ||
-    location === "/debug" ||
-    location === "/connections";
-  const showHistoryButton = showSettingsButton;
-  const showDebugButton = showSettingsButton;
-  const showConnectionsButton = showSettingsButton;
+  const isHome = location === "/";
 
-  const settingsButtonAction = location === "/settings" ? goHome : goSettings;
-  const historyButtonAction = location === "/history" ? goHome : goHistory;
-  const debugButtonAction = location === "/debug" ? goHome : goDebug;
-  const connectionsButtonAction = location === "/connections" ? goHome : goConnections;
-
-  const settingsButtonIcon =
-    location === "/settings" ? (
-      <Wallet className="h-5 w-5" />
-    ) : (
-      <Settings2 className="h-5 w-5" />
-    );
-
-  const historyButtonIcon =
-    location === "/history" ? (
-      <Wallet className="h-5 w-5" />
-    ) : (
-      <History className="h-5 w-5" />
-    );
-
-  const connectionsButtonIcon =
-    location === "/connections" ? (
-      <Wallet className="h-5 w-5" />
-    ) : (
-      <Link className="h-5 w-5" />
-    );
-
-  const debugButtonIcon =
-    location === "/debug" ? (
-      <Wallet className="h-5 w-5" />
-    ) : (
-      <Bug className="h-5 w-5" />
-    );
+  const navButtons = location === "/receive"
+    ? []
+    : isHome
+    ? [
+        {
+          id: "settings",
+          icon: <Settings2 className="h-5 w-5" />,
+          action: goSettings,
+          label: "Open settings",
+        },
+        {
+          id: "history",
+          icon: <History className="h-5 w-5" />,
+          action: goHistory,
+          label: "View history",
+        },
+      ]
+    : [
+        {
+          id: "home",
+          icon: <Wallet className="h-5 w-5" />,
+          action: goHome,
+          label: "Back to wallet",
+        },
+      ];
 
   return (
     <div
@@ -403,60 +388,20 @@ export default function App() {
       style={{ overscrollBehavior: "none" }}
     >
       <main className={mainClasses}>
-        {showSettingsButton || showHistoryButton || showConnectionsButton || showDebugButton ? (
+        {navButtons.length ? (
           <div className="absolute right-4 top-4 z-20 flex flex-col items-end gap-2">
-            {showSettingsButton ? (
+            {navButtons.map((button) => (
               <Button
+                key={button.id}
                 variant="outline"
                 size="icon"
                 className="h-10 w-10 rounded-full"
-                onClick={settingsButtonAction}
-                aria-label={
-                  location === "/settings" ? "Back to wallet" : "Open settings"
-                }
+                onClick={button.action}
+                aria-label={button.label}
               >
-                {settingsButtonIcon}
+                {button.icon}
               </Button>
-            ) : null}
-            {showHistoryButton ? (
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-10 w-10 rounded-full"
-                onClick={historyButtonAction}
-                aria-label={
-                  location === "/history" ? "Back to wallet" : "Open history"
-                }
-              >
-                {historyButtonIcon}
-              </Button>
-            ) : null}
-            {showConnectionsButton ? (
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-10 w-10 rounded-full"
-                onClick={connectionsButtonAction}
-                aria-label={
-                  location === "/connections" ? "Back to wallet" : "View connections"
-                }
-              >
-                {connectionsButtonIcon}
-              </Button>
-            ) : null}
-            {showDebugButton ? (
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-10 w-10 rounded-full"
-                onClick={debugButtonAction}
-                aria-label={
-                  location === "/debug" ? "Back to wallet" : "Open debug"
-                }
-              >
-                {debugButtonIcon}
-              </Button>
-            ) : null}
+            ))}
           </div>
         ) : null}
 
