@@ -27,9 +27,16 @@ use tollgate::TollGateService;
 // Global state for the TollGate service
 type TollGateState = Arc<Mutex<TollGateService>>;
 
-mod wallet;
-mod npub_server;
+// Global state for the NWC service
+type NwcState = Arc<Mutex<Option<NostrWalletConnect>>>;
 
+mod wallet;
+mod connection_server;
+mod nwc;
+mod nwc_storage;
+mod relay;
+
+use nwc::{BudgetRenewalPeriod, NostrWalletConnect};
 use wallet::*;
 
 #[tauri::command]
@@ -184,6 +191,68 @@ async fn get_active_sessions(
     Ok(session_data)
 }
 
+
+#[tauri::command]
+async fn nwc_list_connections(
+    nwc_state: State<'_, NwcState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let nwc_lock = nwc_state.lock().await;
+    let nwc = nwc_lock.as_ref().ok_or("NWC service not initialized")?;
+
+    let connections = nwc.get_connections().await;
+    let connection_data: Vec<serde_json::Value> = connections
+        .iter()
+        .map(|conn| {
+            serde_json::json!({
+                "pubkey": conn.keys.public_key().to_string(),
+                "budget_msats": conn.budget.total_budget_msats,
+                "used_budget_msats": conn.budget.used_budget_msats,
+                "renewal_period": match conn.budget.renewal_period {
+                    BudgetRenewalPeriod::Daily => "daily",
+                    BudgetRenewalPeriod::Weekly => "weekly",
+                    BudgetRenewalPeriod::Monthly => "monthly",
+                    BudgetRenewalPeriod::Yearly => "yearly",
+                    BudgetRenewalPeriod::Never => "never",
+                },
+            })
+        })
+        .collect();
+
+    Ok(connection_data)
+}
+
+#[tauri::command]
+async fn nwc_get_service_pubkey(nwc_state: State<'_, NwcState>) -> Result<String, String> {
+    let nwc_lock = nwc_state.lock().await;
+    let nwc = nwc_lock.as_ref().ok_or("NWC service not initialized")?;
+    Ok(nwc.service_pubkey().to_string())
+}
+
+#[tauri::command]
+async fn nwc_remove_connection(
+    pubkey: String,
+    nwc_state: State<'_, NwcState>,
+) -> Result<(), String> {
+    let nwc_lock = nwc_state.lock().await;
+    let nwc = nwc_lock.as_ref().ok_or("NWC service not initialized")?;
+
+    nwc.remove_connection(&pubkey)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn nwc_create_standard_connection(
+    nwc_state: State<'_, NwcState>,
+) -> Result<String, String> {
+    let nwc_lock = nwc_state.lock().await;
+    let nwc = nwc_lock.as_ref().ok_or("NWC service not initialized")?;
+
+    nwc.create_standard_nwc_uri()
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -191,6 +260,23 @@ pub fn run() {
     builder = builder.setup(|app| {
         // Initialize TollGate service and runtime
         let rt = Arc::new(tokio::runtime::Runtime::new().unwrap());
+        
+        // Start local Nostr relay before NWC service
+        {
+            let rt_clone = rt.clone();
+            rt_clone.block_on(async {
+                log::info!("=== Starting local Nostr relay ===");
+                if let Err(e) = relay::start_relay_server(relay::DEFAULT_RELAY_PORT).await {
+                    log::error!("Failed to start local Nostr relay: {}", e);
+                } else {
+                    log::info!("Local Nostr relay started on port {}", relay::DEFAULT_RELAY_PORT);
+                    // Give the relay a moment to fully initialize
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    log::info!("=== Relay ready ===");
+                }
+            });
+        }
+        
         let service_arc = {
             let rt_clone = rt.clone();
             rt_clone.block_on(async {
@@ -207,22 +293,88 @@ pub fn run() {
             })
         };
         
-        // Start npub server to expose wallet's public key
-        let npub_service = service_arc.clone();
+        // Initialize NWC service
+        let nwc_arc = {
+            let rt_clone = rt.clone();
+            let service_clone = service_arc.clone();
+            rt_clone.block_on(async {
+                // Generate or load NWC service key (using wallet's secret key)
+                let service = service_clone.lock().await;
+                let wallet_keys = service.get_wallet_keys().await;
+                
+                // Use wallet's secret key for NWC service
+                let nwc_secret = wallet_keys.secret_key().clone();
+                drop(service); // Release lock before creating NWC
+                
+                match NostrWalletConnect::new(nwc_secret, service_clone.clone()).await {
+                    Ok(nwc) => {
+                        log::info!("NWC service initialized");
+                        Arc::new(Mutex::new(Some(nwc)))
+                    }
+                    Err(e) => {
+                        log::error!("Failed to initialize NWC service: {}", e);
+                        Arc::new(Mutex::new(None))
+                    }
+                }
+            })
+        };
+        
+        // Start NWC event processing loop
+        let nwc_clone = nwc_arc.clone();
         let rt_clone = rt.clone();
         rt_clone.spawn(async move {
-            if let Err(e) = npub_server::start_npub_server(
-                npub_service,
-                npub_server::DEFAULT_NPUB_PORT,
-            ).await {
-                log::error!("Failed to start npub server: {}", e);
+            log::info!("=== Starting NWC event processing task ===");
+            
+            // Clone the NWC service out of the Arc<Mutex<>> to avoid holding the lock
+            let nwc_service = {
+                let nwc_lock = nwc_clone.lock().await;
+                nwc_lock.as_ref().cloned()
+            }; // Lock is released here
+            
+            if let Some(nwc) = nwc_service {
+                // Start the NWC service (connect to relay)
+                log::info!("Starting NWC service and connecting to relay...");
+                if let Err(e) = nwc.start().await {
+                    log::error!("Failed to start NWC service: {}", e);
+                    return;
+                }
+                log::info!("✓ NWC service started and connected to ws://localhost:4869");
+                
+                // Process events in a loop
+                log::info!("Starting NWC event processing loop...");
+                if let Err(e) = nwc.process_events_loop().await {
+                    log::error!("NWC event processing loop ended with error: {}", e);
+                } else {
+                    log::warn!("NWC event processing loop ended (should run indefinitely)");
+                }
             } else {
-                log::info!("Npub server started successfully on port {}", npub_server::DEFAULT_NPUB_PORT);
+                log::warn!("NWC service not initialized, skipping event processing");
+            }
+        });
+        
+        // Start connection server to handle wallet connection requests
+        let connection_service = service_arc.clone();
+        let connection_app_handle = app.handle().clone();
+        let pending_connections = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+        let pending_connections_for_server = pending_connections.clone();
+        let rt_clone = rt.clone();
+        rt_clone.spawn(async move {
+            if let Err(e) = connection_server::start_connection_server(
+                connection_service,
+                connection_app_handle,
+                pending_connections_for_server,
+                connection_server::DEFAULT_CONNECTION_PORT,
+            ).await {
+                log::error!("Failed to start connection server: {}", e);
+            } else {
+                log::info!("Connection server started successfully on port {}", connection_server::DEFAULT_CONNECTION_PORT);
             }
         });
 
         app.manage(service_arc);
+        app.manage(nwc_arc);
         app.manage(rt);
+        app.manage(pending_connections);
 
         #[cfg(target_os = "macos")]
         {
@@ -237,7 +389,7 @@ pub fn run() {
         }
 
         log::info!("TollGate service initialized");
-        log::info!("Npub server available at http://127.0.0.1:{}/npub", npub_server::DEFAULT_NPUB_PORT);
+        log::info!("Connection server available at http://127.0.0.1:{}", connection_server::DEFAULT_CONNECTION_PORT);
         Ok(())
     });
 
@@ -298,6 +450,12 @@ pub fn run() {
             get_wallet_summary,
             list_wallet_transactions,
             receive_cashu_token,
+            nwc_list_connections,
+            nwc_remove_connection,
+            nwc_get_service_pubkey,
+            nwc_create_standard_connection,
+            connection_server::nwc_approve_connection,
+            connection_server::nwc_reject_connection,
         ]);
 
     builder

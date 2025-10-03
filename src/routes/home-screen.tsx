@@ -1,10 +1,10 @@
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Screen } from "@/components/layout/screen";
 import { formatBytes, formatDuration } from "@/lib/tollgate/utils";
 import type { NetworkInfo, SessionInfo } from "@/lib/tollgate/types";
 import type { StatusBadge } from "./types";
+import { cn } from "@/lib/utils";
 
 type HomeScreenProps = {
   statusBadges: StatusBadge[];
@@ -26,12 +26,30 @@ export function HomeScreen({
   return (
     <Screen className="relative h-full gap-6">
       <div className="absolute left-4 top-4 flex flex-col gap-2">
-        {statusBadges.map(badge => (
-          <Badge key={badge.id} tone={badge.tone} className="w-max px-3 py-1 text-[11px]">
-            <span className="font-medium uppercase tracking-wide">{badge.label}</span>
-            <span className="ml-2 text-[11px] capitalize">{badge.value.toLowerCase()}</span>
-          </Badge>
-        ))}
+        {statusBadges.map((badge) => {
+          const clickable = Boolean(badge.onClick);
+          const isIdle = badge.value.toLowerCase() === "idle";
+          return (
+            <button
+              key={badge.id}
+              type="button"
+              onClick={badge.onClick}
+              disabled={!clickable}
+              className={cn(
+                "inline-flex items-center self-start rounded-full border px-3 py-[6px] text-[11px] font-medium uppercase tracking-wide transition",
+                isIdle
+                  ? "border-primary/60 bg-muted text-muted-foreground"
+                  : "border-primary/70 bg-background text-primary",
+                clickable
+                  ? "cursor-pointer hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  : "cursor-default"
+              )}
+            >
+              <span>{badge.label}</span>
+              <span className="ml-2 text-[11px] capitalize">{badge.value.toLowerCase()}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Spacer about the height of the buttons */}

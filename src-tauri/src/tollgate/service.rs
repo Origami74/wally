@@ -13,7 +13,9 @@ use crate::tollgate::session::{Session, SessionManager, SessionStatus};
 use crate::tollgate::wallet::{
     Bolt11InvoiceInfo,
     Bolt11PaymentResult,
+    CashuReceiveResult,
     Nut18PaymentRequestInfo,
+    PayNut18Result,
     TollGateWallet,
     WalletSummary,
     WalletTransactionEntry,
@@ -531,6 +533,18 @@ impl TollGateService {
             .await
     }
 
+    /// Pay a Nut18 payment request, returning a Token if no transport is defined
+    pub async fn pay_nut18_payment_request_with_token(
+        &self,
+        request: &str,
+        custom_amount: Option<u64>,
+    ) -> TollGateResult<PayNut18Result> {
+        let wallet = self.wallet.lock().await;
+        wallet
+            .pay_nut18_payment_request_with_token(request, custom_amount)
+            .await
+    }
+
     /// Pay a BOLT11 invoice
     pub async fn pay_bolt11_invoice(&self, invoice: &str) -> TollGateResult<Bolt11PaymentResult> {
         let wallet = self.wallet.lock().await;
@@ -538,7 +552,7 @@ impl TollGateService {
     }
 
     /// Receive a cashu token
-    pub async fn receive_cashu_token(&self, token: &str) -> TollGateResult<u64> {
+    pub async fn receive_cashu_token(&self, token: &str) -> TollGateResult<CashuReceiveResult> {
         let mut wallet = self.wallet.lock().await;
         wallet.receive_cashu_token(token).await
     }
@@ -566,6 +580,12 @@ impl TollGateService {
             })
             .collect();
         Ok(active_sessions)
+    }
+
+    /// Get the wallet's Nostr keys
+    pub async fn get_wallet_keys(&self) -> nostr::Keys {
+        let wallet = self.wallet.lock().await;
+        wallet.get_keys()
     }
 
     /// Load persisted state from storage
