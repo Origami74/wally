@@ -1,23 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "react-qr-code";
+import { Zap, FileText, Nut } from "lucide-react";
 
 import { Screen } from "@/components/layout/screen";
 import { CopyButton } from "@/components/copy-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   createBolt11Invoice,
   createNut18PaymentRequest,
   receiveCashuToken,
   type Bolt11InvoiceInfo,
   type Nut18PaymentRequestInfo,
-  type SwapRequest,
 } from "@/lib/wallet/api";
 
 const MODES = [
-  { id: "cashu", label: "Cashu" },
-  { id: "lightning", label: "Lightning" },
+  { id: "cashu", label: "Cashu", icon: Nut },
+  { id: "lightning", label: "Lightning", icon: Zap },
+  { id: "redeem", label: "Redeem", icon: FileText },
 ] as const;
 
 type ReceiveMode = (typeof MODES)[number]["id"];
@@ -31,7 +33,6 @@ type ReceiveScreenProps = {
 export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveScreenProps) {
   const [mode, setMode] = useState<ReceiveMode>("cashu");
   const [amount, setAmount] = useState("");
-  const [description, setDescription] = useState("");
   const [cashuTokenInput, setCashuTokenInput] = useState("");
   const [cashuRequest, setCashuRequest] = useState<Nut18PaymentRequestInfo | null>(null);
   const [lightningInvoice, setLightningInvoice] = useState<Bolt11InvoiceInfo | null>(null);
@@ -40,15 +41,22 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const activeRequest = mode === "cashu" ? cashuRequest : lightningInvoice;
+  const activeRequest = mode === "cashu" ? cashuRequest : mode === "lightning" ? lightningInvoice : null;
   const qrValue = activeRequest?.request ?? "";
 
   useEffect(() => {
+    if (mode === "redeem") {
+      setCashuRequest(null);
+      setLightningInvoice(null);
+      setIsGenerating(false);
+      setError(null);
+      return;
+    }
+
     let cancelled = false;
 
     const run = async () => {
       const trimmedAmount = amount.trim();
-      const trimmedDescription = description.trim() || null;
 
       if (mode === "lightning") {
         const numeric = Number(trimmedAmount);
@@ -77,13 +85,13 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
       try {
         if (mode === "cashu") {
           const numericAmount = trimmedAmount ? Number(trimmedAmount) : null;
-          const request = await createNut18PaymentRequest(numericAmount, trimmedDescription);
+          const request = await createNut18PaymentRequest(numericAmount, null);
           if (!cancelled) {
             setCashuRequest(request);
           }
         } else {
           const numeric = Number(trimmedAmount);
-          const invoice = await createBolt11Invoice(numeric, trimmedDescription);
+          const invoice = await createBolt11Invoice(numeric, null);
           if (!cancelled) {
             setLightningInvoice(invoice);
           }
@@ -102,8 +110,6 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
           setIsGenerating(false);
         }
       }
-
-     
     };
 
     run();
@@ -111,7 +117,19 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
     return () => {
       cancelled = true;
     };
-  }, [mode, amount, description]);
+  }, [mode, amount]);
+
+  const handleModeChange = (nextMode: ReceiveMode) => {
+    setMode(nextMode);
+    setAmount("");
+    setCashuRequest(null);
+    setLightningInvoice(null);
+    setCashuTokenInput("");
+    setIsGenerating(false);
+    setIsReceiving(false);
+    setError(null);
+    setSuccess(null);
+  };
 
   const mintLabel = useMemo(() => {
     if (mode === "cashu") {
@@ -121,17 +139,28 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
       return defaultMint ?? "";
     }
 
+    if (mode === "redeem") {
+      return "";
+    }
+
     return lightningInvoice?.mint_url ?? defaultMint ?? "";
   }, [mode, cashuRequest, lightningInvoice, defaultMint]);
 
   const formattedExpiry = useMemo(() => {
     if (!lightningInvoice || mode !== "lightning") return null;
+
     const expiresAt = new Date(lightningInvoice.expiry * 1000);
-    return expiresAt.toLocaleString();
+    const now = new Date();
+    const diff = expiresAt.getTime() - now.getTime();
+    if (Number.isNaN(diff) || diff <= 0) return "Expired";
+
+    const minutes = Math.floor(diff / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+    return `${minutes}m ${seconds}s`;
   }, [lightningInvoice, mode]);
 
   const formattedAmount = useMemo(() => {
-    if (!activeRequest) return null;
+    if (!activeRequest || mode === "redeem") return null;
     if (mode === "cashu") {
       return activeRequest.amount ?? null;
     }
@@ -145,25 +174,18 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
 
   const handleReceiveToken = async () => {
     if (!cashuTokenInput.trim()) return;
-    
+
     setIsReceiving(true);
     setError(null);
     setSuccess(null);
-    
+
     try {
-      console.log("Receiving cashu token:", cashuTokenInput);
       const result = await receiveCashuToken(cashuTokenInput.trim());
-      
-      console.log("Token received successfully:", result);
       setSuccess(`Successfully received ${result.amount} sats!`);
-      setCashuTokenInput(""); // Clear the input
-      
-      // Refresh wallet balance in parent component if possible
-      // The balance should update automatically via the wallet state management
-      
-    } catch (error) {
-      console.error("Failed to receive token:", error);
-      setError(`Failed to receive token: ${error}`);
+      setCashuTokenInput("");
+    } catch (err) {
+      console.error("Failed to receive token", err);
+      setError("Failed to receive token. Check the token and try again.");
     } finally {
       setIsReceiving(false);
     }
@@ -171,129 +193,137 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
 
   return (
     <Screen className="min-h-screen flex flex-col gap-4">
-      <h2 className="text-lg font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-        Receive
-      </h2>
-
-      <div className="flex flex-col gap-3 flex-shrink-0">
-        <div className="flex gap-2">
-          {MODES.map(({ id, label }) => (
+      <div className="flex items-start justify-between">
+        <h2 className="text-lg font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+          Receive
+        </h2>
+        <div className="flex items-center gap-2">
+          {MODES.map(({ id, label, icon: Icon }) => (
             <Button
               key={id}
               variant={mode === id ? "default" : "outline"}
-              size="sm"
-              className="flex-1 rounded-full"
-              onClick={() => {
-                setMode(id);
-                setAmount("");
-                setDescription("");
-                setCashuRequest(null);
-                setLightningInvoice(null);
-                setError(null);
-              }}
-              disabled={isGenerating}
+              size="icon"
+              className="h-10 w-10 rounded-full"
+              onClick={() => handleModeChange(id)}
+              disabled={isGenerating && mode !== "redeem"}
+              aria-label={`Switch to ${label} receive mode`}
             >
-              {label}
+              <Icon className="h-5 w-5" />
             </Button>
           ))}
         </div>
+      </div>
 
-        <div className="grid gap-2">
-          <Label htmlFor="receive-amount">
-            {mode === "lightning" ? "Amount (sats)" : "Optional amount (sats)"}
-          </Label>
-          <Input
-            id="receive-amount"
-            type="number"
-            min={0}
-            inputMode="numeric"
-            placeholder={mode === "lightning" ? "Enter amount" : "Add an amount"}
-            value={amount}
-            onChange={(event) => setAmount(event.target.value)}
-            disabled={isGenerating}
-          />
+      {mode !== "redeem" ? (
+        <div className="flex flex-col gap-3 flex-shrink-0">
+          <div className="grid gap-2">
+            <Label htmlFor="receive-amount">
+              {mode === "lightning" ? "Amount (sats)" : "Optional amount (sats)"}
+            </Label>
+            <Input
+              id="receive-amount"
+              type="number"
+              min={0}
+              inputMode="numeric"
+              placeholder={mode === "lightning" ? "Enter amount" : "Add an amount"}
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+              disabled={isGenerating}
+            />
+          </div>
+
+          {mintLabel ? (
+            <p className="text-sm text-muted-foreground">Mint: {mintLabel}</p>
+          ) : null}
+
+          {formattedAmount !== null ? (
+            <p className="text-sm text-muted-foreground">
+              Amount: <span className="font-medium text-foreground">{formattedAmount} sats</span>
+            </p>
+          ) : null}
+
+          {mode === "lightning" && formattedExpiry ? (
+            <p className="text-sm text-muted-foreground">Expires: {formattedExpiry}</p>
+          ) : null}
+
+          {error ? (
+            <p className="text-sm text-destructive">{error}</p>
+          ) : null}
         </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div className="grid gap-2">
+            <Label htmlFor="cashu-token">Paste Cashu token to receive</Label>
+            <Textarea
+              id="cashu-token"
+              rows={5}
+              placeholder="cashuAeyJ0b2tlbiI6W3sibWludCI6Imh0dHBzOi8v..."
+              value={cashuTokenInput}
+              onChange={(event) => setCashuTokenInput(event.target.value)}
+              disabled={isReceiving}
+            />
+          </div>
 
-        <div className="grid gap-2">
-          <Label htmlFor="receive-description">Description (optional)</Label>
-          <Input
-            id="receive-description"
-            placeholder="Add a note for the payer"
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            disabled={isGenerating}
-          />
-        </div>
-
-        <div className="grid gap-2">
-          <Label htmlFor="cashu-token">Paste Cashu token to receive</Label>
-          <Input
-            id="cashu-token"
-            placeholder="cashuAeyJ0b2tlbiI6W3sibWludCI6Imh0dHBzOi8v..."
-            value={cashuTokenInput}
-            onChange={(event) => setCashuTokenInput(event.target.value)}
-            disabled={isGenerating || isReceiving}
-          />
-          {cashuTokenInput && (
+          <div className="flex gap-3">
             <Button
               onClick={handleReceiveToken}
               disabled={isReceiving || !cashuTokenInput.trim()}
-              className="w-full"
+              className="flex-1"
             >
-              {isReceiving ? "Receiving..." : "Receive Token"}
+              {isReceiving ? "Receiving…" : "Receive token"}
             </Button>
-          )}
+            <Button
+              variant="outline"
+              onClick={() => setCashuTokenInput("")}
+              disabled={isReceiving || !cashuTokenInput}
+            >
+              Clear
+            </Button>
+          </div>
+
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          {success ? <p className="text-sm text-green-600">{success}</p> : null}
         </div>
+      )}
 
-        {mintLabel ? (
-          <p className="text-sm text-muted-foreground">Mint: {mintLabel}</p>
-        ) : null}
-
-        {formattedAmount !== null ? (
-          <p className="text-sm text-muted-foreground">
-            Amount: <span className="font-medium text-foreground">{formattedAmount} sats</span>
-          </p>
-        ) : null}
-
-        {mode === "lightning" && formattedExpiry ? (
-          <p className="text-sm text-muted-foreground">Expires: {formattedExpiry}</p>
-        ) : null}
-
-        {error ? (
-          <p className="text-sm text-destructive">{error}</p>
-        ) : null}
-
-        {success ? (
-          <p className="text-sm text-green-600">{success}</p>
-        ) : null}
-      </div>
-
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 min-h-0">
-        <div className="grid h-40 w-40 place-items-center rounded-3xl border-2 border-dashed border-primary/40 bg-muted p-5 flex-shrink-0">
-          {qrValue ? (
-            <QRCode value={qrValue} className="h-full w-full" />
-          ) : (
-            <span className="text-xs font-medium text-muted-foreground">
-              {mode === "lightning"
-                ? "Provide an amount to generate a Lightning invoice"
-                : "Generating Cashu request..."}
-            </span>
-          )}
+      {mode !== "redeem" ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 min-h-0">
+          <div className="grid h-40 w-40 place-items-center rounded-3xl border-2 border-dashed border-primary/40 bg-muted p-5 flex-shrink-0">
+            {qrValue ? (
+              <QRCode value={qrValue} className="h-full w-full" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-center text-sm text-muted-foreground">
+                {mode === "lightning"
+                  ? "Provide an amount to generate a Lightning invoice."
+                  : "Add an amount (optional) to generate a Cashu request."}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex-1" />
+      )}
 
-      <div className="flex gap-3 pb-2 flex-shrink-0">
-        <CopyButton
-          onCopy={handleCopy}
-          label={isGenerating ? "Preparing…" : "Copy request"}
-          copiedLabel="Copied"
-          className="flex-1"
-          disabled={!qrValue || isGenerating}
-        />
-        <Button variant="outline" onClick={onBack} className="flex-1" disabled={isGenerating}>
-          Cancel
-        </Button>
-      </div>
+      {mode !== "redeem" ? (
+        <div className="flex gap-3 pb-2 flex-shrink-0">
+          <CopyButton
+            onCopy={handleCopy}
+            label={isGenerating ? "Preparing…" : "Copy request"}
+            copiedLabel="Copied!"
+            disabled={!qrValue || isGenerating}
+            className="flex-1"
+          />
+          <Button variant="outline" onClick={onBack} className="flex-1" disabled={isGenerating}>
+            Cancel
+          </Button>
+        </div>
+      ) : (
+        <div className="flex gap-3 pb-2 flex-shrink-0">
+          <Button variant="outline" onClick={onBack} className="flex-1" disabled={isReceiving}>
+            Done
+          </Button>
+        </div>
+      )}
     </Screen>
   );
 }

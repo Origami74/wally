@@ -18,14 +18,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { ServiceStatus } from "@/lib/tollgate/types";
-import type { WalletSummary } from "@/lib/wallet/api";
+import { useNetworkDebugInfo } from "@/lib/tollgate/use-network-debug-info";
+import type { NetworkDebugInfo } from "@/lib/tollgate/use-network-debug-info";
 
 import type { FeatureState, Period, PeriodMetaFn } from "./types";
 import { periods } from "./types";
 
 type SettingsScreenProps = {
   status: ServiceStatus | null;
-  summary: WalletSummary | null;
   features: FeatureState[];
   mintInput: string;
   npubInput: string;
@@ -44,7 +44,6 @@ type SettingsScreenProps = {
 
 export function SettingsScreen({
   status,
-  summary,
   features,
   mintInput,
   npubInput,
@@ -57,46 +56,10 @@ export function SettingsScreen({
   copyToClipboard,
   periodMeta,
 }: SettingsScreenProps) {
+  const { networkInfo } = useNetworkDebugInfo();
+
   return (
-    <Screen className="min-h-screen gap-8 overflow-y-auto">
-      {summary ? (
-        <Card className="space-y-3 border border-dashed border-primary/20 bg-background/90 p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              Wallet Overview
-            </p>
-            <span className="text-lg font-semibold text-foreground">
-              {summary.total.toLocaleString()} sats
-            </span>
-          </div>
-          {summary.npub ? (
-            <CopyButton
-              onCopy={() => copyToClipboard(summary.npub ?? "")}
-              label="Copy npub"
-              copiedLabel="Copied"
-              variant="outline"
-              className="w-full justify-start border-dashed"
-            />
-          ) : null}
-          {summary.balances.length ? (
-            <div className="space-y-2 text-sm text-muted-foreground">
-              <p className="font-medium text-foreground">Mints</p>
-              <ul className="space-y-1">
-                {summary.balances.map((balance) => (
-                  <li key={balance.mint_url} className="flex justify-between">
-                    <span className="truncate pr-4 text-xs uppercase tracking-wide text-muted-foreground">
-                      {balance.mint_url}
-                    </span>
-                    <span className="font-medium text-foreground">
-                      {balance.balance.toLocaleString()} {balance.unit}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </Card>
-      ) : null}
+    <Screen className="min-h-screen gap-8 overflow-y-auto pt-6">
 
       <div className="grid gap-4">
         <h2 className="text-lg font-semibold uppercase tracking-[0.2em] text-muted-foreground pt-2">
@@ -227,6 +190,7 @@ export function SettingsScreen({
                 }))
               }
               status={status}
+              networkInfo={networkInfo}
             />
           </Card>
         ))}
@@ -296,12 +260,42 @@ function FeatureInfo({
   open,
   onOpenChange,
   status,
+  networkInfo,
 }: {
   featureId: FeatureState["id"];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   status: ServiceStatus | null;
+  networkInfo: NetworkDebugInfo;
 }) {
+  const currentNetwork = status?.current_network ?? null;
+  const fallbackAdvertisement = currentNetwork?.advertisement ?? null;
+
+  const gatewayIp = networkInfo.gateway_ip ?? currentNetwork?.gateway_ip ?? null;
+  const macAddress = networkInfo.mac_address ?? currentNetwork?.mac_address ?? null;
+  const tollgatePubkey =
+    networkInfo.tollgate_pubkey ?? fallbackAdvertisement?.tollgate_pubkey ?? null;
+  const supportedTips =
+    networkInfo.supported_tips.length > 0
+      ? networkInfo.supported_tips
+      : fallbackAdvertisement?.tips ?? [];
+  const metricValue =
+    networkInfo.metric ?? (fallbackAdvertisement?.metric != null
+      ? String(fallbackAdvertisement.metric)
+      : null);
+  const stepSizeValue =
+    networkInfo.step_size ?? (fallbackAdvertisement?.step_size != null
+      ? String(fallbackAdvertisement.step_size)
+      : null);
+  const pricingOptions =
+    networkInfo.pricing_options.length > 0
+      ? networkInfo.pricing_options
+      : (fallbackAdvertisement?.pricing_options ?? []).map((option) => ({
+          mint_url: option.mint_url,
+          price: String(option.price_per_step),
+          unit: option.price_unit,
+        }));
+
   return (
     <Collapsible open={open} onOpenChange={onOpenChange}>
       <CollapsibleTrigger asChild>
@@ -312,18 +306,34 @@ function FeatureInfo({
       <CollapsibleContent className="mt-3 space-y-2 text-xs text-muted-foreground">
         {featureId === "tollgate" ? (
           <>
-            <div>Gateway: {status?.current_network?.gateway_ip ?? "--"}</div>
             <div>
-              MAC address: {status?.current_network?.mac_address ?? "--"}
+              Network status: {networkInfo.is_tollgate ? "Tollgate detected" : "Standard network"}
             </div>
+            <div>Gateway: {gatewayIp ?? "--"}</div>
+            <div>MAC address: {macAddress ?? "--"}</div>
+            {networkInfo.current_wifi ? (
+              <>
+                <div>WiFi SSID: {networkInfo.current_wifi.ssid}</div>
+                <div>WiFi BSSID: {networkInfo.current_wifi.bssid}</div>
+              </>
+            ) : null}
+            <div>Tollgate pubkey: {tollgatePubkey ?? "--"}</div>
             <div>
-              Tollgate pubkey:{" "}
-              {status?.current_network?.advertisement?.tollgate_pubkey ?? "--"}
+              Supported TIPs: {supportedTips.length ? supportedTips.join(", ") : "--"}
             </div>
-            <div>
-              Supported TIPs:{" "}
-              {status?.current_network?.advertisement?.tips.join(", ") ?? "--"}
-            </div>
+            <div>Metric: {metricValue ?? "--"}</div>
+            <div>Step size: {stepSizeValue ?? "--"}</div>
+            {pricingOptions.length ? (
+              <div className="space-y-1 pt-1">
+                <div>Pricing options:</div>
+                {pricingOptions.map((option, index) => (
+                  <div key={`${option.mint_url}-${index}`} className="ml-4 text-[11px]">
+                    {option.price} {option.unit || "sats"}
+                    {option.mint_url ? ` via ${option.mint_url}` : ""}
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </>
         ) : featureId === "402" ? (
           <>
