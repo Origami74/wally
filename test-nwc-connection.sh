@@ -6,7 +6,7 @@ PORT=3737
 URL="http://localhost:${PORT}"
 
 # Sample NWA connection string (from the unit tests)
-NWA_URI="nostr+walletauth://b889ff5b1513b641e2a139f661a661364979c5beee91842f8f0ef42ab558e9d4?relay=wss%3A%2F%2Frelay.damus.io&secret=b8a30fafa48d4795b6c0eec169a383de&required_commands=pay_invoice%20make_invoice&optional_commands=list_transactions&budget=10000%2Fdaily"
+NWA_URI="nostr+walletauth://b889ff5b1513b641e2a139f661a661364979c5beee91842f8f0ef42ab558e9d4?relay=ws%3A%2F%2Flocalhost%3A4869&secret=b8a30fafa48d4795b6c0eec169a383de&required_commands=pay_invoice%20make_invoice&optional_commands=list_transactions&budget=10000%2Fdaily"
 
 echo "Testing NWC Connection Request"
 echo "==============================="

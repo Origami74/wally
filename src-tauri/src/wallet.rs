@@ -100,7 +100,10 @@ pub async fn receive_cashu_token(
 ) -> Result<serde_json::Value, String> {
     let service = state.lock().await;
     match service.receive_cashu_token(&token).await {
-        Ok(amount) => Ok(serde_json::json!({ "amount": amount })),
+        Ok(result) => Ok(serde_json::json!({
+            "amount": result.amount,
+            "mint_url": result.mint_url,
+        })),
         Err(e) => Err(e.to_string()),
     }
 }

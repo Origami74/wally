@@ -227,6 +227,19 @@ async fn nwc_get_service_pubkey(nwc_state: State<'_, NwcState>) -> Result<String
     Ok(nwc.service_pubkey().to_string())
 }
 
+#[tauri::command]
+async fn nwc_remove_connection(
+    pubkey: String,
+    nwc_state: State<'_, NwcState>,
+) -> Result<(), String> {
+    let nwc_lock = nwc_state.lock().await;
+    let nwc = nwc_lock.as_ref().ok_or("NWC service not initialized")?;
+
+    nwc.remove_connection(&pubkey)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -402,6 +415,7 @@ pub fn run() {
             list_wallet_transactions,
             receive_cashu_token,
             nwc_list_connections,
+            nwc_remove_connection,
             nwc_get_service_pubkey,
             connection_server::nwc_approve_connection,
             connection_server::nwc_reject_connection,

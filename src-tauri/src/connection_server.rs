@@ -17,6 +17,9 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
+use tauri::Manager;
+#[cfg(target_os = "macos")]
+use tauri_nspanel::ManagerExt;
 use tokio::sync::Mutex;
 use tower_http::cors::CorsLayer;
 
@@ -203,6 +206,33 @@ async fn post_wallet_connect(
             }
             
             // Emit event to frontend to prompt user
+            // Ensure the app window is visible and focused so the user sees the prompt
+            {
+                #[cfg(target_os = "macos")]
+                {
+                    let app_handle = state.app_handle.clone();
+                    let app_handle_for_closure = app_handle.clone();
+                    let _ = app_handle.run_on_main_thread(move || {
+                        if let Ok(panel) = app_handle_for_closure.get_webview_panel("main") {
+                            if !panel.is_visible() {
+                                panel.order_front_regardless();
+                            }
+                            panel.make_key_and_order_front(None);
+                        } else if let Some(window) = app_handle_for_closure.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    });
+                }
+
+                #[cfg(not(target_os = "macos"))]
+                {
+                    if let Some(window) = state.app_handle.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+            }
             if let Err(e) = state.app_handle.emit("nwc-connection-request", &pending_request) {
                 log::error!("Failed to emit connection request event: {}", e);
                 return (

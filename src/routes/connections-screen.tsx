@@ -4,6 +4,7 @@ import { Screen } from "@/components/layout/screen";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CopyButton } from "@/components/copy-button";
+import { Button } from "@/components/ui/button";
 
 type NwcConnection = {
   pubkey: string;
@@ -43,6 +44,19 @@ export function ConnectionsScreen({ copyToClipboard }: ConnectionsScreenProps) {
     
     return () => clearInterval(interval);
   }, []);
+
+  const handleRemove = async (pubkey: string) => {
+    if (window.confirm("Are you sure you want to remove this connection?")) {
+      try {
+        await invoke("nwc_remove_connection", { pubkey });
+        // Refresh connections list
+        setConnections((prev) => prev.filter((c) => c.pubkey !== pubkey));
+      } catch (err) {
+        console.error("Failed to remove connection:", err);
+        setError(String(err)); // Show error to the user
+      }
+    }
+  };
 
   const formatBudget = (msats: number) => {
     const sats = Math.floor(msats / 1000);
@@ -170,6 +184,14 @@ export function ConnectionsScreen({ copyToClipboard }: ConnectionsScreenProps) {
                     {formatPeriod(connection.renewal_period)}
                   </Badge>
                 </div>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => handleRemove(connection.pubkey)}
+                  className="w-full"
+                >
+                  Remove Connection
+                </Button>
               </Card>
             );
           })}
