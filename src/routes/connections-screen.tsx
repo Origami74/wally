@@ -7,6 +7,7 @@ import { SectionHeader } from "@/components/layout/section-header";
 import { Card } from "@/components/ui/card";
 import { CopyButton } from "@/components/copy-button";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -63,6 +64,8 @@ export function ConnectionsScreen({ copyToClipboard }: ConnectionsScreenProps) {
   const [newNwcUri, setNewNwcUri] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [connectionToRemove, setConnectionToRemove] = useState<NwcConnectionView | null>(null);
+  const [useLocalRelay, setUseLocalRelay] = useState(false);
+  const [lastCreatedRelay, setLastCreatedRelay] = useState<string | null>(null);
 
   const loadConnections = useCallback(async () => {
     try {
@@ -252,8 +255,11 @@ export function ConnectionsScreen({ copyToClipboard }: ConnectionsScreenProps) {
     setIsCreating(true);
     setError(null);
     try {
-      const uri = await invoke<string>("nwc_create_standard_connection");
+      const uri = await invoke<string>("nwc_create_standard_connection", {
+        use_local_relay: useLocalRelay,
+      });
       setNewNwcUri(uri);
+      setLastCreatedRelay(useLocalRelay ? "ws://localhost:4869" : "wss://nostrue.com");
       await loadConnections();
     } catch (err) {
       console.error("Failed to create NWC URI:", err);
@@ -270,8 +276,21 @@ export function ConnectionsScreen({ copyToClipboard }: ConnectionsScreenProps) {
         description="Manage your NWC wallet connections"
       />
 
-      <div className="flex justify-start">
-        <Button onClick={handleCreateConnection} disabled={isCreating}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-6">
+        <div className="flex max-w-sm items-start gap-2">
+          <Checkbox
+            id="nwc-local-relay"
+            checked={useLocalRelay}
+            onCheckedChange={(checked) => setUseLocalRelay(checked === true)}
+          />
+          <label htmlFor="nwc-local-relay" className="text-sm leading-relaxed">
+            <span className="font-medium">Use local relay</span>
+            <span className="block text-xs text-muted-foreground">
+              Only works with apps running on this device. Remote connections should use the public relay.
+            </span>
+          </label>
+        </div>
+        <Button onClick={handleCreateConnection} disabled={isCreating} className="w-max">
           {isCreating ? "Creating…" : "Create New Connection"}
         </Button>
       </div>
@@ -376,7 +395,15 @@ export function ConnectionsScreen({ copyToClipboard }: ConnectionsScreenProps) {
         </div>
       )}
 
-      <Dialog open={newNwcUri !== null} onOpenChange={(open) => !open && setNewNwcUri(null)}>
+      <Dialog
+        open={newNwcUri !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setNewNwcUri(null);
+            setLastCreatedRelay(null);
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New NWC Connection</DialogTitle>
@@ -385,6 +412,11 @@ export function ConnectionsScreen({ copyToClipboard }: ConnectionsScreenProps) {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            {lastCreatedRelay ? (
+              <div className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+                Relay: {lastCreatedRelay}
+              </div>
+            ) : null}
             <p className="break-all rounded-md bg-muted p-3 font-mono text-xs text-muted-foreground">
               {newNwcUri}
             </p>
@@ -396,7 +428,13 @@ export function ConnectionsScreen({ copyToClipboard }: ConnectionsScreenProps) {
             />
           </div>
           <div className="flex justify-end">
-            <Button variant="outline" onClick={() => setNewNwcUri(null)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setNewNwcUri(null);
+                setLastCreatedRelay(null);
+              }}
+            >
               Close
             </Button>
           </div>

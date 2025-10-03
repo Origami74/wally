@@ -25,7 +25,8 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{Mutex, RwLock};
 
-const RELAY_URL: &str = "wss://nostrue.com";
+const REMOTE_RELAY_URL: &str = "wss://nostrue.com";
+const LOCAL_RELAY_URL: &str = "ws://localhost:4869";
 const NWC_BUDGET_MSATS: u64 = 1_000_000_000; // 1,000 sats budget
 
 fn parse_connection_pubkey(value: &str) -> Result<PublicKey, Error> {
@@ -63,6 +64,22 @@ pub struct NostrWalletConnect {
 }
 
 impl NostrWalletConnect {
+    async fn ensure_relay(&self, relay_url: &str) -> Result<(), Error> {
+        let relays = self.client.relays().await;
+        let has_relay = relays.keys().any(|url| url.as_str() == relay_url);
+        if !has_relay {
+            if let Err(err) = self.client.add_relay(relay_url).await {
+                log::warn!("Failed to add relay {}: {}", relay_url, err);
+            }
+        }
+
+        if let Err(err) = self.client.connect_relay(relay_url).await {
+            log::warn!("Failed to connect relay {}: {}", relay_url, err);
+        }
+
+        Ok(())
+    }
+
     /// Creates a new NWC service instance.
     pub async fn new(service_key: SecretKey, service_state: TollGateState) -> Result<Self, Error> {
         let keys = Keys::new(service_key);
@@ -94,16 +111,12 @@ impl NostrWalletConnect {
 
     /// Starts the NWC service.
     pub async fn start(&self) -> Result<(), Error> {
-        log::info!("Starting NWC service, adding relay: {}", RELAY_URL);
+        log::info!(
+            "Starting NWC service, ensuring relay connectivity: {}",
+            REMOTE_RELAY_URL
+        );
 
-        // Add relay
-        match self.client.add_relay(RELAY_URL).await {
-            Ok(_) => log::info!("Successfully added relay: {}", RELAY_URL),
-            Err(e) => {
-                log::error!("Failed to add relay {}: {}", RELAY_URL, e);
-                return Err(e.into());
-            }
-        }
+        self.ensure_relay(REMOTE_RELAY_URL).await?;
 
         // Connect to relay with timeout
         log::info!("Connecting to relay...");
@@ -112,7 +125,7 @@ impl NostrWalletConnect {
         // Wait a moment for connection to establish
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
-        log::info!("NWC service connected to relay: {}", RELAY_URL);
+        log::info!("NWC service connected to relay: {}", REMOTE_RELAY_URL);
 
         // Publish info event
         log::info!("Publishing NWC info event...");
@@ -238,7 +251,7 @@ impl NostrWalletConnect {
     }
 
     /// Creates a new standard NWC connection and returns the connection URI.
-    pub async fn create_standard_nwc_uri(&self) -> Result<String, Error> {
+    pub async fn create_standard_nwc_uri(&self, use_local_relay: bool) -> Result<String, Error> {
         // Generate new keys for the connection
         let connection_key = SecretKey::generate();
 
@@ -253,12 +266,21 @@ impl NostrWalletConnect {
         self.add_connection(connection.clone()).await?;
 
         // Create the URI
-        let relay_url = Url::from_str(RELAY_URL).map_err(|e| Error::Url(e.to_string()))?;
+        let relay_url_str = if use_local_relay {
+            LOCAL_RELAY_URL
+        } else {
+            REMOTE_RELAY_URL
+        };
+
+        self.ensure_relay(relay_url_str).await?;
+
+        let relay_url = Url::from_str(relay_url_str).map_err(|e| Error::Url(e.to_string()))?;
         let uri = connection.uri(self.service_pubkey(), relay_url)?;
 
         log::info!(
-            "Created new standard NWC URI for connection: {}",
-            connection_pubkey
+            "Created new standard NWC URI for connection: {} via {}",
+            connection_pubkey,
+            relay_url_str
         );
 
         Ok(uri)
@@ -1222,7 +1244,7 @@ impl NostrWalletConnect {
             "secret": secret,
             "pubkey": connection.keys.public_key().to_hex(),
             "commands": ["pay_invoice", "make_invoice", "get_balance", "receive_cashu", "pay_cashu_request"],
-            "relay": RELAY_URL,
+            "relay": REMOTE_RELAY_URL,
             "lud16": lud16,
         });
 
@@ -1247,7 +1269,7 @@ impl NostrWalletConnect {
 
         // Add specified relays if they're different from our default
         for relay_url in relays {
-            if relay_url != RELAY_URL {
+            if relay_url != REMOTE_RELAY_URL {
                 if let Err(e) = self.client.add_relay(&relay_url).await {
                     log::warn!("Failed to add relay {}: {}", relay_url, e);
                 }

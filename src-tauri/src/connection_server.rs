@@ -606,7 +606,7 @@ pub async fn nwc_approve_connection(
             log::info!("Creating standard NWC connection");
 
             // Create standard NWC connection
-            let nwc_uri = nwc.create_standard_nwc_uri().await.map_err(|e| {
+            let nwc_uri = nwc.create_standard_nwc_uri(false).await.map_err(|e| {
                 log::error!("Failed to create NWC URI: {}", e);
                 format!("Failed to create NWC URI: {}", e)
             })?;

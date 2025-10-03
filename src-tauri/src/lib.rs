@@ -300,11 +300,14 @@ async fn nwc_remove_connection(
 }
 
 #[tauri::command]
-async fn nwc_create_standard_connection(nwc_state: State<'_, NwcState>) -> Result<String, String> {
+async fn nwc_create_standard_connection(
+    use_local_relay: Option<bool>,
+    nwc_state: State<'_, NwcState>,
+) -> Result<String, String> {
     let nwc_lock = nwc_state.lock().await;
     let nwc = nwc_lock.as_ref().ok_or("NWC service not initialized")?;
 
-    nwc.create_standard_nwc_uri()
+    nwc.create_standard_nwc_uri(use_local_relay.unwrap_or(false))
         .await
         .map_err(|e| e.to_string())
 }
