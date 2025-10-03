@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { History, Settings2, Wallet, Link } from "lucide-react";
+import { History, Settings2, Wallet } from "lucide-react";
 import { Route, Switch, useLocation } from "wouter";
 import type { ServiceStatus } from "@/lib/tollgate/types";
 import { statusTone } from "@/lib/tollgate/utils";
@@ -313,7 +313,6 @@ export default function App() {
   const goSend = () => setLocation("/send");
   const goSettings = () => setLocation("/settings");
   const goHistory = () => setLocation("/history");
-  const goConnections = () => setLocation("/connections");
 
   const sharedMainClasses =
     "relative mx-auto flex w-full max-w-md flex-col overflow-hidden bg-background";
@@ -344,12 +343,6 @@ export default function App() {
           action: goHistory,
           label: "View history",
         },
-        {
-          id: "connections",
-          icon: <Link className="h-5 w-5" />,
-          action: goConnections,
-          label: "View connections",
-        },
       ]
     : [
         {
@@ -377,7 +370,7 @@ export default function App() {
                 onClick={button.action}
                 aria-label={button.label}
               >
-                {button.icon
+                {button.icon}
               </Button>
             ))}
           </div>

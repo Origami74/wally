@@ -59,14 +59,11 @@ export function SettingsScreen({
   const { networkInfo } = useNetworkDebugInfo();
 
   return (
-    <Screen className="min-h-screen gap-8 overflow-y-auto pt-6">
-
+    <Screen className="min-h-screen gap-8 overflow-y-auto">
       <div className="grid gap-4">
-        <h2 className="text-lg font-semibold uppercase tracking-[0.2em] text-muted-foreground pt-2">
+        <h2 className="text-lg font-semibold uppercase tracking-[0.2em] text-muted-foreground">
           Wallet Settings
         </h2>
-        {/* Spacer */}
-        <div className="h-4"></div>
         <Card className="space-y-4 border border-dashed border-primary/20 bg-background/90 p-4">
           <div className="grid gap-3">
             <div className="grid gap-2">
