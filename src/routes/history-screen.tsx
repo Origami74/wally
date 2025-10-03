@@ -1,4 +1,5 @@
 import { Screen } from "@/components/layout/screen";
+import { SectionHeader } from "@/components/layout/section-header";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import type { WalletTransactionEntry } from "@/lib/wallet/api";
@@ -16,9 +17,7 @@ type HistoryScreenProps = {
 export function HistoryScreen({ transactions }: HistoryScreenProps) {
   return (
     <Screen className="min-h-screen gap-6 overflow-y-auto pb-4 pt-6">
-      <h2 className="text-lg font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-        History
-      </h2>
+      <SectionHeader title="History" />
 
       {transactions.length === 0 ? (
         <p className="text-sm text-muted-foreground">

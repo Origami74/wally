@@ -1,10 +1,34 @@
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+
 import { Screen } from "@/components/layout/screen";
+import { SectionHeader } from "@/components/layout/section-header";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/copy-button";
 import type { ServiceStatus } from "@/lib/tollgate/types";
-import { useNetworkDebugInfo } from "@/lib/tollgate/use-network-debug-info";
+
+type NetworkDebugInfo = {
+  gateway_ip: string | null;
+  mac_address: string | null;
+  tollgate_pubkey: string | null;
+  supported_tips: string[];
+  metric: string | null;
+  step_size: string | null;
+  pricing_options: Array<{
+    mint_url: string;
+    price: string;
+    unit: string;
+  }>;
+  current_wifi: {
+    ssid: string;
+    bssid: string;
+  } | null;
+  is_tollgate: boolean;
+  advertisement_raw?: any;
+};
 
 type DebugScreenProps = {
   status: ServiceStatus | null;
@@ -12,7 +36,116 @@ type DebugScreenProps = {
 };
 
 export function DebugScreen({ status, copyToClipboard }: DebugScreenProps) {
-  const { networkInfo, refreshNetworkInfo, refreshing } = useNetworkDebugInfo();
+  const [networkInfo, setNetworkInfo] = useState<NetworkDebugInfo>({
+    gateway_ip: null,
+    mac_address: null,
+    tollgate_pubkey: null,
+    supported_tips: [],
+    metric: null,
+    step_size: null,
+    pricing_options: [],
+    current_wifi: null,
+    is_tollgate: false,
+  });
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refreshNetworkInfo = async () => {
+    setRefreshing(true);
+    try {
+      const networkStatus = await invoke("plugin:androidwifi|get_network_status", { payload: {} });
+      const statusObj = networkStatus as any;
+      const tollgateAd = statusObj?.tollgateAdvertisement;
+
+      setNetworkInfo({
+        gateway_ip: statusObj?.gatewayIp || null,
+        mac_address: statusObj?.macAddress || null,
+        tollgate_pubkey: tollgateAd?.tollgatePubkey || null,
+        supported_tips: tollgateAd?.tips || [],
+        metric: tollgateAd?.metric || null,
+        step_size: tollgateAd?.stepSize || null,
+        pricing_options:
+          tollgateAd?.pricingOptions?.map((option: any) => ({
+            mint_url: option.mintUrl || "",
+            price: option.price || "",
+            unit: option.unit || "",
+          })) || [],
+        current_wifi: statusObj?.currentWifi || null,
+        is_tollgate: statusObj?.isTollgate || false,
+        advertisement_raw: tollgateAd,
+      });
+    } catch (error) {
+      console.error("Failed to refresh network info:", error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshNetworkInfo();
+
+    const setupEventListeners = async () => {
+      try {
+        const networkStatusUnlisten = await listen("network-status-changed", (event: any) => {
+          const networkStatus = event.payload;
+          const tollgateAd = networkStatus?.tollgateAdvertisement;
+
+          setNetworkInfo({
+            gateway_ip: networkStatus?.gatewayIp || null,
+            mac_address: networkStatus?.macAddress || null,
+            tollgate_pubkey: tollgateAd?.tollgatePubkey || null,
+            supported_tips: tollgateAd?.tips || [],
+            metric: tollgateAd?.metric || null,
+            step_size: tollgateAd?.stepSize || null,
+            pricing_options:
+              tollgateAd?.pricingOptions?.map((option: any) => ({
+                mint_url: option.mintUrl || "",
+                price: option.price || "",
+                unit: option.unit || "",
+              })) || [],
+            current_wifi: networkStatus?.currentWifi || null,
+            is_tollgate: networkStatus?.isTollgate || false,
+            advertisement_raw: tollgateAd,
+          });
+        });
+
+        const tollgateUnlisten = await listen("tollgate-detected", (event: any) => {
+          const tollgateInfo = event.payload;
+          const tollgateAd = tollgateInfo?.tollgateAdvertisement;
+
+          setNetworkInfo((prev) => ({
+            ...prev,
+            gateway_ip: tollgateInfo?.gatewayIp || prev.gateway_ip,
+            mac_address: tollgateInfo?.macAddress || prev.mac_address,
+            tollgate_pubkey: tollgateAd?.tollgatePubkey || prev.tollgate_pubkey,
+            supported_tips: tollgateAd?.tips || prev.supported_tips,
+            metric: tollgateAd?.metric || prev.metric,
+            step_size: tollgateAd?.stepSize || prev.step_size,
+            pricing_options:
+              tollgateAd?.pricingOptions?.map((option: any) => ({
+                mint_url: option.mintUrl || "",
+                price: option.price || "",
+                unit: option.unit || "",
+              })) || prev.pricing_options,
+            is_tollgate: tollgateInfo?.isTollgate || prev.is_tollgate,
+            advertisement_raw: tollgateAd || prev.advertisement_raw,
+          }));
+        });
+
+        return () => {
+          networkStatusUnlisten();
+          tollgateUnlisten();
+        };
+      } catch (error) {
+        console.error("Failed to setup event listeners:", error);
+      }
+    };
+
+    const cleanup = setupEventListeners();
+
+    return () => {
+      cleanup.then((fn) => fn && fn());
+    };
+  }, []);
 
   const formatValue = (value: any): string => {
     if (value === null || value === undefined) return "--";
@@ -21,28 +154,25 @@ export function DebugScreen({ status, copyToClipboard }: DebugScreenProps) {
   };
 
   return (
-    <Screen className="min-h-screen gap-6 overflow-y-auto">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Tollgate Debug</h1>
-        <Button 
-          onClick={refreshNetworkInfo} 
-          disabled={refreshing}
-          variant="outline"
-          size="sm"
-        >
-          {refreshing ? "Refreshing..." : "Refresh"}
-        </Button>
-      </div>
+    <Screen className="min-h-screen gap-6 overflow-y-auto pt-6">
+      <SectionHeader
+        title="Tollgate Settings"
+        description="Inspect live network data and service status."
+        actions={
+          <Button onClick={refreshNetworkInfo} disabled={refreshing} variant="outline" size="sm">
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </Button>
+        }
+      />
 
-      {/* Network Status Overview */}
       <Card className="space-y-4 border border-dashed border-primary/20 bg-background/90 p-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Network Status</h2>
+          <h3 className="text-base font-semibold">Network Status</h3>
           <Badge tone={networkInfo.is_tollgate ? "success" : "default"}>
             {networkInfo.is_tollgate ? "Tollgate Network" : "Standard Network"}
           </Badge>
         </div>
-        
+
         <div className="grid gap-3 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Gateway:</span>
@@ -59,7 +189,7 @@ export function DebugScreen({ status, copyToClipboard }: DebugScreenProps) {
               )}
             </div>
           </div>
-          
+
           <div className="flex justify-between">
             <span className="text-muted-foreground">MAC Address:</span>
             <div className="flex items-center gap-2">
@@ -91,10 +221,9 @@ export function DebugScreen({ status, copyToClipboard }: DebugScreenProps) {
         </div>
       </Card>
 
-      {/* Tollgate Information */}
       <Card className="space-y-4 border border-dashed border-primary/20 bg-background/90 p-4">
-        <h2 className="text-lg font-semibold">Tollgate Information</h2>
-        
+        <h3 className="text-base font-semibold">Tollgate Information</h3>
+
         <div className="grid gap-3 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Tollgate Pubkey:</span>
@@ -113,17 +242,17 @@ export function DebugScreen({ status, copyToClipboard }: DebugScreenProps) {
               )}
             </div>
           </div>
-          
+
           <div className="flex justify-between">
             <span className="text-muted-foreground">Supported TIPs:</span>
             <span className="font-mono">{formatValue(networkInfo.supported_tips)}</span>
           </div>
-          
+
           <div className="flex justify-between">
             <span className="text-muted-foreground">Metric:</span>
             <span className="font-mono">{formatValue(networkInfo.metric)}</span>
           </div>
-          
+
           <div className="flex justify-between">
             <span className="text-muted-foreground">Step Size:</span>
             <span className="font-mono">{formatValue(networkInfo.step_size)}</span>
@@ -133,7 +262,7 @@ export function DebugScreen({ status, copyToClipboard }: DebugScreenProps) {
             <div className="space-y-2">
               <span className="text-muted-foreground">Pricing Options:</span>
               {networkInfo.pricing_options.map((option, index) => (
-                <div key={index} className="ml-4 p-2 bg-muted/50 rounded text-xs space-y-1">
+                <div key={index} className="ml-4 rounded bg-muted/50 p-2 text-xs space-y-1">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Price:</span>
                     <span className="font-mono">{option.price} {option.unit}</span>
@@ -160,11 +289,10 @@ export function DebugScreen({ status, copyToClipboard }: DebugScreenProps) {
         </div>
       </Card>
 
-      {/* Service Status */}
       {status && (
         <Card className="space-y-4 border border-dashed border-primary/20 bg-background/90 p-4">
-          <h2 className="text-lg font-semibold">Service Status</h2>
-          
+          <h3 className="text-base font-semibold">Service Status</h3>
+
           <div className="grid gap-3 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Auto Tollgate:</span>
@@ -172,7 +300,7 @@ export function DebugScreen({ status, copyToClipboard }: DebugScreenProps) {
                 {status.auto_tollgate_enabled ? "Enabled" : "Disabled"}
               </Badge>
             </div>
-            
+
             <div className="flex justify-between">
               <span className="text-muted-foreground">Active Sessions:</span>
               <span className="font-mono">{status.active_sessions?.length || 0}</span>
@@ -199,11 +327,10 @@ export function DebugScreen({ status, copyToClipboard }: DebugScreenProps) {
         </Card>
       )}
 
-      {/* Raw Advertisement Data */}
       {networkInfo.advertisement_raw && (
         <Card className="space-y-4 border border-dashed border-primary/20 bg-background/90 p-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Raw Advertisement Data</h2>
+            <h3 className="text-base font-semibold">Raw Advertisement Data</h3>
             <CopyButton
               onCopy={() => copyToClipboard(JSON.stringify(networkInfo.advertisement_raw, null, 2))}
               label="Copy JSON"
@@ -211,8 +338,8 @@ export function DebugScreen({ status, copyToClipboard }: DebugScreenProps) {
               variant="outline"
             />
           </div>
-          
-          <pre className="text-xs bg-muted/20 p-3 rounded overflow-x-auto">
+
+          <pre className="overflow-x-auto rounded bg-muted/20 p-3 text-xs">
             {JSON.stringify(networkInfo.advertisement_raw, null, 2)}
           </pre>
         </Card>
