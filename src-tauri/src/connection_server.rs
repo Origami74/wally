@@ -266,8 +266,8 @@ async fn post_wallet_connect(
 }
 
 /// Parse a Nostr Wallet Auth URI
-/// 
-/// Format: nostr+walletauth://{pubkey}?relay={relay}&secret={secret}&required_commands={commands}&...
+///
+/// Format: nostr+walletauth://{pubkey}?relay={relay}&secret={secret}&request_methods={methods}&...
 fn parse_nwa_uri(uri: &str) -> Result<NostrWalletAuthRequest, String> {
     // Check protocol
     if !uri.starts_with("nostr+walletauth://") {
@@ -305,18 +305,30 @@ fn parse_nwa_uri(uri: &str) -> Result<NostrWalletAuthRequest, String> {
             uuid::Uuid::new_v4().to_string()
         });
     
-    // Extract required commands
-    let required_commands: Vec<String> = params.get("required_commands")
+    // Extract request methods (handle both + and space separators)
+    let required_commands: Vec<String> = params.get("request_methods")
         .and_then(|v| v.first())
         .map(|s| urlencoding::decode(s).unwrap_or_default().to_string())
-        .map(|s| s.split_whitespace().map(|c| c.to_string()).collect())
+        .map(|s| {
+            // Split on both + and whitespace, then filter out empty strings
+            s.split(&['+', ' ', '\t', '\n'][..])
+                .filter(|c| !c.is_empty())
+                .map(|c| c.to_string())
+                .collect()
+        })
         .unwrap_or_default();
     
-    // Extract optional commands
+    // Optional commands can still be parsed if present (for backwards compatibility)
     let optional_commands: Vec<String> = params.get("optional_commands")
         .and_then(|v| v.first())
         .map(|s| urlencoding::decode(s).unwrap_or_default().to_string())
-        .map(|s| s.split_whitespace().map(|c| c.to_string()).collect())
+        .map(|s| {
+            // Split on both + and whitespace, then filter out empty strings
+            s.split(&['+', ' ', '\t', '\n'][..])
+                .filter(|c| !c.is_empty())
+                .map(|c| c.to_string())
+                .collect()
+        })
         .unwrap_or_default();
     
     // Extract budget (optional)
@@ -489,7 +501,7 @@ mod tests {
 
     #[test]
     fn test_parse_nwa_uri() {
-        let uri = "nostr+walletauth://b889ff5b1513b641e2a139f661a661364979c5beee91842f8f0ef42ab558e9d4?relay=wss%3A%2F%2Frelay.damus.io&secret=b8a30fafa48d4795b6c0eec169a383de&required_commands=pay_invoice%20pay_keysend%20make_invoice%20lookup_invoice&optional_commands=list_transactions&budget=10000%2Fdaily";
+        let uri = "nostr+walletauth://b889ff5b1513b641e2a139f661a661364979c5beee91842f8f0ef42ab558e9d4?relay=wss%3A%2F%2Frelay.damus.io&secret=b8a30fafa48d4795b6c0eec169a383de&request_methods=pay_invoice%2Bpay_keysend%2Bmake_invoice%2Blookup_invoice&optional_commands=list_transactions&budget=10000%2Fdaily";
         
         let result = parse_nwa_uri(uri).unwrap();
         
