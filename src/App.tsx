@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { History, Settings2, Wallet } from "lucide-react";
 import { Route, Switch, useLocation } from "wouter";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ServiceStatus } from "@/lib/tollgate/types";
 import { statusTone } from "@/lib/tollgate/utils";
 import { Button } from "@/components/ui/button";
@@ -92,7 +93,17 @@ const initialFeatures: FeatureState[] = [
   },
 ];
 
-export default function App() {
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+function AppContent() {
   const [location, setLocation] = useLocation();
   const [status, setStatus] = useState<ServiceStatus | null>(null);
   const [walletSummary, setWalletSummary] = useState<WalletSummary | null>(
@@ -595,5 +606,13 @@ export default function App() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AppContent />
+    </QueryClientProvider>
   );
 }

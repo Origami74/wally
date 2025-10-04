@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { Screen } from "@/components/layout/screen";
 import { SectionHeader } from "@/components/layout/section-header";
@@ -59,22 +60,12 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
   const [serviceUrl, setServiceUrl] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [connectionStatus, setConnectionStatus] =
-    useState<RoutstrConnectionStatus>({
-      connected: false,
-      base_url: null,
-      model_count: 0,
-      has_api_key: false,
-    });
-  const [models, setModels] = useState<RoutstrModel[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const [authAmount, setAuthAmount] = useState(defaultAmount);
   const [apiKey, setApiKey] = useState("");
-  const [walletBalance, setWalletBalance] =
-    useState<RoutstrWalletBalance | null>(null);
   const [topUpAmount, setTopUpAmount] = useState(defaultAmount);
   const [walletLoading, setWalletLoading] = useState(false);
 
@@ -92,10 +83,66 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
 
   const [localWalletBalance, setLocalWalletBalance] = useState<number>(0);
 
-  const [providers, setProviders] = useState<NostrProvider[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<string>("");
-  const [loadingProviders, setLoadingProviders] = useState(false);
   const [useManualUrl, setUseManualUrl] = useState(true);
+  const queryClient = useQueryClient();
+
+  const {
+    data: providers = [],
+    isLoading: loadingProviders,
+    refetch: refetchProviders,
+  } = useQuery({
+    queryKey: ["nostr-providers"],
+    queryFn: async () => {
+      const discoveredProviders = await discoverNostrProviders();
+      const sortedProviders = discoveredProviders.sort((a, b) => {
+        if (a.is_official && !b.is_official) return -1;
+        if (!a.is_official && b.is_official) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      return sortedProviders;
+    },
+    staleTime: 5 * 60 * 1000,
+    enabled: !useManualUrl,
+  });
+
+  const {
+    data: connectionStatus = {
+      connected: false,
+      base_url: null,
+      model_count: 0,
+      has_api_key: false,
+    },
+    refetch: refetchConnectionStatus,
+  } = useQuery({
+    queryKey: ["routstr-connection-status"],
+    queryFn: getRoutstrConnectionStatus,
+    refetchInterval: 30000,
+    staleTime: 10000,
+  });
+
+  const { data: models = [], refetch: refetchModels } = useQuery({
+    queryKey: ["routstr-models"],
+    queryFn: getRoutstrModels,
+    enabled: connectionStatus.connected,
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const { data: walletBalance, refetch: refetchWalletBalance } = useQuery({
+    queryKey: ["routstr-wallet-balance"],
+    queryFn: getRoutstrWalletBalance,
+    enabled: connectionStatus.connected && connectionStatus.has_api_key,
+    refetchInterval: 30000,
+    staleTime: 10000,
+  });
+
+  useEffect(() => {
+    if (providers.length > 0 && !selectedProvider) {
+      const defaultProvider =
+        providers.find((p) => p.is_official) || providers[0];
+      setSelectedProvider(defaultProvider.id);
+    }
+  }, [providers, selectedProvider]);
 
   const createTokenFromLocalWallet = async (
     amount_sats: number,
@@ -119,45 +166,7 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     }
   };
 
-  const loadProviders = async () => {
-    setLoadingProviders(true);
-    try {
-      const discoveredProviders = await discoverNostrProviders();
-      const sortedProviders = discoveredProviders.sort((a, b) => {
-        if (a.is_official && !b.is_official) return -1;
-        if (!a.is_official && b.is_official) return 1;
-        return a.name.localeCompare(b.name);
-      });
-      setProviders(sortedProviders);
-      if (sortedProviders.length > 0 && !selectedProvider) {
-        const defaultProvider =
-          sortedProviders.find((p) => p.is_official) || sortedProviders[0];
-        setSelectedProvider(defaultProvider.id);
-      }
-      setLoadingProviders(false);
-    } catch (error) {
-      console.error("Failed to discover providers:", error);
-      setError(`Failed to discover providers: ${error}`);
-    } finally {
-      setLoadingProviders(false);
-    }
-  };
-
-  const refreshConnectionStatus = async () => {
-    try {
-      const status = await getRoutstrConnectionStatus();
-      setConnectionStatus(status);
-      if (status.connected && status.base_url) {
-        setServiceUrl(status.base_url);
-        const modelsData = await getRoutstrModels();
-        setModels(modelsData);
-      }
-    } catch (error) {
-      console.error("Failed to refresh connection status:", error);
-    }
-  };
-
-  const handleConnect = async () => {
+  const handleConnect = () => {
     let urlToConnect = "";
 
     if (useManualUrl) {
@@ -178,23 +187,16 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     setConnecting(true);
     setError(null);
     setSuccessMessage(null);
-    try {
-      await connectToRoutstrService(urlToConnect);
-      await refreshConnectionStatus();
-    } catch (error) {
-      console.error("Failed to connect to Routstr service:", error);
-      setError(`Failed to connect: ${error}`);
-    } finally {
-      setConnecting(false);
-    }
+    connectMutation.mutate(urlToConnect);
   };
 
   const handleDisconnect = async () => {
     try {
       await disconnectFromRoutstrService();
-      setModels([]);
       setSelectedModel("");
-      await refreshConnectionStatus();
+      await refetchConnectionStatus();
+      queryClient.invalidateQueries({ queryKey: ["routstr-models"] });
+      queryClient.invalidateQueries({ queryKey: ["routstr-wallet-balance"] });
     } catch (error) {
       console.error("Failed to disconnect:", error);
       setError(`Failed to disconnect: ${error}`);
@@ -224,45 +226,11 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     setSuccessMessage(null);
     try {
       const cashu_token = await createTokenFromLocalWallet(createAmount);
-
-      const result = await createRoutstrWallet(urlToUse, cashu_token);
-      setCreateServiceUrl("");
-      setApiKey(result.api_key);
-
-      await refreshConnectionStatus();
-      await refreshLocalWalletBalance();
-
-      setSuccessMessage(
-        `Wallet created successfully using ${createAmount.toLocaleString()} sats from local wallet! Balance: ${result.balance} msats`,
-      );
+      createWalletMutation.mutate({ url: urlToUse, token: cashu_token });
     } catch (error) {
-      console.error("Failed to create wallet:", error);
-      let errorMsg = `Failed to create wallet: ${error}`;
-
-      if (errorMsg.includes("Insufficient balance")) {
-        errorMsg += "\n\nPlease add funds to your local wallet first.";
-      }
-
-      setError(errorMsg);
-    } finally {
+      console.error("Failed to create wallet token:", error);
+      setError(`Failed to create wallet token: ${error}`);
       setCreating(false);
-    }
-  };
-
-  const handleRefreshModels = async () => {
-    setRefreshing(true);
-    setError(null);
-    setSuccessMessage(null);
-    try {
-      await refreshRoutstrModels();
-      const modelsData = await getRoutstrModels();
-      setModels(modelsData);
-      await refreshConnectionStatus();
-    } catch (error) {
-      console.error("Failed to refresh models:", error);
-      setError(`Failed to refresh models: ${error}`);
-    } finally {
-      setRefreshing(false);
     }
   };
 
@@ -276,8 +244,8 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       const result = await createBalanceWithToken(cashu_token);
       setApiKey(result.api_key);
 
-      await refreshConnectionStatus();
-      await refreshWalletBalance();
+      await refetchConnectionStatus();
+      await refetchWalletBalance();
       await refreshLocalWalletBalance();
 
       setSuccessMessage(
@@ -297,42 +265,16 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     }
   };
 
-  const refreshWalletBalance = async () => {
-    if (!connectionStatus.has_api_key) return;
-
-    try {
-      const balance = await getRoutstrWalletBalance();
-      setWalletBalance(balance);
-    } catch (error) {
-      console.error("Failed to get wallet balance:", error);
-      setError(`Failed to get wallet balance: ${error}`);
-    }
-  };
-
   const handleTopUpWallet = async () => {
     setWalletLoading(true);
     setError(null);
     setSuccessMessage(null);
     try {
       const cashu_token = await createTokenFromLocalWallet(topUpAmount);
-
-      await topUpRoutstrWallet(cashu_token);
-      await refreshWalletBalance();
-      await refreshLocalWalletBalance();
-
-      setSuccessMessage(
-        `Balance added successfully using ${topUpAmount.toLocaleString()} sats from local wallet!`,
-      );
+      topUpMutation.mutate(cashu_token);
     } catch (error) {
-      console.error("Failed to add balance:", error);
-      let errorMsg = `Failed to add balance: ${error}`;
-
-      if (errorMsg.includes("Insufficient balance")) {
-        errorMsg += "\n\nPlease add funds to your local wallet first.";
-      }
-
-      setError(errorMsg);
-    } finally {
+      console.error("Failed to create topup token:", error);
+      setError(`Failed to create topup token: ${error}`);
       setWalletLoading(false);
     }
   };
@@ -352,7 +294,9 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       if (storedApiKey) {
         setApiKey(storedApiKey);
       } else {
-        loadProviders();
+        if (!useManualUrl) {
+          refetchProviders();
+        }
       }
     } catch (error) {
       console.error("Failed to load stored API key:", error);
@@ -390,7 +334,6 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
 
       await clearRoutstrConfig();
       setApiKey("");
-      setWalletBalance(null);
       setAutoTopupConfig({
         enabled: false,
         min_threshold: 10000,
@@ -398,13 +341,14 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       });
 
       try {
-        await refreshConnectionStatus();
+        await refetchConnectionStatus();
       } catch (statusError) {
         console.log(
           "Expected error during status refresh after token recreation:",
           statusError,
         );
       }
+      queryClient.invalidateQueries({ queryKey: ["routstr-wallet-balance"] });
 
       await refreshLocalWalletBalance();
 
@@ -428,11 +372,13 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
         try {
           await clearRoutstrConfig();
           setApiKey("");
-          setWalletBalance(null);
           setAutoTopupConfig({
             enabled: false,
             min_threshold: 10000,
             target_amount: 50000,
+          });
+          queryClient.invalidateQueries({
+            queryKey: ["routstr-wallet-balance"],
           });
           await refreshLocalWalletBalance();
           setSuccessMessage(
@@ -459,28 +405,78 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
   };
 
   useEffect(() => {
-    refreshConnectionStatus();
     loadStoredApiKey();
     refreshLocalWalletBalance();
   }, []);
 
+  const connectMutation = useMutation({
+    mutationFn: connectToRoutstrService,
+    onSuccess: () => {
+      refetchConnectionStatus();
+      queryClient.invalidateQueries({ queryKey: ["routstr-models"] });
+    },
+    onError: (error) => {
+      console.error("Failed to connect to Routstr service:", error);
+      setError(`Failed to connect: ${error}`);
+    },
+    onSettled: () => {
+      setConnecting(false);
+    },
+  });
+
+  const createWalletMutation = useMutation({
+    mutationFn: async ({ url, token }: { url: string; token: string }) => {
+      return createRoutstrWallet(url, token);
+    },
+    onSuccess: (result) => {
+      setCreateServiceUrl("");
+      setApiKey(result.api_key);
+      refetchConnectionStatus();
+      refreshLocalWalletBalance();
+      queryClient.invalidateQueries({ queryKey: ["routstr-wallet-balance"] });
+      setSuccessMessage(
+        `Wallet created successfully using ${createAmount.toLocaleString()} sats from local wallet! Balance: ${result.balance} msats`,
+      );
+    },
+    onError: (error) => {
+      console.error("Failed to create wallet:", error);
+      let errorMsg = `Failed to create wallet: ${error}`;
+      if (errorMsg.includes("Insufficient balance")) {
+        errorMsg += "\n\nPlease add funds to your local wallet first.";
+      }
+      setError(errorMsg);
+    },
+    onSettled: () => {
+      setCreating(false);
+    },
+  });
+
+  const topUpMutation = useMutation({
+    mutationFn: topUpRoutstrWallet,
+    onSuccess: () => {
+      refetchWalletBalance();
+      refreshLocalWalletBalance();
+      setSuccessMessage(
+        `Balance added successfully using ${topUpAmount.toLocaleString()} sats from local wallet!`,
+      );
+    },
+    onError: (error) => {
+      console.error("Failed to add balance:", error);
+      let errorMsg = `Failed to add balance: ${error}`;
+      if (errorMsg.includes("Insufficient balance")) {
+        errorMsg += "\n\nPlease add funds to your local wallet first.";
+      }
+      setError(errorMsg);
+    },
+    onSettled: () => {
+      setWalletLoading(false);
+    },
+  });
+
   useEffect(() => {
     if (connectionStatus.connected && connectionStatus.has_api_key) {
-      refreshWalletBalance();
       loadAutoTopupConfig();
     }
-  }, [connectionStatus.connected, connectionStatus.has_api_key]);
-
-  useEffect(() => {
-    if (!connectionStatus.connected || !connectionStatus.has_api_key) {
-      return;
-    }
-
-    const interval = setInterval(() => {
-      refreshWalletBalance();
-    }, 30000);
-
-    return () => clearInterval(interval);
   }, [connectionStatus.connected, connectionStatus.has_api_key]);
 
   const selectedModelData = models.find((model) => model.id === selectedModel);
@@ -538,7 +534,7 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
                   Select from discovered providers
                 </Label>
                 <Button
-                  onClick={loadProviders}
+                  onClick={() => refetchProviders()}
                   disabled={
                     loadingProviders || connecting || connectionStatus.connected
                   }
@@ -996,7 +992,14 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
               <CardTitle className="flex items-center justify-between">
                 <span>Available Models</span>
                 <Button
-                  onClick={handleRefreshModels}
+                  onClick={() => {
+                    setRefreshing(true);
+                    Promise.all([
+                      refreshRoutstrModels(),
+                      refetchModels(),
+                      refetchConnectionStatus(),
+                    ]).finally(() => setRefreshing(false));
+                  }}
                   disabled={refreshing}
                   variant="outline"
                   size="sm"
