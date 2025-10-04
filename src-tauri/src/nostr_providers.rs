@@ -143,7 +143,7 @@ impl NostrProviderDiscovery {
         for event in events {
             match self.parse_provider_from_event(&event).await {
                 Ok(provider) => {
-                    if !provider.use_onion && provider.is_online {
+                    if provider.is_online {
                         log::debug!("Successfully parsed online provider: {}", provider.name);
                         providers.push(provider);
                     }
@@ -198,11 +198,7 @@ impl NostrProviderDiscovery {
             use_onion = urls.iter().any(|url| url.contains(".onion"));
         }
 
-        let is_online = if !use_onion {
-            self.check_provider_online(&urls[0]).await
-        } else {
-            false
-        };
+        let is_online = self.check_provider_online(&urls[0]).await;
 
         Ok(NostrProvider {
             id: event.id.to_hex(),
@@ -223,6 +219,10 @@ impl NostrProviderDiscovery {
     }
 
     async fn check_provider_online(&self, url: &str) -> bool {
+        if url.ends_with(".onion") || url.contains("localhost") {
+            false;
+        }
+
         let formatted_url = if url.starts_with("http://") || url.starts_with("https://") {
             url.trim_end_matches('/').to_string()
         } else {

@@ -44,7 +44,10 @@ import {
   getStoredRoutstrApiKey,
   clearRoutstrConfig,
 } from "@/lib/routstr/api";
-import { discoverNostrProviders, type NostrProvider } from "@/lib/nostr-providers";
+import {
+  discoverNostrProviders,
+  type NostrProvider,
+} from "@/lib/nostr-providers";
 
 type RoutstrScreenProps = {
   copyToClipboard: (value: string) => Promise<void> | void;
@@ -124,6 +127,7 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       if (discoveredProviders.length > 0 && !selectedProvider) {
         setSelectedProvider(discoveredProviders[0].id);
       }
+      setLoadingProviders(false);
     } catch (error) {
       console.error("Failed to discover providers:", error);
       setError(`Failed to discover providers: ${error}`);
@@ -156,7 +160,7 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       }
       urlToConnect = serviceUrl.trim();
     } else {
-      const provider = providers.find(p => p.id === selectedProvider);
+      const provider = providers.find((p) => p.id === selectedProvider);
       if (!provider || !provider.urls.length) {
         setError("Please select a valid provider");
         return;
@@ -200,7 +204,7 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       }
       urlToUse = createServiceUrl.trim();
     } else {
-      const provider = providers.find(p => p.id === selectedProvider);
+      const provider = providers.find((p) => p.id === selectedProvider);
       if (!provider || !provider.urls.length) {
         setError("Please select a valid provider");
         return;
@@ -522,10 +526,14 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
                   className="w-4 h-4"
                   disabled={connecting || connectionStatus.connected}
                 />
-                <Label htmlFor="select-provider">Select from discovered providers</Label>
+                <Label htmlFor="select-provider">
+                  Select from discovered providers
+                </Label>
                 <Button
                   onClick={loadProviders}
-                  disabled={loadingProviders || connecting || connectionStatus.connected}
+                  disabled={
+                    loadingProviders || connecting || connectionStatus.connected
+                  }
                   variant="outline"
                   size="sm"
                 >
@@ -537,8 +545,14 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
                 <div className="space-y-2 ml-6">
                   <Label>Available Providers</Label>
                   {providers.length > 0 ? (
-                    <Select value={selectedProvider} onValueChange={setSelectedProvider}>
-                      <SelectTrigger className="w-full" disabled={connecting || connectionStatus.connected}>
+                    <Select
+                      value={selectedProvider}
+                      onValueChange={setSelectedProvider}
+                    >
+                      <SelectTrigger
+                        className="w-full"
+                        disabled={connecting || connectionStatus.connected}
+                      >
                         <SelectValue placeholder="Choose a provider..." />
                       </SelectTrigger>
                       <SelectContent
@@ -553,7 +567,9 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
                         {providers.map((provider) => (
                           <SelectItem key={provider.id} value={provider.id}>
                             <div className="flex flex-col">
-                              <span className="font-medium">{provider.name}</span>
+                              <span className="font-medium">
+                                {provider.name}
+                              </span>
                               <span className="text-xs text-muted-foreground">
                                 {provider.urls[0]}
                               </span>
@@ -564,7 +580,9 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
                     </Select>
                   ) : (
                     <p className="text-sm text-muted-foreground">
-                      {loadingProviders ? "Discovering providers..." : "No providers found"}
+                      {loadingProviders
+                        ? "Discovering providers..."
+                        : "No providers found"}
                     </p>
                   )}
                 </div>

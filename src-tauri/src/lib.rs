@@ -447,10 +447,10 @@ pub fn run() {
         app.manage(service_arc);
         app.manage(nwc_arc);
         app.manage(routstr_arc);
-        app.manage(rt);
+        app.manage(rt.clone());
         app.manage(pending_connections);
 
-        tokio::spawn(start_provider_monitoring());
+        rt.spawn(start_provider_monitoring());
 
         #[cfg(target_os = "macos")]
         {
