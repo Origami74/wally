@@ -10,10 +10,10 @@ use lightning_invoice::Bolt11Invoice;
 use nostr_sdk::{
     nips::{
         nip04,
-        nip47::{self, MakeInvoiceResponseResult, NostrWalletConnectURI},
+        nip47::{self, NostrWalletConnectURI},
     },
-    Client, Event, EventBuilder, Filter, JsonUtil, Keys, Kind, PublicKey, SecretKey,
-    SingleLetterTag, Tag, TagKind, TagStandard, Timestamp, Url, Alphabet,
+    Client, Event, EventBuilder, Filter, JsonUtil, Keys, Kind, PublicKey, RelayUrl, SecretKey,
+    SingleLetterTag, Tag, TagStandard, Timestamp, Url, Alphabet,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -184,16 +184,15 @@ impl NostrWalletConnect {
         let event = EventBuilder::new(
             Kind::WalletConnectInfo,
             "get_balance make_invoice pay_invoice receive_cashu pay_cashu_request",
-            vec![],
         )
-        .to_event(&self.keys)?;
+        .sign_with_keys(&self.keys)?;
         Ok(event)
     }
 
     /// Publishes the NWC info event.
     pub async fn publish_info_event(&self) -> Result<(), Error> {
         let event = self.info_event()?;
-        self.client.send_event(event).await?;
+        self.client.send_event(&event).await?;
         log::info!("Published NWC info event");
         Ok(())
     }
@@ -226,7 +225,9 @@ impl NostrWalletConnect {
             log::debug!("Subscribing with {} filter(s)", filters.len());
             
             // Subscribe to events matching our filters
-            let subscription_output = match self.client.subscribe(filters.clone(), None).await {
+            // For now, just use the first filter - we may need to subscribe multiple times for multiple filters
+            let filter = filters.first().cloned().unwrap_or_else(|| Filter::new());
+            let subscription_output = match self.client.subscribe(filter, None).await {
                 Ok(sub_output) => {
                     log::info!("Subscribed to NWC events with subscription ID: {:?}", sub_output.val);
                     sub_output
@@ -257,7 +258,7 @@ impl NostrWalletConnect {
                                         match self.handle_event(*event).await {
                                             Ok(Some(response)) => {
                                                 log::info!("Sending response event: {}", response.id);
-                                                if let Err(e) = self.client.send_event(response).await {
+                                                if let Err(e) = self.client.send_event(&response).await {
                                                     log::error!("Failed to send response: {}", e);
                                                 }
                                             }
@@ -270,9 +271,9 @@ impl NostrWalletConnect {
                                         }
                                     }
                                 }
-                                RelayPoolNotification::RelayStatus { relay_url, status } => {
-                                    log::debug!("Relay {} status: {:?}", relay_url, status);
-                                }
+                                // RelayPoolNotification::RelayStatus { relay_url, status } => {
+                                //     log::debug!("Relay {} status: {:?}", relay_url, status);
+                                // }
                                 _ => {}
                             }
                         }
@@ -283,7 +284,7 @@ impl NostrWalletConnect {
                         if new_filters.len() != filters.len() || new_filters.is_empty() {
                             log::info!("Connection count changed, resubscribing...");
                             // Unsubscribe from old filters
-                            let _ = self.client.unsubscribe(subscription_output.val.clone()).await;
+                            let _ = self.client.unsubscribe(&subscription_output.val).await;
                             break; // Break inner loop to resubscribe with new filters
                         }
                     }
@@ -300,13 +301,18 @@ impl NostrWalletConnect {
         }
 
         // Get the target pubkey from the 'p' tag
-        let target_pubkey_str = event
-            .get_tag_content(TagKind::SingleLetter(SingleLetterTag::lowercase(
-                Alphabet::P,
-            )))
+        let target_pubkey_str = event.tags.iter()
+            .find_map(|tag| {
+                let tag_vec = tag.as_slice();
+                if tag_vec.len() >= 2 && tag_vec[0] == "p" {
+                    Some(tag_vec[1].clone())
+                } else {
+                    None
+                }
+            })
             .ok_or(Error::MissingServiceKey)?;
             
-        let _target_pubkey = PublicKey::from_str(target_pubkey_str)?;
+        let _target_pubkey = PublicKey::from_str(&target_pubkey_str)?;
 
         log::info!(
             "Received NWC request: event_id={}, from={}, to={}", 
@@ -523,12 +529,12 @@ impl NostrWalletConnect {
         let res_event = EventBuilder::new(
             Kind::WalletConnectResponse,
             encrypted_response,
-            vec![
-                Tag::from_standardized(TagStandard::public_key(event.pubkey)),
-                Tag::from_standardized(TagStandard::event(event.id)),
-            ],
         )
-        .to_event(signing_keys)?;
+        .tags(vec![
+            Tag::from_standardized(TagStandard::public_key(event.pubkey)),
+            Tag::from_standardized(TagStandard::event(event.id)),
+        ])
+        .sign_with_keys(signing_keys)?;
 
         log::info!(
             "📤 Created response event: id={}, kind={}, author={}, p_tag={}, e_tag={}",
@@ -628,12 +634,12 @@ impl NostrWalletConnect {
         let res_event = EventBuilder::new(
             Kind::WalletConnectResponse,
             encrypted_response,
-            vec![
-                Tag::from_standardized(TagStandard::public_key(event.pubkey)),
-                Tag::from_standardized(TagStandard::event(event.id)),
-            ],
         )
-        .to_event(signing_keys)?;
+        .tags(vec![
+            Tag::from_standardized(TagStandard::public_key(event.pubkey)),
+            Tag::from_standardized(TagStandard::event(event.id)),
+        ])
+        .sign_with_keys(signing_keys)?;
         
         // Cache response
         {
@@ -725,12 +731,12 @@ impl NostrWalletConnect {
         let res_event = EventBuilder::new(
             Kind::WalletConnectResponse,
             encrypted_response,
-            vec![
-                Tag::from_standardized(TagStandard::public_key(event.pubkey)),
-                Tag::from_standardized(TagStandard::event(event.id)),
-            ],
         )
-        .to_event(signing_keys)?;
+        .tags(vec![
+            Tag::from_standardized(TagStandard::public_key(event.pubkey)),
+            Tag::from_standardized(TagStandard::event(event.id)),
+        ])
+        .sign_with_keys(signing_keys)?;
         
         // Cache response
         {
@@ -769,7 +775,7 @@ impl NostrWalletConnect {
                                 result_type: nip47::Method::GetBalance,
                                 error: None,
                                 result: Some(nip47::ResponseResult::GetBalance(
-                                    nip47::GetBalanceResponseResult {
+                                    nip47::GetBalanceResponse {
                                         balance: balance_info.balance,
                                     },
                                 )),
@@ -802,7 +808,7 @@ impl NostrWalletConnect {
                                 result_type: nip47::Method::MakeInvoice,
                                 error: None,
                                 result: Some(nip47::ResponseResult::MakeInvoice(
-                                    MakeInvoiceResponseResult {
+                                    nip47::MakeInvoiceResponse {
                                         invoice: invoice_info.request,
                                         payment_hash: invoice.payment_hash().to_string(),
                                     },
@@ -833,8 +839,9 @@ impl NostrWalletConnect {
                             result_type: nip47::Method::PayInvoice,
                             error: None,
                             result: Some(nip47::ResponseResult::PayInvoice(
-                                nip47::PayInvoiceResponseResult {
+                                nip47::PayInvoiceResponse {
                                     preimage: payment_result.preimage.unwrap_or_default(),
+                                    fees_paid: Some(payment_result.fee_paid),
                                 },
                             )),
                         },
@@ -1075,11 +1082,11 @@ impl NostrWalletConnect {
         let event = EventBuilder::new(
             Kind::from(33194),
             encrypted_content,
-            vec![
-                Tag::from_standardized(TagStandard::Identifier(app_pubkey.to_string())),
-            ],
         )
-        .to_event(&connection.keys)?;
+        .tags(vec![
+            Tag::from_standardized(TagStandard::Identifier(app_pubkey.to_string())),
+        ])
+        .sign_with_keys(&connection.keys)?;
         
         // Add specified relays if they're different from our default
         for relay_url in relays {
@@ -1091,7 +1098,7 @@ impl NostrWalletConnect {
         }
         
         // Broadcast the event
-        self.client.send_event(event.clone()).await?;
+        self.client.send_event(&event).await?;
         log::info!("Successfully broadcasted NWA approval event: {}", event.id);
         
         Ok(())
@@ -1188,7 +1195,7 @@ impl WalletConnection {
                 .since(since)
                 .custom_tag(
                     SingleLetterTag::lowercase(Alphabet::P),
-                    vec![self.keys.public_key()],
+                    self.keys.public_key().to_string(),
                 )
         } else {
             // Standard NWC: filter events authored by connection, tagged to service pubkey
@@ -1198,7 +1205,7 @@ impl WalletConnection {
                 .since(since)
                 .custom_tag(
                     SingleLetterTag::lowercase(Alphabet::P),
-                    vec![service_pubkey],
+                    service_pubkey.to_string(),
                 )
         }
     }
@@ -1228,9 +1235,10 @@ impl WalletConnection {
 
     /// Gets the Wallet Connect URI for this connection.
     pub fn uri(&self, service_pubkey: PublicKey, relay: Url) -> Result<String, Error> {
+        let relay_url = RelayUrl::parse(&relay.to_string()).map_err(|e| Error::InvalidUrl(e.to_string()))?;
         let uri = NostrWalletConnectURI::new(
             service_pubkey,
-            relay,
+            vec![relay_url],
             self.keys.secret_key().clone(),
             None,
         );
@@ -1313,6 +1321,9 @@ pub enum Error {
     
     #[error("Invalid event kind")]
     InvalidKind,
+
+    #[error("Invalid URL: {0}")]
+    InvalidUrl(String),
     
     #[error("Invalid service key: {0}")]
     InvalidServiceKey(PublicKey),
