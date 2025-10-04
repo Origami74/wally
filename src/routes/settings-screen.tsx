@@ -24,7 +24,7 @@ type SettingsScreenProps = {
   onReset: () => void;
   handleFeatureUpdate: (
     id: FeatureState["id"],
-    updater: (feature: FeatureState) => FeatureState
+    updater: (feature: FeatureState) => FeatureState,
   ) => void;
   copyToClipboard: (value: string) => Promise<void> | void;
   periodMeta: PeriodMetaFn;
@@ -96,60 +96,61 @@ export function SettingsScreen({
           .map((id) => features.find((feature) => feature.id === id))
           .filter((feature): feature is FeatureState => Boolean(feature))
           .map((feature) => {
-            const isComingSoon = feature.id === "402" || feature.id === "routstr";
+            const isComingSoon = feature.id === "402";
             const isToggleDisabled = isComingSoon;
             const navigateToDebug = () => {
               if (feature.id === "tollgate") setLocation("/debug");
               if (feature.id === "nwc") setLocation("/connections");
+              if (feature.id === "routstr") setLocation("/routstr");
             };
 
             return (
-          <Card
-            key={feature.id}
-            className="space-y-4 border border-dashed border-primary/20 bg-background/90 p-4"
-          >
-            <div className="flex items-start gap-3">
-              <Checkbox
-                id={`${feature.id}-checkbox`}
-                checked={feature.enabled}
-                onCheckedChange={() => {
-                  if (isToggleDisabled) return;
-                  handleFeatureUpdate(feature.id, (current) => ({
-                    ...current,
-                    enabled: !current.enabled,
-                  }));
-                }}
-                className="h-5 w-5 rounded-md border-border"
-                disabled={isToggleDisabled}
-              />
-              <div className="space-y-1">
-                <Label
-                  htmlFor={`${feature.id}-checkbox`}
-                  className="text-base font-semibold"
-                >
-                  {feature.title}
-                </Label>
-                <p className="text-sm text-muted-foreground">
-                  {feature.description}
-                  {isComingSoon ? " (Coming soon)" : null}
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="ml-auto h-auto rounded-full px-3 py-1 text-xs"
-                onClick={() => {
-                  if (isToggleDisabled) return;
-                  handleFeatureUpdate(feature.id, (current) => ({
-                    ...current,
-                    enabled: !current.enabled,
-                  }));
-                }}
-                disabled={isToggleDisabled}
+              <Card
+                key={feature.id}
+                className="space-y-4 border border-dashed border-primary/20 bg-background/90 p-4"
               >
-                {feature.enabled ? "Disable" : "Enable"}
-              </Button>
-            </div>
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id={`${feature.id}-checkbox`}
+                    checked={feature.enabled}
+                    onCheckedChange={() => {
+                      if (isToggleDisabled) return;
+                      handleFeatureUpdate(feature.id, (current) => ({
+                        ...current,
+                        enabled: !current.enabled,
+                      }));
+                    }}
+                    className="h-5 w-5 rounded-md border-border"
+                    disabled={isToggleDisabled}
+                  />
+                  <div className="space-y-1">
+                    <Label
+                      htmlFor={`${feature.id}-checkbox`}
+                      className="text-base font-semibold"
+                    >
+                      {feature.title}
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      {feature.description}
+                      {isComingSoon ? " (Coming soon)" : null}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="ml-auto h-auto rounded-full px-3 py-1 text-xs"
+                    onClick={() => {
+                      if (isToggleDisabled) return;
+                      handleFeatureUpdate(feature.id, (current) => ({
+                        ...current,
+                        enabled: !current.enabled,
+                      }));
+                    }}
+                    disabled={isToggleDisabled}
+                  >
+                    {feature.enabled ? "Disable" : "Enable"}
+                  </Button>
+                </div>
 
             {!isComingSoon ? (
               <div className="grid gap-4">
@@ -182,23 +183,39 @@ export function SettingsScreen({
               </div>
             ) : null}
 
-            <div className="flex justify-end">
-              {feature.id === "tollgate" ? (
-                <Button variant="outline" size="sm" onClick={navigateToDebug}>
-                  Tollgate Settings
-                </Button>
-              ) : feature.id === "nwc" ? (
-                <Button variant="outline" size="sm" onClick={navigateToDebug}>
-                  NWC Settings
-                </Button>
-              ) : (
-                <Button variant="outline" size="sm" disabled>
-                  Coming Soon
-                </Button>
-              )}
-            </div>
-          </Card>
-        );
+                <div className="flex justify-end">
+                  {feature.id === "tollgate" ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={navigateToDebug}
+                    >
+                      Tollgate Settings
+                    </Button>
+                  ) : feature.id === "nwc" ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={navigateToDebug}
+                    >
+                      NWC Settings
+                    </Button>
+                  ) : feature.id === "routstr" ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={navigateToDebug}
+                    >
+                      Routstr Settings
+                    </Button>
+                  ) : (
+                    <Button variant="outline" size="sm" disabled>
+                      Coming Soon
+                    </Button>
+                  )}
+                </div>
+              </Card>
+            );
           })}
       </div>
     </Screen>

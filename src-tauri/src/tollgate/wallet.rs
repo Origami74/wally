@@ -823,6 +823,67 @@ impl TollGateWallet {
         })
     }
 
+    pub async fn create_external_token(&self, amount_sats: u64, mint_url: Option<String>) -> TollGateResult<String> {
+        let target_mint = if let Some(mint) = mint_url {
+            mint
+        } else {
+            let summary = self.summary().await?;
+            if summary.balances.is_empty() {
+                return Err(TollGateError::wallet("No mints configured".to_string()));
+            }
+
+            let mut selected_mint = None;
+            for wallet_balance in &summary.balances {
+                if wallet_balance.balance >= amount_sats {
+                    selected_mint = Some(wallet_balance.mint_url.clone());
+                    break;
+                }
+            }
+
+            match selected_mint {
+                Some(mint) => mint,
+                None => {
+                    let total_balance: u64 = summary.balances.iter().map(|b| b.balance).sum();
+                    return Err(TollGateError::wallet(format!(
+                        "Insufficient balance: {} sats available across all mints, {} sats requested",
+                        total_balance, amount_sats
+                    )));
+                }
+            }
+        };
+
+        let balance = self.get_balance(&target_mint).await?;
+        if balance < amount_sats {
+            return Err(TollGateError::wallet(format!(
+                "Insufficient balance: {} sats available, {} sats requested",
+                balance, amount_sats
+            )));
+        }
+
+        let wallet = self.wallets.get(&target_mint).ok_or_else(|| {
+            TollGateError::wallet(format!("Wallet not found for mint: {}", target_mint))
+        })?;
+
+        let prepared_send = wallet
+            .prepare_send(
+                cdk::Amount::from(amount_sats),
+                cdk::wallet::SendOptions {
+                    include_fee: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|e| TollGateError::wallet(format!("Failed to prepare token: {}", e)))?;
+
+        let token = prepared_send
+            .confirm(None)
+            .await
+            .map_err(|e| TollGateError::wallet(format!("Failed to create token: {}", e)))?;
+
+        log::info!("Created external token: {} sats from mint {}", amount_sats, target_mint);
+        Ok(token.to_string())
+    }
+
     /// Request a mint quote for loading the wallet
     pub async fn request_mint_quote(
         &self,

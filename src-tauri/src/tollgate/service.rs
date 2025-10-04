@@ -692,6 +692,11 @@ impl TollGateService {
         wallet.receive_cashu_token(token).await
     }
 
+    pub async fn create_external_token(&self, amount_sats: u64, mint_url: Option<String>) -> TollGateResult<String> {
+        let wallet = self.wallet.lock().await;
+        wallet.create_external_token(amount_sats, mint_url).await
+    }
+
     /// Detect if current network is a TollGate
     pub async fn detect_tollgate(
         &self,

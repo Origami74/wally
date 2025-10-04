@@ -30,6 +30,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { RoutstrScreen } from "./routes/routstr-screen";
 
 type PendingConnectionRequest = {
   request_id: string;
@@ -94,28 +95,34 @@ const initialFeatures: FeatureState[] = [
 export default function App() {
   const [location, setLocation] = useLocation();
   const [status, setStatus] = useState<ServiceStatus | null>(null);
-  const [walletSummary, setWalletSummary] = useState<WalletSummary | null>(null);
-  const [transactions, setTransactions] = useState<WalletTransactionEntry[]>([]);
+  const [walletSummary, setWalletSummary] = useState<WalletSummary | null>(
+    null,
+  );
+  const [transactions, setTransactions] = useState<WalletTransactionEntry[]>(
+    [],
+  );
   const [mintInput, setMintInput] = useState("");
   const [npubInput, setNpubInput] = useState("");
   const [savingMint, setSavingMint] = useState(false);
   const [sendRequest, setSendRequest] = useState("");
   const [features, setFeatures] = useState<FeatureState[]>(initialFeatures);
-  const [pendingConnection, setPendingConnection] = useState<PendingConnectionRequest | null>(null);
+  const [pendingConnection, setPendingConnection] =
+    useState<PendingConnectionRequest | null>(null);
 
   const periodMeta = useCallback(
     (period: Period) =>
       periods.find((item) => item.value === period) ?? periods[0],
-    []
+    [],
   );
 
   const refreshStatus = useCallback(async () => {
     try {
-      const [statusResult, summaryResult, transactionsResult] = await Promise.all([
-        invoke<ServiceStatus>("get_tollgate_status"),
-        fetchWalletSummary(),
-        fetchWalletTransactions(),
-      ]);
+      const [statusResult, summaryResult, transactionsResult] =
+        await Promise.all([
+          invoke<ServiceStatus>("get_tollgate_status"),
+          fetchWalletSummary(),
+          fetchWalletTransactions(),
+        ]);
 
       setStatus(statusResult);
       setWalletSummary(summaryResult);
@@ -126,7 +133,8 @@ export default function App() {
           setMintInput(summaryResult.default_mint);
         } else {
           const fallbackMint =
-            statusResult.current_network?.advertisement?.pricing_options?.[0]?.mint_url ?? "";
+            statusResult.current_network?.advertisement?.pricing_options?.[0]
+              ?.mint_url ?? "";
           if (fallbackMint) setMintInput(fallbackMint);
         }
       }
@@ -145,8 +153,8 @@ export default function App() {
         prev.map((feature) =>
           feature.id === "tollgate" && statusResult.active_sessions?.[0]
             ? { ...feature, spent: statusResult.active_sessions[0].total_spent }
-            : feature
-        )
+            : feature,
+        ),
       );
     } catch (error) {
       console.error("Failed to refresh tollgate status", error);
@@ -160,22 +168,16 @@ export default function App() {
     const initialise = async () => {
       await refreshStatus();
       try {
-        const connected = await listen(
-          "network-connected",
-          async () => {
-            if (!mounted) return;
-            await refreshStatus();
-          }
-        );
+        const connected = await listen("network-connected", async () => {
+          if (!mounted) return;
+          await refreshStatus();
+        });
         listeners.push(connected);
 
-        const disconnected = await listen(
-          "network-disconnected",
-          async () => {
-            if (!mounted) return;
-            await refreshStatus();
-          }
-        );
+        const disconnected = await listen("network-disconnected", async () => {
+          if (!mounted) return;
+          await refreshStatus();
+        });
         listeners.push(disconnected);
 
         const networkStatusChanged = await listen(
@@ -184,7 +186,7 @@ export default function App() {
             if (!mounted) return;
             console.log("App: Network status changed:", event.payload);
             await refreshStatus();
-          }
+          },
         );
         listeners.push(networkStatusChanged);
 
@@ -194,7 +196,7 @@ export default function App() {
             if (!mounted) return;
             console.log("App: Tollgate detected:", event.payload);
             await refreshStatus();
-          }
+          },
         );
         listeners.push(tollgateDetected);
 
@@ -204,7 +206,7 @@ export default function App() {
             if (!mounted) return;
             console.log("App: Connection request received:", event.payload);
             setPendingConnection(event.payload as PendingConnectionRequest);
-          }
+          },
         );
         listeners.push(nwcConnectionRequest);
       } catch (error) {
@@ -238,13 +240,13 @@ export default function App() {
   const handleFeatureUpdate = useCallback(
     (
       id: FeatureState["id"],
-      updater: (feature: FeatureState) => FeatureState
+      updater: (feature: FeatureState) => FeatureState,
     ) => {
       setFeatures((prev) =>
-        prev.map((feature) => (feature.id === id ? updater(feature) : feature))
+        prev.map((feature) => (feature.id === id ? updater(feature) : feature)),
       );
     },
-    []
+    [],
   );
 
   const copyToClipboard = useCallback(async (value: string) => {
@@ -269,7 +271,9 @@ export default function App() {
     if (!pendingConnection) return;
 
     try {
-      await invoke("nwc_approve_connection", { requestId: pendingConnection.request_id });
+      await invoke("nwc_approve_connection", {
+        requestId: pendingConnection.request_id,
+      });
       setPendingConnection(null);
       await refreshStatus();
       setLocation("/");
@@ -285,7 +289,9 @@ export default function App() {
     if (!pendingConnection) return;
 
     try {
-      await invoke("nwc_reject_connection", { requestId: pendingConnection.request_id });
+      await invoke("nwc_reject_connection", {
+        requestId: pendingConnection.request_id,
+      });
       setPendingConnection(null);
       setLocation("/");
     } catch (error) {
@@ -297,13 +303,15 @@ export default function App() {
   const statusBadges: StatusBadge[] = useMemo(() => {
     const badges: StatusBadge[] = [];
 
-    const tollgateFeatureEnabled = features.find((feature) => feature.id === "tollgate")?.enabled;
+    const tollgateFeatureEnabled = features.find(
+      (feature) => feature.id === "tollgate",
+    )?.enabled;
     if (tollgateFeatureEnabled) {
       const tollgateState = currentSession
         ? String(currentSession.status)
         : currentNetwork?.is_tollgate
-        ? "Available"
-        : "Idle";
+          ? "Available"
+          : "Idle";
 
       badges.push({
         id: "tollgate",
@@ -357,31 +365,32 @@ export default function App() {
 
   const isHome = location === "/";
 
-  const navButtons = location === "/receive"
-    ? []
-    : isHome
-    ? [
-        {
-          id: "settings",
-          icon: <Settings2 className="h-5 w-5" />,
-          action: goSettings,
-          label: "Open settings",
-        },
-        {
-          id: "history",
-          icon: <History className="h-5 w-5" />,
-          action: goHistory,
-          label: "View history",
-        },
-      ]
-    : [
-        {
-          id: "home",
-          icon: <Wallet className="h-5 w-5" />,
-          action: goHome,
-          label: "Back to wallet",
-        },
-      ];
+  const navButtons =
+    location === "/receive"
+      ? []
+      : isHome
+        ? [
+            {
+              id: "settings",
+              icon: <Settings2 className="h-5 w-5" />,
+              action: goSettings,
+              label: "Open settings",
+            },
+            {
+              id: "history",
+              icon: <History className="h-5 w-5" />,
+              action: goHistory,
+              label: "View history",
+            },
+          ]
+        : [
+            {
+              id: "home",
+              icon: <Wallet className="h-5 w-5" />,
+              action: goHome,
+              label: "Back to wallet",
+            },
+          ];
 
   return (
     <div
@@ -450,13 +459,17 @@ export default function App() {
                   setMintInput(walletSummary.default_mint);
                 } else {
                   setMintInput(
-                    status?.current_network?.advertisement?.pricing_options?.[0]?.mint_url ?? ""
+                    status?.current_network?.advertisement?.pricing_options?.[0]
+                      ?.mint_url ?? "",
                   );
                 }
                 if (walletSummary?.npub) {
                   setNpubInput(walletSummary.npub);
                 } else {
-                  setNpubInput(status?.current_network?.advertisement?.tollgate_pubkey ?? "");
+                  setNpubInput(
+                    status?.current_network?.advertisement?.tollgate_pubkey ??
+                      "",
+                  );
                 }
               }}
               handleFeatureUpdate={handleFeatureUpdate}
@@ -469,19 +482,23 @@ export default function App() {
           </Route>
 
           <Route path="/debug">
-            <DebugScreen
-              status={status}
-              copyToClipboard={copyToClipboard}
-            />
+            <DebugScreen status={status} copyToClipboard={copyToClipboard} />
           </Route>
 
           <Route path="/connections">
             <ConnectionsScreen copyToClipboard={copyToClipboard} />
           </Route>
+
+          <Route path="/routstr">
+            <RoutstrScreen copyToClipboard={copyToClipboard} />
+          </Route>
         </Switch>
       </main>
 
-      <Dialog open={!!pendingConnection} onOpenChange={(open) => !open && setPendingConnection(null)}>
+      <Dialog
+        open={!!pendingConnection}
+        onOpenChange={(open) => !open && setPendingConnection(null)}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Wallet Connection Request</DialogTitle>
@@ -514,15 +531,21 @@ export default function App() {
                 <div>
                   <p className="mb-1 text-sm font-medium">Required Commands</p>
                   <p className="text-xs text-muted-foreground">
-                    {pendingConnection.nwa_request.required_commands.join(", ") || "None"}
+                    {pendingConnection.nwa_request.required_commands.join(
+                      ", ",
+                    ) || "None"}
                   </p>
                 </div>
 
                 {pendingConnection.nwa_request.optional_commands.length ? (
                   <div>
-                    <p className="mb-1 text-sm font-medium">Optional Commands</p>
+                    <p className="mb-1 text-sm font-medium">
+                      Optional Commands
+                    </p>
                     <p className="text-xs text-muted-foreground">
-                      {pendingConnection.nwa_request.optional_commands.join(", ")}
+                      {pendingConnection.nwa_request.optional_commands.join(
+                        ", ",
+                      )}
                     </p>
                   </div>
                 ) : null}
@@ -540,7 +563,9 @@ export default function App() {
                   <p className="mb-1 text-sm font-medium">Relays</p>
                   <div className="space-y-1 text-xs text-muted-foreground">
                     {pendingConnection.nwa_request.relays.map((relay, idx) => (
-                      <p key={idx} className="font-mono">{relay}</p>
+                      <p key={idx} className="font-mono">
+                        {relay}
+                      </p>
                     ))}
                   </div>
                 </div>
@@ -548,11 +573,14 @@ export default function App() {
             ) : (
               <div>
                 <p className="text-sm text-muted-foreground">
-                  A client is requesting a standard Nostr Wallet Connect connection. Approving will
-                  generate a connection string the client can use to interact with your wallet.
+                  A client is requesting a standard Nostr Wallet Connect
+                  connection. Approving will generate a connection string the
+                  client can use to interact with your wallet.
                 </p>
                 <div className="mt-4 rounded-md bg-muted p-3">
-                  <p className="text-xs text-muted-foreground">Default budget: 1,000 sats / day</p>
+                  <p className="text-xs text-muted-foreground">
+                    Default budget: 1,000 sats / day
+                  </p>
                 </div>
               </div>
             )}
