@@ -78,13 +78,13 @@ fn parse_tags_to_map(tags: &Tags) -> HashMap<String, Vec<String>> {
 
 impl NostrProviderDiscovery {
     pub async fn new() -> Result<Self> {
-        let relays = DEFAULT_RELAYS.iter().map(|&s| s.to_string()).collect();
+        let relays: Vec<String> = DEFAULT_RELAYS.iter().map(|&s| s.to_string()).collect();
         let client = Client::default();
         let http_client = reqwest::Client::builder()
             .timeout(Duration::from_secs(10))
             .build()?;
 
-        for relay in &relays {
+        for relay in relays.iter() {
             if let Err(e) = client.add_relay(relay).await {
                 log::warn!("Failed to add relay {}: {}", relay, e);
             }
