@@ -123,9 +123,16 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     setLoadingProviders(true);
     try {
       const discoveredProviders = await discoverNostrProviders();
-      setProviders(discoveredProviders);
-      if (discoveredProviders.length > 0 && !selectedProvider) {
-        setSelectedProvider(discoveredProviders[0].id);
+      const sortedProviders = discoveredProviders.sort((a, b) => {
+        if (a.is_official && !b.is_official) return -1;
+        if (!a.is_official && b.is_official) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      setProviders(sortedProviders);
+      if (sortedProviders.length > 0 && !selectedProvider) {
+        const defaultProvider =
+          sortedProviders.find((p) => p.is_official) || sortedProviders[0];
+        setSelectedProvider(defaultProvider.id);
       }
       setLoadingProviders(false);
     } catch (error) {
@@ -344,6 +351,8 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       const storedApiKey = await getStoredRoutstrApiKey();
       if (storedApiKey) {
         setApiKey(storedApiKey);
+      } else {
+        loadProviders();
       }
     } catch (error) {
       console.error("Failed to load stored API key:", error);
@@ -453,7 +462,6 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     refreshConnectionStatus();
     loadStoredApiKey();
     refreshLocalWalletBalance();
-    loadProviders();
   }, []);
 
   useEffect(() => {
@@ -566,11 +574,18 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
                       >
                         {providers.map((provider) => (
                           <SelectItem key={provider.id} value={provider.id}>
-                            <div className="flex flex-col">
-                              <span className="font-medium">
-                                {provider.name}
-                              </span>
-                              <span className="text-xs text-muted-foreground">
+                            <div className="flex flex-col justify-start">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">
+                                  {provider.name}
+                                </span>
+                                {provider.is_official && (
+                                  <Badge tone="success" className="py-0">
+                                    Official
+                                  </Badge>
+                                )}
+                              </div>
+                              <span className="text-xs text-muted-foreground self-start">
                                 {provider.urls[0]}
                               </span>
                             </div>

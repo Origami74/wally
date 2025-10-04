@@ -14,6 +14,7 @@ export interface NostrProvider {
   zaps: number;
   use_onion: boolean;
   is_online: boolean;
+  is_official: boolean;
 }
 
 export async function discoverNostrProviders(): Promise<NostrProvider[]> {

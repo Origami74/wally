@@ -4,7 +4,6 @@ use nostr_sdk::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
-use tokio::time::interval;
 
 const PROVIDER_ANNOUNCEMENT_KIND: u16 = 38421;
 
@@ -43,6 +42,7 @@ pub struct NostrProvider {
     pub zaps: i32,
     pub use_onion: bool,
     pub is_online: bool,
+    pub is_official: bool,
 }
 
 pub struct NostrProviderDiscovery {
@@ -199,6 +199,7 @@ impl NostrProviderDiscovery {
         }
 
         let is_online = self.check_provider_online(&urls[0]).await;
+        let is_official = urls.iter().any(|url| url.contains("api.routstr.com"));
 
         Ok(NostrProvider {
             id: event.id.to_hex(),
@@ -215,12 +216,33 @@ impl NostrProviderDiscovery {
             zaps: 0,
             use_onion,
             is_online,
+            is_official,
         })
     }
 
+    fn is_valid_public_url(&self, url: &str) -> bool {
+        if url.ends_with(".onion") || url.contains("localhost") || url.contains("127.0.0.1") {
+            return false;
+        }
+
+        if url.contains("192.168.") || url.contains("10.") || url.contains("172.16.") {
+            return false;
+        }
+
+        if url.contains(":3000") || url.contains(":8000") || url.contains(":8080") {
+            return false;
+        }
+
+        if url.contains(".") && !url.starts_with("http://192.") && !url.starts_with("https://192.") {
+            return true;
+        }
+
+        false
+    }
+
     async fn check_provider_online(&self, url: &str) -> bool {
-        if url.ends_with(".onion") || url.contains("localhost") {
-            false;
+        if !self.is_valid_public_url(url) {
+            return false;
         }
 
         let formatted_url = if url.starts_with("http://") || url.starts_with("https://") {
