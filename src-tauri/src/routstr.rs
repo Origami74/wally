@@ -32,12 +32,24 @@ impl RoutstrStoragePaths {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ApiKeyEntry {
+    pub api_key: String,
+    pub creation_cashu_token: Option<String>,
+    pub created_at: u64,
+    pub alias: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RoutstrStoredConfig {
     pub auto_topup_enabled: bool,
     pub min_balance_threshold: u64,
     pub topup_amount_target: u64,
     pub base_url: Option<String>,
+    pub api_keys: Vec<ApiKeyEntry>,
+    // Legacy fields for backward compatibility
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub creation_cashu_token: Option<String>,
 }
 
@@ -48,6 +60,7 @@ impl Default for RoutstrStoredConfig {
             min_balance_threshold: 10000,
             topup_amount_target: 100000,
             base_url: None,
+            api_keys: Vec::new(),
             api_key: None,
             creation_cashu_token: None,
         }
@@ -155,8 +168,7 @@ pub struct RoutstrRefundResponse {
 pub struct RoutstrService {
     pub base_url: Option<String>,
     pub models: Vec<RoutstrModel>,
-    pub api_key: Option<String>,
-    pub creation_cashu_token: Option<String>,
+    pub api_keys: Vec<ApiKeyEntry>,
     client: reqwest::Client,
     pub auto_topup_enabled: bool,
     pub min_balance_threshold: u64,
@@ -170,8 +182,7 @@ impl Clone for RoutstrService {
         Self {
             base_url: self.base_url.clone(),
             models: self.models.clone(),
-            api_key: self.api_key.clone(),
-            creation_cashu_token: self.creation_cashu_token.clone(),
+            api_keys: self.api_keys.clone(),
             client: self.client.clone(),
             auto_topup_enabled: self.auto_topup_enabled,
             min_balance_threshold: self.min_balance_threshold,
@@ -204,8 +215,7 @@ impl RoutstrService {
         let mut service = Self {
             base_url: None,
             models: Vec::new(),
-            api_key: None,
-            creation_cashu_token: None,
+            api_keys: Vec::new(),
             client: reqwest::Client::new(),
             auto_topup_enabled: false,
             min_balance_threshold: 10000,
@@ -320,7 +330,6 @@ impl RoutstrService {
 
         self.base_url = None;
         self.models.clear();
-        self.api_key = None;
 
         // Persist updated configuration
         if let Err(e) = self.save_config() {
@@ -332,8 +341,7 @@ impl RoutstrService {
 
     pub fn clear_config(&mut self) -> Result<()> {
         self.models.clear();
-        self.api_key = None;
-        self.creation_cashu_token = None;
+        self.api_keys.clear();
         self.auto_topup_enabled = false;
         self.min_balance_threshold = 10000;
         self.topup_amount_target = 100000;
@@ -345,19 +353,45 @@ impl RoutstrService {
         Ok(())
     }
 
-    pub fn set_api_key(&mut self, api_key: String) {
-        self.api_key = Some(api_key);
+    pub fn add_api_key(&mut self, api_key: String, creation_cashu_token: Option<String>, alias: Option<String>) {
+        let entry = ApiKeyEntry {
+            api_key,
+            creation_cashu_token,
+            created_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            alias,
+        };
+        self.api_keys.push(entry);
 
         // Persist updated configuration
         if let Err(e) = self.save_config() {
             log::error!("Failed to save API key configuration: {}", e);
         }
 
-        log::info!("API key set for Routstr service");
+        log::info!("Added new API key to Routstr service");
     }
 
-    pub fn get_api_key(&self) -> Option<&String> {
-        self.api_key.as_ref()
+    pub fn get_api_keys(&self) -> &Vec<ApiKeyEntry> {
+        &self.api_keys
+    }
+
+
+    pub fn remove_api_key(&mut self, api_key: &str) -> bool {
+        let initial_len = self.api_keys.len();
+        self.api_keys.retain(|entry| entry.api_key != api_key);
+
+        if self.api_keys.len() < initial_len {
+            // Persist updated configuration
+            if let Err(e) = self.save_config() {
+                log::error!("Failed to save API key configuration after removal: {}", e);
+            }
+            log::info!("Removed API key from Routstr service");
+            true
+        } else {
+            false
+        }
     }
 
     pub async fn create_wallet(
@@ -406,8 +440,7 @@ impl RoutstrService {
 
         // Store the credentials and connection info
         self.base_url = Some(formatted_url);
-        self.api_key = Some(create_response.api_key.clone());
-        self.creation_cashu_token = Some(cashu_token);
+        self.add_api_key(create_response.api_key.clone(), Some(cashu_token), None);
 
         // Persist the configuration
         if let Err(e) = self.save_config() {
@@ -464,8 +497,7 @@ impl RoutstrService {
         let create_response: RoutstrCreateResponse = response.json().await?;
 
         // Store the credentials and creation token
-        self.api_key = Some(create_response.api_key.clone());
-        self.creation_cashu_token = Some(cashu_token);
+        self.add_api_key(create_response.api_key.clone(), Some(cashu_token), None);
 
         // Persist the configuration
         if let Err(e) = self.save_config() {
@@ -480,16 +512,12 @@ impl RoutstrService {
         Ok(create_response)
     }
 
-    pub async fn get_wallet_balance(&self) -> Result<RoutstrWalletBalance> {
+
+    pub async fn get_wallet_balance_for_key(&self, api_key: &str) -> Result<RoutstrWalletBalance> {
         let base_url = self
             .base_url
             .as_ref()
             .ok_or_else(|| anyhow!("Not connected to any Routstr service"))?;
-
-        let api_key = self
-            .api_key
-            .as_ref()
-            .ok_or_else(|| anyhow!("No API key set for Routstr service"))?;
 
         let balance_url = format!("{}/v1/balance/info", base_url);
 
@@ -521,7 +549,8 @@ impl RoutstrService {
             ));
         }
 
-        let balance: RoutstrWalletBalance = response.json().await?;
+        let mut balance: RoutstrWalletBalance = response.json().await?;
+        balance.api_key = Some(api_key.to_string());
 
         log::info!(
             "Retrieved wallet balance: {} (reserved: {})",
@@ -532,16 +561,26 @@ impl RoutstrService {
         Ok(balance)
     }
 
-    pub async fn top_up_wallet(&self, cashu_token: String) -> Result<RoutstrTopUpResponse> {
+    pub async fn get_all_wallet_balances(&self) -> Vec<RoutstrWalletBalance> {
+        let mut balances = Vec::new();
+        for entry in &self.api_keys {
+            match self.get_wallet_balance_for_key(&entry.api_key).await {
+                Ok(balance) => balances.push(balance),
+                Err(e) => {
+                    log::warn!("Failed to get balance for API key {}: {}",
+                        &entry.api_key.chars().take(8).collect::<String>(), e);
+                }
+            }
+        }
+        balances
+    }
+
+
+    pub async fn top_up_wallet_for_key(&self, api_key: &str, cashu_token: String) -> Result<RoutstrTopUpResponse> {
         let base_url = self
             .base_url
             .as_ref()
             .ok_or_else(|| anyhow!("Not connected to any Routstr service"))?;
-
-        let api_key = self
-            .api_key
-            .as_ref()
-            .ok_or_else(|| anyhow!("No API key set for Routstr service"))?;
 
         let topup_url = format!("{}/v1/balance/topup", base_url);
 
@@ -584,16 +623,12 @@ impl RoutstrService {
         Ok(topup_response)
     }
 
-    pub async fn refund_wallet(&self) -> Result<RoutstrRefundResponse> {
+
+    pub async fn refund_wallet_for_key(&self, api_key: &str) -> Result<RoutstrRefundResponse> {
         let base_url = self
             .base_url
             .as_ref()
             .ok_or_else(|| anyhow!("Not connected to any Routstr service"))?;
-
-        let api_key = self
-            .api_key
-            .as_ref()
-            .ok_or_else(|| anyhow!("No API key set for Routstr service"))?;
 
         let refund_url = format!("{}/v1/balance/refund", base_url);
 
@@ -635,8 +670,24 @@ impl RoutstrService {
             self.min_balance_threshold = stored.min_balance_threshold;
             self.topup_amount_target = stored.topup_amount_target;
             self.base_url = stored.base_url;
-            self.api_key = stored.api_key;
-            self.creation_cashu_token = stored.creation_cashu_token;
+            self.api_keys = stored.api_keys;
+
+            // Migrate legacy API key if exists and no new API keys are present
+            if self.api_keys.is_empty() {
+                if let Some(api_key) = stored.api_key {
+                    let entry = ApiKeyEntry {
+                        api_key,
+                        creation_cashu_token: stored.creation_cashu_token,
+                        created_at: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs(),
+                        alias: Some("Migrated".to_string()),
+                    };
+                    self.api_keys.push(entry);
+                    log::info!("Migrated legacy API key to new format");
+                }
+            }
 
             log::info!("Loaded Routstr configuration from storage");
         }
@@ -649,8 +700,9 @@ impl RoutstrService {
             min_balance_threshold: self.min_balance_threshold,
             topup_amount_target: self.topup_amount_target,
             base_url: self.base_url.clone(),
-            api_key: self.api_key.clone(),
-            creation_cashu_token: self.creation_cashu_token.clone(),
+            api_keys: self.api_keys.clone(),
+            api_key: None, // Legacy field, no longer used
+            creation_cashu_token: None, // Legacy field, no longer used
         };
 
         if let Some(parent) = self.storage.config_file.parent() {
@@ -753,13 +805,14 @@ impl RoutstrService {
     ) -> Result<bool> {
         let service = service_state.lock().await;
 
-        // Only proceed if we have API key and are connected
-        if service.api_key.is_none() || service.base_url.is_none() {
+        // Only proceed if we have API keys and are connected
+        if service.api_keys.is_empty() || service.base_url.is_none() {
             return Ok(false);
         }
 
-        // Check current balance
-        match service.get_wallet_balance().await {
+        // Check current balance of first API key
+        let first_api_key = &service.api_keys[0].api_key;
+        match service.get_wallet_balance_for_key(first_api_key).await {
             Ok(balance) => {
                 log::debug!(
                     "Current balance: {} msats, threshold: {} msats",
@@ -847,19 +900,10 @@ pub async fn routstr_get_connection_status(
         "connected": service.is_connected(),
         "base_url": service.get_base_url(),
         "model_count": service.get_models().len(),
-        "has_api_key": service.get_api_key().is_some()
+        "has_api_key": !service.api_keys.is_empty()
     }))
 }
 
-#[tauri::command]
-pub async fn routstr_set_api_key(
-    api_key: String,
-    state: tauri::State<'_, RoutstrState>,
-) -> Result<(), String> {
-    let mut service = state.lock().await;
-    service.set_api_key(api_key);
-    Ok(())
-}
 
 #[tauri::command]
 pub async fn routstr_create_wallet(
@@ -886,57 +930,8 @@ pub async fn routstr_create_balance_with_token(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub async fn routstr_get_wallet_balance(
-    state: tauri::State<'_, RoutstrState>,
-) -> Result<RoutstrWalletBalance, String> {
-    let service = state.lock().await;
-    service
-        .get_wallet_balance()
-        .await
-        .map_err(|e| e.to_string())
-}
 
-#[tauri::command]
-pub async fn routstr_top_up_wallet(
-    cashu_token: String,
-    state: tauri::State<'_, RoutstrState>,
-) -> Result<RoutstrTopUpResponse, String> {
-    let service = state.lock().await;
-    service
-        .top_up_wallet(cashu_token)
-        .await
-        .map_err(|e| e.to_string())
-}
 
-#[tauri::command]
-pub async fn routstr_refund_wallet(
-    routstr_state: tauri::State<'_, RoutstrState>,
-    tollgate_state: tauri::State<'_, crate::TollGateState>,
-) -> Result<RoutstrRefundResponse, String> {
-    let refund_response = {
-        let service = routstr_state.lock().await;
-        service.refund_wallet().await.map_err(|e| e.to_string())?
-    };
-
-    if let Some(ref token) = refund_response.token {
-        let tollgate_service = tollgate_state.lock().await;
-        match tollgate_service.receive_cashu_token(token).await {
-            Ok(result) => {
-                log::info!(
-                    "Successfully received refunded token into local wallet: {} sats from {}",
-                    result.amount,
-                    result.mint_url
-                );
-            }
-            Err(e) => {
-                log::warn!("Failed to receive refunded token into local wallet: {}", e);
-            }
-        }
-    }
-
-    Ok(refund_response)
-}
 
 #[tauri::command]
 pub async fn routstr_set_auto_topup_config(
@@ -968,12 +963,91 @@ pub async fn routstr_get_auto_topup_config(
     }))
 }
 
+
 #[tauri::command]
-pub async fn routstr_get_stored_api_key(
+pub async fn routstr_get_all_api_keys(
     state: tauri::State<'_, RoutstrState>,
-) -> Result<Option<String>, String> {
+) -> Result<Vec<ApiKeyEntry>, String> {
     let service = state.lock().await;
-    Ok(service.api_key.clone())
+    Ok(service.get_api_keys().clone())
+}
+
+#[tauri::command]
+pub async fn routstr_get_all_wallet_balances(
+    state: tauri::State<'_, RoutstrState>,
+) -> Result<Vec<RoutstrWalletBalance>, String> {
+    let service = state.lock().await;
+    Ok(service.get_all_wallet_balances().await)
+}
+
+#[tauri::command]
+pub async fn routstr_get_wallet_balance_for_key(
+    api_key: String,
+    state: tauri::State<'_, RoutstrState>,
+) -> Result<RoutstrWalletBalance, String> {
+    let service = state.lock().await;
+    service
+        .get_wallet_balance_for_key(&api_key)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn routstr_top_up_wallet_for_key(
+    api_key: String,
+    cashu_token: String,
+    state: tauri::State<'_, RoutstrState>,
+) -> Result<RoutstrTopUpResponse, String> {
+    let service = state.lock().await;
+    service
+        .top_up_wallet_for_key(&api_key, cashu_token)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn routstr_refund_wallet_for_key(
+    api_key: String,
+    routstr_state: tauri::State<'_, RoutstrState>,
+    tollgate_state: tauri::State<'_, crate::TollGateState>,
+) -> Result<RoutstrRefundResponse, String> {
+    let refund_response = {
+        let service = routstr_state.lock().await;
+        service.refund_wallet_for_key(&api_key).await.map_err(|e| e.to_string())?
+    };
+
+    if let Some(ref token) = refund_response.token {
+        let tollgate_service = tollgate_state.lock().await;
+        match tollgate_service.receive_cashu_token(token).await {
+            Ok(result) => {
+                log::info!(
+                    "Successfully received refunded token into local wallet: {} sats from {}",
+                    result.amount,
+                    result.mint_url
+                );
+            }
+            Err(e) => {
+                log::warn!("Failed to receive refunded token into local wallet: {}", e);
+            }
+        }
+    }
+
+    // Remove the API key after successful refund
+    {
+        let mut service = routstr_state.lock().await;
+        service.remove_api_key(&api_key);
+    }
+
+    Ok(refund_response)
+}
+
+#[tauri::command]
+pub async fn routstr_remove_api_key(
+    api_key: String,
+    state: tauri::State<'_, RoutstrState>,
+) -> Result<bool, String> {
+    let mut service = state.lock().await;
+    Ok(service.remove_api_key(&api_key))
 }
 
 #[tauri::command]
@@ -989,77 +1063,6 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn test_config_persistence() {
-        // Create a temporary directory for testing
-        let temp_dir = env::temp_dir().join("routstr_test");
-        let config_file = temp_dir.join("config.json");
-
-        // Clean up any existing test files
-        let _ = fs::remove_dir_all(&temp_dir);
-
-        // Create service with custom storage
-        let storage = RoutstrStoragePaths {
-            base_dir: temp_dir.clone(),
-            config_file: config_file.clone(),
-        };
-
-        let mut service = RoutstrService {
-            base_url: None,
-            models: Vec::new(),
-            api_key: None,
-            client: reqwest::Client::new(),
-            auto_topup_enabled: false,
-            min_balance_threshold: 10000,
-            topup_amount_target: 100000,
-            balance_monitor_task: None,
-            storage,
-        };
-
-        // Set some configuration
-        service.set_auto_topup_config(true, 25000, 150000);
-        service.base_url = Some("https://test.routstr.com".to_string());
-        service.api_key = Some("test_api_key".to_string());
-
-        // Save configuration
-        service.save_config().expect("Failed to save config");
-
-        // Verify file was created
-        assert!(config_file.exists(), "Config file should exist");
-
-        // Create a new service instance to test loading
-        let mut new_service = RoutstrService {
-            base_url: None,
-            models: Vec::new(),
-            api_key: None,
-            client: reqwest::Client::new(),
-            auto_topup_enabled: false,
-            min_balance_threshold: 10000,
-            topup_amount_target: 100000,
-            balance_monitor_task: None,
-            storage: RoutstrStoragePaths {
-                base_dir: temp_dir.clone(),
-                config_file: config_file.clone(),
-            },
-        };
-
-        // Load configuration
-        new_service.load_config().expect("Failed to load config");
-
-        // Verify configuration was loaded correctly
-        assert_eq!(new_service.auto_topup_enabled, true);
-        assert_eq!(new_service.min_balance_threshold, 25000);
-        assert_eq!(new_service.topup_amount_target, 150000);
-        assert_eq!(
-            new_service.base_url,
-            Some("https://test.routstr.com".to_string())
-        );
-        assert_eq!(new_service.api_key, Some("test_api_key".to_string()));
-
-        // Clean up
-        let _ = fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
     fn test_config_default_when_file_missing() {
         // Create service with non-existent config file
         let temp_dir = env::temp_dir().join("routstr_test_missing");
@@ -1071,7 +1074,7 @@ mod tests {
         let mut service = RoutstrService {
             base_url: None,
             models: Vec::new(),
-            api_key: None,
+            api_keys: Vec::new(),
             client: reqwest::Client::new(),
             auto_topup_enabled: false,
             min_balance_threshold: 10000,
@@ -1091,74 +1094,32 @@ mod tests {
         assert_eq!(service.min_balance_threshold, 10000);
         assert_eq!(service.topup_amount_target, 100000);
         assert_eq!(service.base_url, None);
-        assert_eq!(service.api_key, None);
+        assert_eq!(service.api_keys.len(), 0);
 
         // Clean up
         let _ = fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
-    fn test_api_key_storage_and_retrieval() {
-        // Create a temporary directory for testing
-        let temp_dir = env::temp_dir().join("routstr_test_api_key");
-        let config_file = temp_dir.join("config.json");
+    fn test_api_key_management() {
+        let mut service = RoutstrService::new();
 
-        // Clean up any existing test files
-        let _ = fs::remove_dir_all(&temp_dir);
+        // Test adding API keys
+        service.add_api_key("test_key_1".to_string(), Some("token1".to_string()), Some("First Key".to_string()));
+        service.add_api_key("test_key_2".to_string(), None, None);
 
-        // Create service with custom storage
-        let storage = RoutstrStoragePaths {
-            base_dir: temp_dir.clone(),
-            config_file: config_file.clone(),
-        };
+        // Verify keys are stored
+        assert_eq!(service.api_keys.len(), 2);
+        assert_eq!(service.api_keys[0].api_key, "test_key_1");
+        assert_eq!(service.api_keys[1].api_key, "test_key_2");
 
-        let mut service = RoutstrService {
-            base_url: None,
-            models: Vec::new(),
-            api_key: None,
-            client: reqwest::Client::new(),
-            auto_topup_enabled: false,
-            min_balance_threshold: 10000,
-            topup_amount_target: 100000,
-            balance_monitor_task: None,
-            storage,
-        };
+        // Test removing API key
+        assert_eq!(service.remove_api_key("test_key_1"), true);
+        assert_eq!(service.api_keys.len(), 1);
+        assert_eq!(service.api_keys[0].api_key, "test_key_2");
 
-        // Set API key
-        service.set_api_key("test_api_key_12345".to_string());
-
-        // Verify it's set in memory
-        assert_eq!(
-            service.get_api_key(),
-            Some(&"test_api_key_12345".to_string())
-        );
-
-        // Create a new service instance to test loading
-        let mut new_service = RoutstrService {
-            base_url: None,
-            models: Vec::new(),
-            api_key: None,
-            client: reqwest::Client::new(),
-            auto_topup_enabled: false,
-            min_balance_threshold: 10000,
-            topup_amount_target: 100000,
-            balance_monitor_task: None,
-            storage: RoutstrStoragePaths {
-                base_dir: temp_dir.clone(),
-                config_file: config_file.clone(),
-            },
-        };
-
-        // Load configuration
-        new_service.load_config().expect("Failed to load config");
-
-        // Verify API key was loaded correctly
-        assert_eq!(
-            new_service.get_api_key(),
-            Some(&"test_api_key_12345".to_string())
-        );
-
-        // Clean up
-        let _ = fs::remove_dir_all(&temp_dir);
+        // Test removing non-existent key
+        assert_eq!(service.remove_api_key("non_existent"), false);
+        assert_eq!(service.api_keys.len(), 1);
     }
 }

@@ -83,3 +83,10 @@ export interface RoutstrAutoTopupConfig {
   min_threshold: number;
   target_amount: number;
 }
+
+export interface ApiKeyEntry {
+  api_key: string;
+  creation_cashu_token?: string;
+  created_at: number;
+  alias?: string;
+}

@@ -23,12 +23,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CopyButton } from "@/components/copy-button";
-import type {
-  RoutstrModel,
-  RoutstrConnectionStatus,
-  RoutstrWalletBalance,
-  RoutstrAutoTopupConfig,
-} from "@/lib/routstr/types";
+import type { RoutstrAutoTopupConfig } from "@/lib/routstr/types";
 import {
   connectToRoutstrService,
   disconnectFromRoutstrService,
@@ -37,18 +32,14 @@ import {
   getRoutstrConnectionStatus,
   createRoutstrWallet,
   createBalanceWithToken,
-  getRoutstrWalletBalance,
-  topUpRoutstrWallet,
-  refundRoutstrWallet,
   setRoutstrAutoTopupConfig,
   getRoutstrAutoTopupConfig,
-  getStoredRoutstrApiKey,
   clearRoutstrConfig,
+  getAllApiKeys,
+  getAllWalletBalances,
+  refundWalletForKey,
 } from "@/lib/routstr/api";
-import {
-  discoverNostrProviders,
-  type NostrProvider,
-} from "@/lib/nostr-providers";
+import { discoverNostrProviders } from "@/lib/nostr-providers";
 
 type RoutstrScreenProps = {
   copyToClipboard: (value: string) => Promise<void> | void;
@@ -128,13 +119,21 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     staleTime: 10 * 60 * 1000,
   });
 
-  const { data: walletBalance, refetch: refetchWalletBalance } = useQuery({
-    queryKey: ["routstr-wallet-balance"],
-    queryFn: getRoutstrWalletBalance,
-    enabled: connectionStatus.connected && connectionStatus.has_api_key,
-    refetchInterval: 30000,
+  const { data: apiKeys = [], refetch: refetchApiKeys } = useQuery({
+    queryKey: ["routstr-api-keys"],
+    queryFn: getAllApiKeys,
+    enabled: connectionStatus.connected,
     staleTime: 10000,
   });
+
+  const { data: walletBalances = [], refetch: refetchWalletBalances } =
+    useQuery({
+      queryKey: ["routstr-wallet-balances"],
+      queryFn: getAllWalletBalances,
+      enabled: connectionStatus.connected && apiKeys.length > 0,
+      refetchInterval: 30000,
+      staleTime: 10000,
+    });
 
   useEffect(() => {
     if (providers.length > 0 && !selectedProvider) {
@@ -196,7 +195,8 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       setSelectedModel("");
       await refetchConnectionStatus();
       queryClient.invalidateQueries({ queryKey: ["routstr-models"] });
-      queryClient.invalidateQueries({ queryKey: ["routstr-wallet-balance"] });
+      queryClient.invalidateQueries({ queryKey: ["routstr-api-keys"] });
+      queryClient.invalidateQueries({ queryKey: ["routstr-wallet-balances"] });
     } catch (error) {
       console.error("Failed to disconnect:", error);
       setError(`Failed to disconnect: ${error}`);
@@ -245,7 +245,8 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       setApiKey(result.api_key);
 
       await refetchConnectionStatus();
-      await refetchWalletBalance();
+      await refetchApiKeys();
+      await refetchWalletBalances();
       await refreshLocalWalletBalance();
 
       setSuccessMessage(
@@ -290,16 +291,16 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
 
   const loadStoredApiKey = async () => {
     try {
-      const storedApiKey = await getStoredRoutstrApiKey();
-      if (storedApiKey) {
-        setApiKey(storedApiKey);
+      const apiKeys = await getAllApiKeys();
+      if (apiKeys.length > 0) {
+        setApiKey(apiKeys[0].api_key);
       } else {
         if (!useManualUrl) {
           refetchProviders();
         }
       }
     } catch (error) {
-      console.error("Failed to load stored API key:", error);
+      console.error("Failed to load stored API keys:", error);
     }
   };
 
@@ -320,9 +321,36 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     }
   };
 
+  const handleRefundSpecificWallet = async (apiKey: string) => {
+    setWalletLoading(true);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const result = await refundWalletForKey(apiKey);
+
+      await refetchWalletBalances();
+      await refreshLocalWalletBalance();
+
+      if (result.token) {
+        setSuccessMessage(
+          `Wallet refunded successfully for API key ending in ...${apiKey.slice(-8)}! Funds have been added to your local wallet.`,
+        );
+      } else {
+        setSuccessMessage(
+          `Refund completed for API key ending in ...${apiKey.slice(-8)}.`,
+        );
+      }
+    } catch (error) {
+      console.error("Failed to refund specific wallet:", error);
+      setError(`Failed to refund wallet: ${error}`);
+    } finally {
+      setWalletLoading(false);
+    }
+  };
+
   const handleRecreateToken = async () => {
-    if (!apiKey) {
-      setError("No Cashu token available to recreate");
+    if (apiKeys.length === 0) {
+      setError("No API keys available to refund");
       return;
     }
 
@@ -330,7 +358,19 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     setError(null);
     setSuccessMessage(null);
     try {
-      const result = await refundRoutstrWallet();
+      // Refund all API keys
+      const refundResults = [];
+      for (const apiKeyEntry of apiKeys) {
+        try {
+          const result = await refundWalletForKey(apiKeyEntry.api_key);
+          refundResults.push(result);
+        } catch (error) {
+          console.warn(
+            `Failed to refund API key ${apiKeyEntry.api_key}:`,
+            error,
+          );
+        }
+      }
 
       await clearRoutstrConfig();
       setApiKey("");
@@ -348,56 +388,41 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
           statusError,
         );
       }
-      queryClient.invalidateQueries({ queryKey: ["routstr-wallet-balance"] });
+      queryClient.invalidateQueries({ queryKey: ["routstr-api-keys"] });
+      queryClient.invalidateQueries({ queryKey: ["routstr-wallet-balances"] });
 
       await refreshLocalWalletBalance();
 
-      if (result.token) {
-        setSuccessMessage(
-          "Token recreated successfully! Funds have been automatically added to your local wallet. Configuration has been reset.",
-        );
-      } else {
-        setSuccessMessage(
-          "Token recreation completed. Configuration has been reset.",
-        );
-      }
+      const successfulRefunds = refundResults.filter((r) => r.token).length;
+      setSuccessMessage(
+        `Configuration reset completed! ${successfulRefunds} of ${apiKeys.length} wallets were refunded successfully. Funds have been added to your local wallet.`,
+      );
     } catch (error) {
-      console.error("Failed to recreate token:", error);
-      let errorMsg = `Failed to recreate token: ${error}`;
+      console.error("Failed to recreate tokens:", error);
+      let errorMsg = `Failed to recreate tokens: ${error}`;
 
-      if (
-        errorMsg.includes("401") &&
-        errorMsg.includes("Token already spent")
-      ) {
-        try {
-          await clearRoutstrConfig();
-          setApiKey("");
-          setAutoTopupConfig({
-            enabled: false,
-            min_threshold: 10000,
-            target_amount: 50000,
-          });
-          queryClient.invalidateQueries({
-            queryKey: ["routstr-wallet-balance"],
-          });
-          await refreshLocalWalletBalance();
-          setSuccessMessage(
-            "Token may have been refunded successfully, but configuration has been reset. Funds should be automatically added to your local wallet.",
-          );
-        } catch (clearError) {
-          setError(
-            `Token recreation failed and cleanup also failed: ${errorMsg}`,
-          );
-        }
-      } else if (
-        errorMsg.includes("401") &&
-        errorMsg.includes("Invalid API key")
-      ) {
-        errorMsg +=
-          "\n\nThe Cashu token may not be valid or may not have any balance to refund.";
-        setError(errorMsg);
-      } else {
-        setError(errorMsg);
+      try {
+        await clearRoutstrConfig();
+        setApiKey("");
+        setAutoTopupConfig({
+          enabled: false,
+          min_threshold: 10000,
+          target_amount: 50000,
+        });
+        queryClient.invalidateQueries({
+          queryKey: ["routstr-api-keys"],
+        });
+        queryClient.invalidateQueries({
+          queryKey: ["routstr-wallet-balances"],
+        });
+        await refreshLocalWalletBalance();
+        setSuccessMessage(
+          "Configuration has been reset. Some funds may have been automatically added to your local wallet.",
+        );
+      } catch (clearError) {
+        setError(
+          `Token recreation failed and cleanup also failed: ${errorMsg}`,
+        );
       }
     } finally {
       setWalletLoading(false);
@@ -433,7 +458,8 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       setApiKey(result.api_key);
       refetchConnectionStatus();
       refreshLocalWalletBalance();
-      queryClient.invalidateQueries({ queryKey: ["routstr-wallet-balance"] });
+      queryClient.invalidateQueries({ queryKey: ["routstr-api-keys"] });
+      queryClient.invalidateQueries({ queryKey: ["routstr-wallet-balances"] });
       setSuccessMessage(
         `Wallet created successfully using ${createAmount.toLocaleString()} sats from local wallet! Balance: ${result.balance} msats`,
       );
@@ -448,28 +474,6 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     },
     onSettled: () => {
       setCreating(false);
-    },
-  });
-
-  const topUpMutation = useMutation({
-    mutationFn: topUpRoutstrWallet,
-    onSuccess: () => {
-      refetchWalletBalance();
-      refreshLocalWalletBalance();
-      setSuccessMessage(
-        `Balance added successfully using ${topUpAmount.toLocaleString()} sats from local wallet!`,
-      );
-    },
-    onError: (error) => {
-      console.error("Failed to add balance:", error);
-      let errorMsg = `Failed to add balance: ${error}`;
-      if (errorMsg.includes("Insufficient balance")) {
-        errorMsg += "\n\nPlease add funds to your local wallet first.";
-      }
-      setError(errorMsg);
-    },
-    onSettled: () => {
-      setWalletLoading(false);
     },
   });
 
@@ -710,12 +714,12 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
           </Card>
         )}
 
-        {connectionStatus.connected && !connectionStatus.has_api_key && (
+        {connectionStatus.connected && (
           <Card>
             <CardHeader>
-              <CardTitle>Cashu Token Authentication</CardTitle>
+              <CardTitle>Add New API Key</CardTitle>
               <CardDescription>
-                Use your Cashu token to authenticate and create wallet balance
+                Create a new API key and wallet balance using your Cashu tokens
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -732,8 +736,8 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
                   step="1000"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Amount will be taken from your local wallet for
-                  authentication.
+                  Amount will be taken from your local wallet to create a new
+                  API key and initial balance.
                 </p>
               </div>
               <div className="space-y-3">
@@ -744,7 +748,7 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
                 >
                   {walletLoading
                     ? "Creating..."
-                    : `Create Authentication (${authAmount.toLocaleString()} sats)`}
+                    : `Create New API Key (${authAmount.toLocaleString()} sats)`}
                 </Button>
 
                 <div className="relative">
@@ -778,9 +782,12 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
                 <span>Wallet Management</span>
-                {walletBalance && (
+                {walletBalances.length > 0 && (
                   <Badge tone="info">
-                    {walletBalance.balance.toLocaleString()} msats
+                    {walletBalances
+                      .reduce((total, wb) => total + wb.balance, 0)
+                      .toLocaleString()}{" "}
+                    msats total
                   </Badge>
                 )}
               </CardTitle>
@@ -808,16 +815,80 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
                 </div>
               )}
 
-              {walletBalance && (
-                <div className="p-4 rounded-lg bg-muted">
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <Label className="font-semibold">
-                        Available Balance:
-                      </Label>
-                      <p>{walletBalance.balance.toLocaleString()} msats</p>
-                    </div>
-                  </div>
+              {apiKeys.length > 0 && (
+                <div className="space-y-4">
+                  <Label className="font-semibold">API Keys & Balances</Label>
+                  {apiKeys.map((apiKeyEntry, index) => {
+                    const balance = walletBalances.find(
+                      (wb) => wb.api_key === apiKeyEntry.api_key,
+                    );
+                    return (
+                      <div
+                        key={apiKeyEntry.api_key}
+                        className="p-4 rounded-lg bg-muted"
+                      >
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Label className="font-semibold">
+                                API Key {index + 1}:
+                              </Label>
+                              {apiKeyEntry.alias && (
+                                <Badge tone="default">
+                                  {apiKeyEntry.alias}
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <Label className="font-semibold">Balance:</Label>
+                              <p className="text-sm">
+                                {balance
+                                  ? balance.balance.toLocaleString()
+                                  : "Loading..."}{" "}
+                                msats
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <code className="flex-1 text-xs font-mono break-all bg-background px-2 py-1 rounded">
+                              {apiKeyEntry.api_key}
+                            </code>
+                            <CopyButton
+                              label=""
+                              copiedLabel="Copied!"
+                              onCopy={() =>
+                                copyToClipboard(apiKeyEntry.api_key)
+                              }
+                            />
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            Created:{" "}
+                            {new Date(
+                              apiKeyEntry.created_at * 1000,
+                            ).toLocaleDateString()}
+                            {apiKeyEntry.creation_cashu_token && (
+                              <span className="ml-2">
+                                • Created with Cashu token
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex gap-2 pt-2">
+                            <Button
+                              onClick={() =>
+                                handleRefundSpecificWallet(apiKeyEntry.api_key)
+                              }
+                              disabled={walletLoading}
+                              size="sm"
+                              variant="outline"
+                              className="border-red-300 text-red-800 hover:bg-red-100"
+                            >
+                              Refund
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
