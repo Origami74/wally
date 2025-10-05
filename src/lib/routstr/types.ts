@@ -78,11 +78,6 @@ export interface RoutstrRefundResponse {
   msats?: string;
 }
 
-export interface RoutstrAutoTopupConfig {
-  enabled: boolean;
-  min_threshold: number;
-  target_amount: number;
-}
 
 export interface ApiKeyEntry {
   api_key: string;

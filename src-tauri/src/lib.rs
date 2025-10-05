@@ -472,29 +472,29 @@ pub fn run() {
         Ok(())
     });
 
-#[tauri::command]
-async fn discover_nostr_providers() -> Result<Vec<nostr_providers::NostrProvider>, String> {
-    nostr_providers::discover_providers()
-        .await
-        .map_err(|e| e.to_string())
-}
+    #[tauri::command]
+    async fn discover_nostr_providers() -> Result<Vec<nostr_providers::NostrProvider>, String> {
+        nostr_providers::discover_providers()
+            .await
+            .map_err(|e| e.to_string())
+    }
 
-async fn start_provider_monitoring() {
-    tokio::spawn(async {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
-        loop {
-            interval.tick().await;
-            match nostr_providers::discover_providers().await {
-                Ok(providers) => {
-                    log::info!("Updated provider list: {} providers found", providers.len());
-                }
-                Err(e) => {
-                    log::warn!("Failed to update providers: {}", e);
+    async fn start_provider_monitoring() {
+        tokio::spawn(async {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
+            loop {
+                interval.tick().await;
+                match nostr_providers::discover_providers().await {
+                    Ok(providers) => {
+                        log::info!("Updated provider list: {} providers found", providers.len());
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to update providers: {}", e);
+                    }
                 }
             }
-        }
-    });
-}
+        });
+    }
 
     #[cfg(target_os = "macos")]
     {
@@ -569,8 +569,6 @@ async fn start_provider_monitoring() {
             routstr::routstr_get_connection_status,
             routstr::routstr_create_wallet,
             routstr::routstr_create_balance_with_token,
-            routstr::routstr_set_auto_topup_config,
-            routstr::routstr_get_auto_topup_config,
             routstr::routstr_get_all_api_keys,
             routstr::routstr_get_all_wallet_balances,
             routstr::routstr_get_wallet_balance_for_key,

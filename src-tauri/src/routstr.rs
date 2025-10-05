@@ -4,8 +4,6 @@ use reqwest;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use tokio::task::JoinHandle;
-use tokio::time::{interval, Duration};
 
 #[derive(Debug, Clone)]
 pub struct RoutstrStoragePaths {
@@ -41,28 +39,15 @@ pub struct ApiKeyEntry {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RoutstrStoredConfig {
-    pub auto_topup_enabled: bool,
-    pub min_balance_threshold: u64,
-    pub topup_amount_target: u64,
     pub base_url: Option<String>,
     pub api_keys: Vec<ApiKeyEntry>,
-    // Legacy fields for backward compatibility
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub api_key: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub creation_cashu_token: Option<String>,
 }
 
 impl Default for RoutstrStoredConfig {
     fn default() -> Self {
         Self {
-            auto_topup_enabled: false,
-            min_balance_threshold: 10000,
-            topup_amount_target: 100000,
             base_url: None,
             api_keys: Vec::new(),
-            api_key: None,
-            creation_cashu_token: None,
         }
     }
 }
@@ -170,10 +155,6 @@ pub struct RoutstrService {
     pub models: Vec<RoutstrModel>,
     pub api_keys: Vec<ApiKeyEntry>,
     client: reqwest::Client,
-    pub auto_topup_enabled: bool,
-    pub min_balance_threshold: u64,
-    pub topup_amount_target: u64,
-    balance_monitor_task: Option<JoinHandle<()>>,
     storage: RoutstrStoragePaths,
 }
 
@@ -184,10 +165,6 @@ impl Clone for RoutstrService {
             models: self.models.clone(),
             api_keys: self.api_keys.clone(),
             client: self.client.clone(),
-            auto_topup_enabled: self.auto_topup_enabled,
-            min_balance_threshold: self.min_balance_threshold,
-            topup_amount_target: self.topup_amount_target,
-            balance_monitor_task: None, // Don't clone the task handle
             storage: self.storage.clone(),
         }
     }
@@ -217,10 +194,6 @@ impl RoutstrService {
             models: Vec::new(),
             api_keys: Vec::new(),
             client: reqwest::Client::new(),
-            auto_topup_enabled: false,
-            min_balance_threshold: 10000,
-            topup_amount_target: 100000,
-            balance_monitor_task: None,
             storage,
         };
 
@@ -322,12 +295,6 @@ impl RoutstrService {
     }
 
     pub fn disconnect(&mut self) {
-        // Stop balance monitoring task if it exists
-        if let Some(task) = self.balance_monitor_task.take() {
-            task.abort();
-            log::info!("Stopped balance monitoring task");
-        }
-
         self.base_url = None;
         self.models.clear();
 
@@ -342,14 +309,6 @@ impl RoutstrService {
     pub fn clear_config(&mut self) -> Result<()> {
         self.models.clear();
         self.api_keys.clear();
-        self.auto_topup_enabled = false;
-        self.min_balance_threshold = 10000;
-        self.topup_amount_target = 100000;
-
-        if let Some(task) = self.balance_monitor_task.take() {
-            task.abort();
-        }
-
         Ok(())
     }
 
@@ -674,28 +633,8 @@ impl RoutstrService {
             let data = fs::read(&self.storage.config_file)?;
             let stored: RoutstrStoredConfig = serde_json::from_slice(&data).unwrap_or_default();
 
-            self.auto_topup_enabled = stored.auto_topup_enabled;
-            self.min_balance_threshold = stored.min_balance_threshold;
-            self.topup_amount_target = stored.topup_amount_target;
             self.base_url = stored.base_url;
             self.api_keys = stored.api_keys;
-
-            // Migrate legacy API key if exists and no new API keys are present
-            if self.api_keys.is_empty() {
-                if let Some(api_key) = stored.api_key {
-                    let entry = ApiKeyEntry {
-                        api_key,
-                        creation_cashu_token: stored.creation_cashu_token,
-                        created_at: std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs(),
-                        alias: Some("Migrated".to_string()),
-                    };
-                    self.api_keys.push(entry);
-                    log::info!("Migrated legacy API key to new format");
-                }
-            }
 
             log::info!("Loaded Routstr configuration from storage");
         }
@@ -704,13 +643,8 @@ impl RoutstrService {
 
     fn save_config(&self) -> Result<()> {
         let config = RoutstrStoredConfig {
-            auto_topup_enabled: self.auto_topup_enabled,
-            min_balance_threshold: self.min_balance_threshold,
-            topup_amount_target: self.topup_amount_target,
             base_url: self.base_url.clone(),
             api_keys: self.api_keys.clone(),
-            api_key: None,
-            creation_cashu_token: None,
         };
 
         if let Some(parent) = self.storage.config_file.parent() {
@@ -724,130 +658,6 @@ impl RoutstrService {
 
         log::debug!("Saved Routstr configuration to storage");
         Ok(())
-    }
-
-    pub fn set_auto_topup_config(&mut self, enabled: bool, min_threshold: u64, target_amount: u64) {
-        self.auto_topup_enabled = enabled;
-        self.min_balance_threshold = min_threshold;
-        self.topup_amount_target = target_amount;
-
-        if let Err(e) = self.save_config() {
-            log::error!("Failed to save auto-topup configuration: {}", e);
-        }
-
-        log::info!(
-            "Auto-topup config updated: enabled={}, threshold={}, target={}",
-            enabled,
-            min_threshold,
-            target_amount
-        );
-    }
-
-    pub fn start_balance_monitoring(&mut self, service_state: RoutstrState) {
-        if let Some(task) = self.balance_monitor_task.take() {
-            task.abort();
-        }
-
-        if !self.auto_topup_enabled {
-            log::info!("Auto-topup disabled, not starting balance monitoring");
-            return;
-        }
-
-        let min_threshold = self.min_balance_threshold;
-        let target_amount = self.topup_amount_target;
-
-        log::info!(
-            "Starting balance monitoring: threshold={} msats, target={} msats",
-            min_threshold,
-            target_amount
-        );
-
-        let task = tokio::spawn(async move {
-            let mut interval = interval(Duration::from_secs(30)); // Check every 30 seconds
-
-            loop {
-                interval.tick().await;
-
-                let (is_enabled, current_threshold) = {
-                    let service = service_state.lock().await;
-                    (service.auto_topup_enabled, service.min_balance_threshold)
-                };
-
-                if !is_enabled {
-                    log::debug!("Auto-topup disabled, stopping balance monitoring");
-                    break;
-                }
-
-                match Self::check_and_topup_if_needed(
-                    &service_state,
-                    current_threshold,
-                    target_amount,
-                )
-                .await
-                {
-                    Ok(topped_up) => {
-                        if topped_up {
-                            log::info!("Successfully performed auto-topup");
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("Error during balance check/topup: {}", e);
-                    }
-                }
-            }
-
-            log::info!("Balance monitoring task ended");
-        });
-
-        self.balance_monitor_task = Some(task);
-    }
-
-    async fn check_and_topup_if_needed(
-        service_state: &RoutstrState,
-        min_threshold: u64,
-        target_amount: u64,
-    ) -> Result<bool> {
-        let service = service_state.lock().await;
-
-        if service.api_keys.is_empty() || service.base_url.is_none() {
-            return Ok(false);
-        }
-
-        let first_api_key = &service.api_keys[0].api_key;
-        match service.get_wallet_balance_for_key(first_api_key).await {
-            Ok(balance) => {
-                log::debug!(
-                    "Current balance: {} msats, threshold: {} msats",
-                    balance.balance,
-                    min_threshold
-                );
-
-                if balance.balance < min_threshold {
-                    log::info!(
-                        "Balance {} is below threshold {}, auto-topup needed",
-                        balance.balance,
-                        min_threshold
-                    );
-
-                    let needed_amount = target_amount.saturating_sub(balance.balance);
-                    log::info!(
-                        "Need {} msats to reach target of {} msats",
-                        needed_amount,
-                        target_amount
-                    );
-
-                    log::warn!("Auto-topup needed but requires user to provide Cashu token");
-
-                    return Ok(false);
-                }
-
-                Ok(false)
-            }
-            Err(e) => {
-                log::debug!("Failed to check balance: {}", e);
-                Err(e)
-            }
-        }
     }
 
     pub async fn force_reset_all_api_keys(&mut self) -> Result<()> {
@@ -870,13 +680,6 @@ impl RoutstrService {
 
         self.api_keys.clear();
         self.models.clear();
-        self.auto_topup_enabled = false;
-        self.min_balance_threshold = 10000;
-        self.topup_amount_target = 100000;
-
-        if let Some(task) = self.balance_monitor_task.take() {
-            task.abort();
-        }
 
         if let Err(e) = self.save_config() {
             log::error!("Failed to save configuration after force reset: {}", e);
@@ -963,36 +766,6 @@ pub async fn routstr_create_balance_with_token(
         .create_balance_with_token(cashu_token)
         .await
         .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn routstr_set_auto_topup_config(
-    enabled: bool,
-    min_threshold: u64,
-    target_amount: u64,
-    state: tauri::State<'_, RoutstrState>,
-) -> Result<(), String> {
-    let mut service = state.lock().await;
-    service.set_auto_topup_config(enabled, min_threshold, target_amount);
-
-    // Start or stop balance monitoring based on enabled state
-    if enabled {
-        service.start_balance_monitoring(state.inner().clone());
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn routstr_get_auto_topup_config(
-    state: tauri::State<'_, RoutstrState>,
-) -> Result<serde_json::Value, String> {
-    let service = state.lock().await;
-    Ok(serde_json::json!({
-        "enabled": service.auto_topup_enabled,
-        "min_threshold": service.min_balance_threshold,
-        "target_amount": service.topup_amount_target
-    }))
 }
 
 #[tauri::command]
@@ -1121,10 +894,6 @@ mod tests {
             models: Vec::new(),
             api_keys: Vec::new(),
             client: reqwest::Client::new(),
-            auto_topup_enabled: false,
-            min_balance_threshold: 10000,
-            topup_amount_target: 100000,
-            balance_monitor_task: None,
             storage: RoutstrStoragePaths {
                 base_dir: temp_dir.clone(),
                 config_file: config_file.clone(),
@@ -1135,9 +904,6 @@ mod tests {
         service.load_config().expect("Failed to load config");
 
         // Verify default values are used
-        assert_eq!(service.auto_topup_enabled, false);
-        assert_eq!(service.min_balance_threshold, 10000);
-        assert_eq!(service.topup_amount_target, 100000);
         assert_eq!(service.base_url, None);
         assert_eq!(service.api_keys.len(), 0);
 

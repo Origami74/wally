@@ -23,7 +23,6 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CopyButton } from "@/components/copy-button";
-import type { RoutstrAutoTopupConfig } from "@/lib/routstr/types";
 import {
   connectToRoutstrService,
   disconnectFromRoutstrService,
@@ -32,8 +31,6 @@ import {
   getRoutstrConnectionStatus,
   createRoutstrWallet,
   createBalanceWithToken,
-  setRoutstrAutoTopupConfig,
-  getRoutstrAutoTopupConfig,
   clearRoutstrConfig,
   getAllApiKeys,
   getAllWalletBalances,
@@ -65,14 +62,6 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
   const [createServiceUrl, setCreateServiceUrl] = useState("");
   const [createAmount, setCreateAmount] = useState(defaultAmount);
   const [creating, setCreating] = useState(false);
-
-  const [autoTopupConfig, setAutoTopupConfig] =
-    useState<RoutstrAutoTopupConfig>({
-      enabled: false,
-      min_threshold: 20000,
-      target_amount: 50000,
-    });
-  const [autoTopupLoading, setAutoTopupLoading] = useState(false);
 
   const [localWalletBalance, setLocalWalletBalance] = useState<number>(0);
 
@@ -150,6 +139,14 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       setSelectedTopUpKey(apiKeys[0].api_key);
     }
   }, [apiKeys, selectedTopUpKey]);
+
+  useEffect(() => {
+    if (connectionStatus.base_url && connectionStatus.connected) {
+      setServiceUrl(connectionStatus.base_url);
+    } else if (!connectionStatus.connected) {
+      setServiceUrl("");
+    }
+  }, [connectionStatus.base_url, connectionStatus.connected]);
 
   const createTokenFromLocalWallet = async (
     amount_sats: number,
@@ -295,15 +292,6 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     }
   };
 
-  const loadAutoTopupConfig = async () => {
-    try {
-      const config = await getRoutstrAutoTopupConfig();
-      setAutoTopupConfig(config);
-    } catch (error) {
-      console.error("Failed to load auto-topup config:", error);
-    }
-  };
-
   const loadStoredApiKey = async () => {
     try {
       const apiKeys = await getAllApiKeys();
@@ -315,23 +303,6 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       }
     } catch (error) {
       console.error("Failed to load stored API keys:", error);
-    }
-  };
-
-  const handleAutoTopupConfigChange = async () => {
-    setAutoTopupLoading(true);
-    setError(null);
-    try {
-      await setRoutstrAutoTopupConfig(
-        autoTopupConfig.enabled,
-        autoTopupConfig.min_threshold,
-        autoTopupConfig.target_amount,
-      );
-    } catch (error) {
-      console.error("Failed to update auto-topup config:", error);
-      setError(`Failed to update auto-topup config: ${error}`);
-    } finally {
-      setAutoTopupLoading(false);
     }
   };
 
@@ -383,11 +354,6 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     try {
       await forceResetAllApiKeys();
       await clearRoutstrConfig();
-      setAutoTopupConfig({
-        enabled: false,
-        min_threshold: 10000,
-        target_amount: 50000,
-      });
 
       await refetchConnectionStatus();
       queryClient.invalidateQueries({ queryKey: ["routstr-api-keys"] });
@@ -483,12 +449,6 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       setWalletLoading(false);
     },
   });
-
-  useEffect(() => {
-    if (connectionStatus.connected && connectionStatus.has_api_key) {
-      loadAutoTopupConfig();
-    }
-  }, [connectionStatus.connected, connectionStatus.has_api_key]);
 
   const selectedModelData = models.find((model) => model.id === selectedModel);
 
@@ -1001,104 +961,6 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
             </CardContent>
           </Card>
         )}
-
-        {connectionStatus.connected &&
-          connectionStatus.has_api_key &&
-          false /* disable for now */ && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Auto-Topup Configuration</CardTitle>
-                <CardDescription>
-                  Automatically monitor balance and alert when topup is needed
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="auto-topup-enabled"
-                    checked={autoTopupConfig.enabled}
-                    onChange={(e) =>
-                      setAutoTopupConfig((prev) => ({
-                        ...prev,
-                        enabled: e.target.checked,
-                      }))
-                    }
-                    disabled={autoTopupLoading}
-                    className="h-4 w-4"
-                  />
-                  <Label htmlFor="auto-topup-enabled" className="font-semibold">
-                    Enable Balance Monitoring
-                  </Label>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="min-threshold">
-                      Minimum Balance Threshold (msats)
-                    </Label>
-                    <Input
-                      id="min-threshold"
-                      type="number"
-                      placeholder="10000"
-                      value={autoTopupConfig.min_threshold}
-                      onChange={(e) =>
-                        setAutoTopupConfig((prev) => ({
-                          ...prev,
-                          min_threshold: parseInt(e.target.value) || 0,
-                        }))
-                      }
-                      disabled={autoTopupLoading}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Alert when balance falls below this amount
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="target-amount">
-                      Target Balance Amount (msats)
-                    </Label>
-                    <Input
-                      id="target-amount"
-                      type="number"
-                      placeholder="100000"
-                      value={autoTopupConfig.target_amount}
-                      onChange={(e) =>
-                        setAutoTopupConfig((prev) => ({
-                          ...prev,
-                          target_amount: parseInt(e.target.value) || 0,
-                        }))
-                      }
-                      disabled={autoTopupLoading}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Desired balance to reach when topping up
-                    </p>
-                  </div>
-
-                  <Button
-                    onClick={handleAutoTopupConfigChange}
-                    disabled={autoTopupLoading}
-                    size="sm"
-                  >
-                    {autoTopupLoading ? "Saving..." : "Save Configuration"}
-                  </Button>
-
-                  {autoTopupConfig.enabled && (
-                    <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
-                      <p className="text-sm text-blue-800">
-                        <strong>Balance monitoring active:</strong> The system
-                        will check your balance every 30 seconds and log alerts
-                        when it falls below{" "}
-                        {autoTopupConfig.min_threshold.toLocaleString()} msats.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
 
         {connectionStatus.connected && (
           <Card>

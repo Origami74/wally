@@ -42,25 +42,6 @@ export async function createBalanceWithToken(
   return invoke("routstr_create_balance_with_token", { cashuToken });
 }
 
-export async function setRoutstrAutoTopupConfig(
-  enabled: boolean,
-  minThreshold: number,
-  targetAmount: number,
-): Promise<void> {
-  return invoke("routstr_set_auto_topup_config", {
-    enabled,
-    minThreshold,
-    targetAmount,
-  });
-}
-
-export async function getRoutstrAutoTopupConfig(): Promise<{
-  enabled: boolean;
-  min_threshold: number;
-  target_amount: number;
-}> {
-  return invoke("routstr_get_auto_topup_config");
-}
 
 export async function clearRoutstrConfig(): Promise<void> {
   return invoke("routstr_clear_config");

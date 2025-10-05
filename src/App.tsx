@@ -74,8 +74,8 @@ const initialFeatures: FeatureState[] = [
   {
     id: "routstr",
     title: "Routstr",
-    description: "Enable local Routstr proxy.",
-    enabled: false,
+    description: "Enable Routstr proxy.",
+    enabled: true,
     budget: "2000",
     period: "week",
     spent: 0,
