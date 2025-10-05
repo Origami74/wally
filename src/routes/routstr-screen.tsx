@@ -38,6 +38,8 @@ import {
   getAllApiKeys,
   getAllWalletBalances,
   refundWalletForKey,
+  forceResetAllApiKeys,
+  topUpWalletForKey,
 } from "@/lib/routstr/api";
 import { discoverNostrProviders } from "@/lib/nostr-providers";
 
@@ -56,8 +58,8 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const [authAmount, setAuthAmount] = useState(defaultAmount);
-  const [apiKey, setApiKey] = useState("");
   const [topUpAmount, setTopUpAmount] = useState(defaultAmount);
+  const [selectedTopUpKey, setSelectedTopUpKey] = useState<string>("");
   const [walletLoading, setWalletLoading] = useState(false);
 
   const [createServiceUrl, setCreateServiceUrl] = useState("");
@@ -142,6 +144,12 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       setSelectedProvider(defaultProvider.id);
     }
   }, [providers, selectedProvider]);
+
+  useEffect(() => {
+    if (apiKeys.length > 0 && !selectedTopUpKey) {
+      setSelectedTopUpKey(apiKeys[0].api_key);
+    }
+  }, [apiKeys, selectedTopUpKey]);
 
   const createTokenFromLocalWallet = async (
     amount_sats: number,
@@ -242,7 +250,6 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       const cashu_token = await createTokenFromLocalWallet(authAmount);
 
       const result = await createBalanceWithToken(cashu_token);
-      setApiKey(result.api_key);
 
       await refetchConnectionStatus();
       await refetchApiKeys();
@@ -267,12 +274,20 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
   };
 
   const handleTopUpWallet = async () => {
+    if (!selectedTopUpKey) {
+      setError("Please select an API key to top up");
+      return;
+    }
+
     setWalletLoading(true);
     setError(null);
     setSuccessMessage(null);
     try {
       const cashu_token = await createTokenFromLocalWallet(topUpAmount);
-      topUpMutation.mutate(cashu_token);
+      topUpMutation.mutate({
+        apiKey: selectedTopUpKey,
+        cashuToken: cashu_token,
+      });
     } catch (error) {
       console.error("Failed to create topup token:", error);
       setError(`Failed to create topup token: ${error}`);
@@ -293,7 +308,6 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     try {
       const apiKeys = await getAllApiKeys();
       if (apiKeys.length > 0) {
-        setApiKey(apiKeys[0].api_key);
       } else {
         if (!useManualUrl) {
           refetchProviders();
@@ -348,85 +362,49 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     }
   };
 
-  const handleRecreateToken = async () => {
-    if (apiKeys.length === 0) {
-      setError("No API keys available to refund");
-      return;
-    }
-
+  const handleForceResetAllApiKeys = async () => {
     setWalletLoading(true);
     setError(null);
     setSuccessMessage(null);
-    try {
-      // Refund all API keys
-      const refundResults = [];
-      for (const apiKeyEntry of apiKeys) {
-        try {
-          const result = await refundWalletForKey(apiKeyEntry.api_key);
-          refundResults.push(result);
-        } catch (error) {
-          console.warn(
-            `Failed to refund API key ${apiKeyEntry.api_key}:`,
-            error,
-          );
-        }
-      }
 
+    const refundResults = [];
+    for (const apiKeyEntry of apiKeys) {
+      try {
+        const result = await refundWalletForKey(apiKeyEntry.api_key);
+        refundResults.push(result);
+      } catch (error) {
+        console.warn(
+          `Failed to refund API key ${apiKeyEntry.api_key}, continuing with force reset:`,
+          error,
+        );
+      }
+    }
+
+    try {
+      await forceResetAllApiKeys();
       await clearRoutstrConfig();
-      setApiKey("");
       setAutoTopupConfig({
         enabled: false,
         min_threshold: 10000,
         target_amount: 50000,
       });
 
-      try {
-        await refetchConnectionStatus();
-      } catch (statusError) {
-        console.log(
-          "Expected error during status refresh after token recreation:",
-          statusError,
-        );
-      }
+      await refetchConnectionStatus();
       queryClient.invalidateQueries({ queryKey: ["routstr-api-keys"] });
       queryClient.invalidateQueries({ queryKey: ["routstr-wallet-balances"] });
 
       await refreshLocalWalletBalance();
-
-      const successfulRefunds = refundResults.filter((r) => r.token).length;
-      setSuccessMessage(
-        `Configuration reset completed! ${successfulRefunds} of ${apiKeys.length} wallets were refunded successfully. Funds have been added to your local wallet.`,
-      );
     } catch (error) {
-      console.error("Failed to recreate tokens:", error);
-      let errorMsg = `Failed to recreate tokens: ${error}`;
-
-      try {
-        await clearRoutstrConfig();
-        setApiKey("");
-        setAutoTopupConfig({
-          enabled: false,
-          min_threshold: 10000,
-          target_amount: 50000,
-        });
-        queryClient.invalidateQueries({
-          queryKey: ["routstr-api-keys"],
-        });
-        queryClient.invalidateQueries({
-          queryKey: ["routstr-wallet-balances"],
-        });
-        await refreshLocalWalletBalance();
-        setSuccessMessage(
-          "Configuration has been reset. Some funds may have been automatically added to your local wallet.",
-        );
-      } catch (clearError) {
-        setError(
-          `Token recreation failed and cleanup also failed: ${errorMsg}`,
-        );
-      }
-    } finally {
-      setWalletLoading(false);
+      console.warn("Failed to reset config", error);
     }
+
+    const successfulRefunds = refundResults.filter((r) => r.token).length;
+    const totalKeys = apiKeys.length;
+
+    setSuccessMessage(
+      `Force reset completed! All ${totalKeys} API keys have been deleted. ${successfulRefunds} wallets were successfully refunded and funds added to your local wallet.`,
+    );
+    setWalletLoading(false);
   };
 
   useEffect(() => {
@@ -455,7 +433,6 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     },
     onSuccess: (result) => {
       setCreateServiceUrl("");
-      setApiKey(result.api_key);
       refetchConnectionStatus();
       refreshLocalWalletBalance();
       queryClient.invalidateQueries({ queryKey: ["routstr-api-keys"] });
@@ -474,6 +451,36 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     },
     onSettled: () => {
       setCreating(false);
+    },
+  });
+
+  const topUpMutation = useMutation({
+    mutationFn: async ({
+      apiKey,
+      cashuToken,
+    }: {
+      apiKey: string;
+      cashuToken: string;
+    }) => {
+      return topUpWalletForKey(apiKey, cashuToken);
+    },
+    onSuccess: (result) => {
+      refetchWalletBalances();
+      refreshLocalWalletBalance();
+      setSuccessMessage(
+        `Wallet topped up successfully with ${topUpAmount.toLocaleString()} sats! Added: ${result.msats} msats`,
+      );
+    },
+    onError: (error) => {
+      console.error("Failed to top up wallet:", error);
+      let errorMsg = `Failed to top up wallet: ${error}`;
+      if (errorMsg.includes("Insufficient balance")) {
+        errorMsg += "\n\nPlease add funds to your local wallet first.";
+      }
+      setError(errorMsg);
+    },
+    onSettled: () => {
+      setWalletLoading(false);
     },
   });
 
@@ -796,25 +803,6 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {apiKey && (
-                <div className="space-y-2">
-                  <Label className="font-semibold">Current API Key</Label>
-                  <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-                    <code className="flex-1 text-sm font-mono break-all">
-                      {apiKey}
-                    </code>
-                    <CopyButton
-                      label={""}
-                      copiedLabel="Copied!"
-                      onCopy={() => copyToClipboard(apiKey)}
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    This is your authentication token
-                  </p>
-                </div>
-              )}
-
               {apiKeys.length > 0 && (
                 <div className="space-y-4">
                   <Label className="font-semibold">API Keys & Balances</Label>
@@ -896,9 +884,53 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
                 <div>
                   <Label className="font-semibold">Top Up Wallet</Label>
                   <p className="text-sm text-muted-foreground">
-                    Add funds using a new Cashu token. Your existing token will
-                    be used for authentication.
+                    Add funds using a new Cashu token. Select which API key to
+                    top up.
                   </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="topup-key-select">
+                    Select API Key to Top Up
+                  </Label>
+                  <Select
+                    value={selectedTopUpKey}
+                    onValueChange={setSelectedTopUpKey}
+                  >
+                    <SelectTrigger className="w-full" disabled={walletLoading}>
+                      <SelectValue placeholder="Choose an API key..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {apiKeys.map((apiKeyEntry, index) => {
+                        const balance = walletBalances.find(
+                          (wb) => wb.api_key === apiKeyEntry.api_key,
+                        );
+                        return (
+                          <SelectItem
+                            key={apiKeyEntry.api_key}
+                            value={apiKeyEntry.api_key}
+                          >
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-2">
+                                <span>API Key {index + 1}</span>
+                                {apiKeyEntry.alias && (
+                                  <Badge tone="default" className="text-xs">
+                                    {apiKeyEntry.alias}
+                                  </Badge>
+                                )}
+                              </div>
+                              <span className="text-xs text-muted-foreground">
+                                Balance:{" "}
+                                {balance
+                                  ? balance.balance.toLocaleString()
+                                  : "Loading..."}{" "}
+                                msats
+                              </span>
+                            </div>
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="topup-amount">Top-up Amount (sats)</Label>
@@ -924,7 +956,8 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
                   disabled={
                     walletLoading ||
                     localWalletBalance < topUpAmount ||
-                    topUpAmount < 1000
+                    !selectedTopUpKey ||
+                    apiKeys.length === 0
                   }
                   className="w-full"
                 >
@@ -941,121 +974,131 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
               <div className="space-y-4 rounded-lg border border-red-200 bg-red-50 p-4">
                 <div>
                   <Label className="font-semibold text-red-800">
-                    Recreate Token
+                    Reset Configuration
                   </Label>
                   <p className="text-sm text-red-700 mt-1">
                     Refund the balance and reset the configuration.
                   </p>
                 </div>
-                <Button
-                  onClick={handleRecreateToken}
-                  disabled={walletLoading}
-                  size="sm"
-                  variant="outline"
-                  className="border-red-300 text-red-800 hover:bg-red-100"
-                >
-                  {walletLoading ? "Processing..." : "Recreate Token"}
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleForceResetAllApiKeys}
+                    disabled={walletLoading || apiKeys.length === 0}
+                    size="sm"
+                    variant="outline"
+                    className="border-red-500 text-red-900 hover:bg-red-200 bg-red-100"
+                  >
+                    {walletLoading ? "Processing..." : "Reset All"}
+                  </Button>
+                </div>
+                <div className="text-xs text-red-600">
+                  <p>
+                    <strong>Force Reset All:</strong> Refund and deletes all API
+                    keys locally even if remote refund fails.
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>
         )}
 
-        {connectionStatus.connected && connectionStatus.has_api_key && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Auto-Topup Configuration</CardTitle>
-              <CardDescription>
-                Automatically monitor balance and alert when topup is needed
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="auto-topup-enabled"
-                  checked={autoTopupConfig.enabled}
-                  onChange={(e) =>
-                    setAutoTopupConfig((prev) => ({
-                      ...prev,
-                      enabled: e.target.checked,
-                    }))
-                  }
-                  disabled={autoTopupLoading}
-                  className="h-4 w-4"
-                />
-                <Label htmlFor="auto-topup-enabled" className="font-semibold">
-                  Enable Balance Monitoring
-                </Label>
-              </div>
-
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="min-threshold">
-                    Minimum Balance Threshold (msats)
-                  </Label>
-                  <Input
-                    id="min-threshold"
-                    type="number"
-                    placeholder="10000"
-                    value={autoTopupConfig.min_threshold}
+        {connectionStatus.connected &&
+          connectionStatus.has_api_key &&
+          false /* disable for now */ && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Auto-Topup Configuration</CardTitle>
+                <CardDescription>
+                  Automatically monitor balance and alert when topup is needed
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="auto-topup-enabled"
+                    checked={autoTopupConfig.enabled}
                     onChange={(e) =>
                       setAutoTopupConfig((prev) => ({
                         ...prev,
-                        min_threshold: parseInt(e.target.value) || 0,
+                        enabled: e.target.checked,
                       }))
                     }
                     disabled={autoTopupLoading}
+                    className="h-4 w-4"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Alert when balance falls below this amount
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="target-amount">
-                    Target Balance Amount (msats)
+                  <Label htmlFor="auto-topup-enabled" className="font-semibold">
+                    Enable Balance Monitoring
                   </Label>
-                  <Input
-                    id="target-amount"
-                    type="number"
-                    placeholder="100000"
-                    value={autoTopupConfig.target_amount}
-                    onChange={(e) =>
-                      setAutoTopupConfig((prev) => ({
-                        ...prev,
-                        target_amount: parseInt(e.target.value) || 0,
-                      }))
-                    }
-                    disabled={autoTopupLoading}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Desired balance to reach when topping up
-                  </p>
                 </div>
 
-                <Button
-                  onClick={handleAutoTopupConfigChange}
-                  disabled={autoTopupLoading}
-                  size="sm"
-                >
-                  {autoTopupLoading ? "Saving..." : "Save Configuration"}
-                </Button>
-
-                {autoTopupConfig.enabled && (
-                  <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
-                    <p className="text-sm text-blue-800">
-                      <strong>Balance monitoring active:</strong> The system
-                      will check your balance every 30 seconds and log alerts
-                      when it falls below{" "}
-                      {autoTopupConfig.min_threshold.toLocaleString()} msats.
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="min-threshold">
+                      Minimum Balance Threshold (msats)
+                    </Label>
+                    <Input
+                      id="min-threshold"
+                      type="number"
+                      placeholder="10000"
+                      value={autoTopupConfig.min_threshold}
+                      onChange={(e) =>
+                        setAutoTopupConfig((prev) => ({
+                          ...prev,
+                          min_threshold: parseInt(e.target.value) || 0,
+                        }))
+                      }
+                      disabled={autoTopupLoading}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Alert when balance falls below this amount
                     </p>
                   </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="target-amount">
+                      Target Balance Amount (msats)
+                    </Label>
+                    <Input
+                      id="target-amount"
+                      type="number"
+                      placeholder="100000"
+                      value={autoTopupConfig.target_amount}
+                      onChange={(e) =>
+                        setAutoTopupConfig((prev) => ({
+                          ...prev,
+                          target_amount: parseInt(e.target.value) || 0,
+                        }))
+                      }
+                      disabled={autoTopupLoading}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Desired balance to reach when topping up
+                    </p>
+                  </div>
+
+                  <Button
+                    onClick={handleAutoTopupConfigChange}
+                    disabled={autoTopupLoading}
+                    size="sm"
+                  >
+                    {autoTopupLoading ? "Saving..." : "Save Configuration"}
+                  </Button>
+
+                  {autoTopupConfig.enabled && (
+                    <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
+                      <p className="text-sm text-blue-800">
+                        <strong>Balance monitoring active:</strong> The system
+                        will check your balance every 30 seconds and log alerts
+                        when it falls below{" "}
+                        {autoTopupConfig.min_threshold.toLocaleString()} msats.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
         {connectionStatus.connected && (
           <Card>

@@ -6,7 +6,7 @@ import type {
   RoutstrTopUpResponse,
   RoutstrRefundResponse,
   RoutstrCreateResponse,
-  ApiKeyEntry
+  ApiKeyEntry,
 } from "./types";
 
 export async function connectToRoutstrService(url: string): Promise<void> {
@@ -29,23 +29,28 @@ export async function getRoutstrConnectionStatus(): Promise<RoutstrConnectionSta
   return invoke("routstr_get_connection_status");
 }
 
-export async function createRoutstrWallet(url: string, cashuToken: string): Promise<RoutstrCreateResponse> {
+export async function createRoutstrWallet(
+  url: string,
+  cashuToken: string,
+): Promise<RoutstrCreateResponse> {
   return invoke("routstr_create_wallet", { url, cashuToken });
 }
 
-export async function createBalanceWithToken(cashuToken: string): Promise<RoutstrCreateResponse> {
+export async function createBalanceWithToken(
+  cashuToken: string,
+): Promise<RoutstrCreateResponse> {
   return invoke("routstr_create_balance_with_token", { cashuToken });
 }
 
 export async function setRoutstrAutoTopupConfig(
   enabled: boolean,
   minThreshold: number,
-  targetAmount: number
+  targetAmount: number,
 ): Promise<void> {
   return invoke("routstr_set_auto_topup_config", {
     enabled,
     minThreshold,
-    targetAmount
+    targetAmount,
   });
 }
 
@@ -69,18 +74,29 @@ export async function getAllWalletBalances(): Promise<RoutstrWalletBalance[]> {
   return invoke("routstr_get_all_wallet_balances");
 }
 
-export async function getWalletBalanceForKey(apiKey: string): Promise<RoutstrWalletBalance> {
+export async function getWalletBalanceForKey(
+  apiKey: string,
+): Promise<RoutstrWalletBalance> {
   return invoke("routstr_get_wallet_balance_for_key", { apiKey });
 }
 
-export async function topUpWalletForKey(apiKey: string, cashuToken: string): Promise<RoutstrTopUpResponse> {
+export async function topUpWalletForKey(
+  apiKey: string,
+  cashuToken: string,
+): Promise<RoutstrTopUpResponse> {
   return invoke("routstr_top_up_wallet_for_key", { apiKey, cashuToken });
 }
 
-export async function refundWalletForKey(apiKey: string): Promise<RoutstrRefundResponse> {
+export async function refundWalletForKey(
+  apiKey: string,
+): Promise<RoutstrRefundResponse> {
   return invoke("routstr_refund_wallet_for_key", { apiKey });
 }
 
 export async function removeApiKey(apiKey: string): Promise<boolean> {
   return invoke("routstr_remove_api_key", { apiKey });
+}
+
+export async function forceResetAllApiKeys(): Promise<void> {
+  return invoke("routstr_force_reset_all_api_keys");
 }

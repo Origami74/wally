@@ -578,6 +578,7 @@ async fn start_provider_monitoring() {
             routstr::routstr_refund_wallet_for_key,
             routstr::routstr_remove_api_key,
             routstr::routstr_clear_config,
+            routstr::routstr_force_reset_all_api_keys,
             discover_nostr_providers,
         ]);
 

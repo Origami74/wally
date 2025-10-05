@@ -353,7 +353,12 @@ impl RoutstrService {
         Ok(())
     }
 
-    pub fn add_api_key(&mut self, api_key: String, creation_cashu_token: Option<String>, alias: Option<String>) {
+    pub fn add_api_key(
+        &mut self,
+        api_key: String,
+        creation_cashu_token: Option<String>,
+        alias: Option<String>,
+    ) {
         let entry = ApiKeyEntry {
             api_key,
             creation_cashu_token,
@@ -376,7 +381,6 @@ impl RoutstrService {
     pub fn get_api_keys(&self) -> &Vec<ApiKeyEntry> {
         &self.api_keys
     }
-
 
     pub fn remove_api_key(&mut self, api_key: &str) -> bool {
         let initial_len = self.api_keys.len();
@@ -512,7 +516,6 @@ impl RoutstrService {
         Ok(create_response)
     }
 
-
     pub async fn get_wallet_balance_for_key(&self, api_key: &str) -> Result<RoutstrWalletBalance> {
         let base_url = self
             .base_url
@@ -567,16 +570,22 @@ impl RoutstrService {
             match self.get_wallet_balance_for_key(&entry.api_key).await {
                 Ok(balance) => balances.push(balance),
                 Err(e) => {
-                    log::warn!("Failed to get balance for API key {}: {}",
-                        &entry.api_key.chars().take(8).collect::<String>(), e);
+                    log::warn!(
+                        "Failed to get balance for API key {}: {}",
+                        &entry.api_key.chars().take(8).collect::<String>(),
+                        e
+                    );
                 }
             }
         }
         balances
     }
 
-
-    pub async fn top_up_wallet_for_key(&self, api_key: &str, cashu_token: String) -> Result<RoutstrTopUpResponse> {
+    pub async fn top_up_wallet_for_key(
+        &self,
+        api_key: &str,
+        cashu_token: String,
+    ) -> Result<RoutstrTopUpResponse> {
         let base_url = self
             .base_url
             .as_ref()
@@ -622,7 +631,6 @@ impl RoutstrService {
 
         Ok(topup_response)
     }
-
 
     pub async fn refund_wallet_for_key(&self, api_key: &str) -> Result<RoutstrRefundResponse> {
         let base_url = self
@@ -701,8 +709,8 @@ impl RoutstrService {
             topup_amount_target: self.topup_amount_target,
             base_url: self.base_url.clone(),
             api_keys: self.api_keys.clone(),
-            api_key: None, // Legacy field, no longer used
-            creation_cashu_token: None, // Legacy field, no longer used
+            api_key: None,
+            creation_cashu_token: None,
         };
 
         if let Some(parent) = self.storage.config_file.parent() {
@@ -723,7 +731,6 @@ impl RoutstrService {
         self.min_balance_threshold = min_threshold;
         self.topup_amount_target = target_amount;
 
-        // Persist configuration
         if let Err(e) = self.save_config() {
             log::error!("Failed to save auto-topup configuration: {}", e);
         }
@@ -737,7 +744,6 @@ impl RoutstrService {
     }
 
     pub fn start_balance_monitoring(&mut self, service_state: RoutstrState) {
-        // Stop existing task if running
         if let Some(task) = self.balance_monitor_task.take() {
             task.abort();
         }
@@ -762,7 +768,6 @@ impl RoutstrService {
             loop {
                 interval.tick().await;
 
-                // Check if auto-topup is still enabled
                 let (is_enabled, current_threshold) = {
                     let service = service_state.lock().await;
                     (service.auto_topup_enabled, service.min_balance_threshold)
@@ -773,7 +778,6 @@ impl RoutstrService {
                     break;
                 }
 
-                // Get current balance
                 match Self::check_and_topup_if_needed(
                     &service_state,
                     current_threshold,
@@ -805,12 +809,10 @@ impl RoutstrService {
     ) -> Result<bool> {
         let service = service_state.lock().await;
 
-        // Only proceed if we have API keys and are connected
         if service.api_keys.is_empty() || service.base_url.is_none() {
             return Ok(false);
         }
 
-        // Check current balance of first API key
         let first_api_key = &service.api_keys[0].api_key;
         match service.get_wallet_balance_for_key(first_api_key).await {
             Ok(balance) => {
@@ -827,7 +829,6 @@ impl RoutstrService {
                         min_threshold
                     );
 
-                    // Calculate how much we need to reach target
                     let needed_amount = target_amount.saturating_sub(balance.balance);
                     log::info!(
                         "Need {} msats to reach target of {} msats",
@@ -848,9 +849,44 @@ impl RoutstrService {
             }
         }
     }
+
+    pub async fn force_reset_all_api_keys(&mut self) -> Result<()> {
+        log::info!("Starting force reset of all API keys");
+
+        for api_key_entry in &self.api_keys {
+            match self.refund_wallet_for_key(&api_key_entry.api_key).await {
+                Ok(_) => {
+                    log::info!(
+                        "Successfully refunded wallet for API key: {}...",
+                        &api_key_entry.api_key.chars().take(8).collect::<String>()
+                    );
+                }
+                Err(e) => {
+                    log::warn!("Failed to refund wallet for API key: {}..., error: {} - continuing with force reset",
+                        &api_key_entry.api_key.chars().take(8).collect::<String>(), e);
+                }
+            }
+        }
+
+        self.api_keys.clear();
+        self.models.clear();
+        self.auto_topup_enabled = false;
+        self.min_balance_threshold = 10000;
+        self.topup_amount_target = 100000;
+
+        if let Some(task) = self.balance_monitor_task.take() {
+            task.abort();
+        }
+
+        if let Err(e) = self.save_config() {
+            log::error!("Failed to save configuration after force reset: {}", e);
+        }
+
+        log::info!("Force reset of all API keys completed");
+        Ok(())
+    }
 }
 
-// Global state for the Routstr service
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -904,7 +940,6 @@ pub async fn routstr_get_connection_status(
     }))
 }
 
-
 #[tauri::command]
 pub async fn routstr_create_wallet(
     url: String,
@@ -929,9 +964,6 @@ pub async fn routstr_create_balance_with_token(
         .await
         .map_err(|e| e.to_string())
 }
-
-
-
 
 #[tauri::command]
 pub async fn routstr_set_auto_topup_config(
@@ -962,7 +994,6 @@ pub async fn routstr_get_auto_topup_config(
         "target_amount": service.topup_amount_target
     }))
 }
-
 
 #[tauri::command]
 pub async fn routstr_get_all_api_keys(
@@ -1013,7 +1044,10 @@ pub async fn routstr_refund_wallet_for_key(
 ) -> Result<RoutstrRefundResponse, String> {
     let refund_response = {
         let service = routstr_state.lock().await;
-        service.refund_wallet_for_key(&api_key).await.map_err(|e| e.to_string())?
+        service
+            .refund_wallet_for_key(&api_key)
+            .await
+            .map_err(|e| e.to_string())?
     };
 
     if let Some(ref token) = refund_response.token {
@@ -1054,6 +1088,17 @@ pub async fn routstr_remove_api_key(
 pub async fn routstr_clear_config(state: tauri::State<'_, RoutstrState>) -> Result<(), String> {
     let mut service = state.lock().await;
     service.clear_config().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn routstr_force_reset_all_api_keys(
+    state: tauri::State<'_, RoutstrState>,
+) -> Result<(), String> {
+    let mut service = state.lock().await;
+    service
+        .force_reset_all_api_keys()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -1105,7 +1150,11 @@ mod tests {
         let mut service = RoutstrService::new();
 
         // Test adding API keys
-        service.add_api_key("test_key_1".to_string(), Some("token1".to_string()), Some("First Key".to_string()));
+        service.add_api_key(
+            "test_key_1".to_string(),
+            Some("token1".to_string()),
+            Some("First Key".to_string()),
+        );
         service.add_api_key("test_key_2".to_string(), None, None);
 
         // Verify keys are stored
