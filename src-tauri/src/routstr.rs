@@ -6,8 +6,6 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub struct RoutstrStoragePaths {
-    #[allow(dead_code)]
-    pub base_dir: PathBuf,
     pub config_file: PathBuf,
 }
 
@@ -22,10 +20,7 @@ impl RoutstrStoragePaths {
         // Ensure directories exist
         fs::create_dir_all(&base_dir)?;
 
-        Ok(Self {
-            base_dir,
-            config_file,
-        })
+        Ok(Self { config_file })
     }
 }
 
@@ -173,7 +168,6 @@ impl RoutstrService {
             log::error!("Failed to initialize Routstr storage: {}", e);
             // Fallback to defaults if storage init fails
             RoutstrStoragePaths {
-                base_dir: std::env::temp_dir().join("routstr_fallback"),
                 config_file: std::env::temp_dir()
                     .join("routstr_fallback")
                     .join("config.json"),
@@ -886,7 +880,6 @@ mod tests {
             api_keys: Vec::new(),
             client: reqwest::Client::new(),
             storage: RoutstrStoragePaths {
-                base_dir: temp_dir.clone(),
                 config_file: config_file.clone(),
             },
         };
