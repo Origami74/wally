@@ -453,7 +453,7 @@ pub fn run() {
             }
 
             let app_handle = app.app_handle();
-            setup_macos_panel(&app_handle)?;
+            setup_macos_panel(app_handle)?;
         }
 
         log::info!("TollGate service initialized");
@@ -566,7 +566,7 @@ fn setup_macos_panel(app: &tauri::AppHandle) -> tauri::Result<()> {
             } = event
             {
                 if button_state == MouseButtonState::Up {
-                    toggle_panel(&tray.app_handle(), Some(position));
+                    toggle_panel(tray.app_handle(), Some(position));
                 }
             }
         })
@@ -581,7 +581,7 @@ fn toggle_panel(app: &tauri::AppHandle, anchor: Option<PhysicalPosition<f64>>) {
     let _ = app.run_on_main_thread(move || {
         if let Ok(panel) = app_handle.get_webview_panel("main") {
             if panel.is_visible() {
-                let _ = panel.order_out(None);
+                panel.order_out(None);
             } else {
                 if let Some(position) = anchor {
                     if let Some(window) = app_handle.get_webview_window("main") {

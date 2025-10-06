@@ -922,10 +922,7 @@ impl NostrWalletConnect {
                 ),
             },
             nip47::RequestParams::MakeInvoice(params) => {
-                match self
-                    .make_invoice(params.amount.into(), params.description)
-                    .await
-                {
+                match self.make_invoice(params.amount, params.description).await {
                     Ok(invoice_info) => {
                         let invoice = Bolt11Invoice::from_str(&invoice_info.request)
                             .expect("Valid invoice from wallet");
@@ -1145,7 +1142,7 @@ impl NostrWalletConnect {
         budget: ConnectionBudget,
     ) -> Result<WalletConnection, Error> {
         // Parse app's public key
-        let app_pubkey = PublicKey::from_str(app_pubkey_str).map_err(|e| Error::Key(e))?;
+        let app_pubkey = PublicKey::from_str(app_pubkey_str).map_err(Error::Key)?;
 
         // Generate our own secret for this connection (as per NIP-47 spec)
         let wallet_secret = uuid::Uuid::new_v4().to_string();
@@ -1482,9 +1479,9 @@ impl From<lightning_invoice::ParseOrSemanticError> for Error {
     }
 }
 
-impl Into<nip47::NIP47Error> for Error {
-    fn into(self) -> nip47::NIP47Error {
-        match self {
+impl From<Error> for nip47::NIP47Error {
+    fn from(val: Error) -> Self {
+        match val {
             Error::BudgetExceeded => nip47::NIP47Error {
                 code: nip47::ErrorCode::QuotaExceeded,
                 message: "Budget exceeded".to_string(),

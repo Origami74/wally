@@ -1,5 +1,5 @@
 //! Network detection and validation for TollGate connections
-//! 
+//!
 //! Handles:
 //! - TollGate network detection
 //! - Gateway IP validation
@@ -39,7 +39,11 @@ impl NetworkDetector {
     }
 
     /// Detect if current network is a TollGate
-    pub async fn detect_tollgate(&self, gateway_ip: &str, mac_address: &str) -> TollGateResult<NetworkInfo> {
+    pub async fn detect_tollgate(
+        &self,
+        gateway_ip: &str,
+        mac_address: &str,
+    ) -> TollGateResult<NetworkInfo> {
         // Validate IP address format
         self.validate_gateway_ip(gateway_ip)?;
         self.validate_mac_address(mac_address)?;
@@ -55,7 +59,7 @@ impl NetworkDetector {
         match self.check_tollgate_endpoint(gateway_ip).await {
             Ok(true) => {
                 network_info.is_tollgate = true;
-                
+
                 // Fetch and validate advertisement
                 match self.protocol.fetch_advertisement(gateway_ip).await {
                     Ok(advertisement) => {
@@ -83,7 +87,7 @@ impl NetworkDetector {
     async fn check_tollgate_endpoint(&self, gateway_ip: &str) -> TollGateResult<bool> {
         // Check for TIP-03 endpoint on port 2121
         let tollgate_url = format!("http://{}:2121/", gateway_ip);
-        
+
         match self.client.get(&tollgate_url).send().await {
             Ok(response) => {
                 if response.status().is_success() {
@@ -116,7 +120,7 @@ impl NetworkDetector {
     fn validate_mac_address(&self, mac: &str) -> TollGateResult<()> {
         // Basic MAC address validation (xx:xx:xx:xx:xx:xx format)
         let parts: Vec<&str> = mac.split(':').collect();
-        
+
         if parts.len() != 6 {
             return Err(TollGateError::InvalidMacAddress(mac.to_string()));
         }
@@ -125,7 +129,7 @@ impl NetworkDetector {
             if part.len() != 2 {
                 return Err(TollGateError::InvalidMacAddress(mac.to_string()));
             }
-            
+
             if !part.chars().all(|c| c.is_ascii_hexdigit()) {
                 return Err(TollGateError::InvalidMacAddress(mac.to_string()));
             }
@@ -145,7 +149,13 @@ impl NetworkDetector {
         ];
 
         for url in &test_urls {
-            match self.client.get(*url).timeout(Duration::from_secs(3)).send().await {
+            match self
+                .client
+                .get(*url)
+                .timeout(Duration::from_secs(3))
+                .send()
+                .await
+            {
                 Ok(response) if response.status().is_success() => {
                     return Ok(true);
                 }
@@ -161,11 +171,17 @@ impl NetworkDetector {
     pub async fn test_tollgate_relay(&self, gateway_ip: &str) -> TollGateResult<bool> {
         // Test WebSocket connection to TollGate relay
         let _relay_url = format!("ws://{}:3334", gateway_ip);
-        
+
         // For now, just test HTTP connectivity to the same port
         let http_url = format!("http://{}:3334", gateway_ip);
-        
-        match self.client.get(&http_url).timeout(Duration::from_secs(3)).send().await {
+
+        match self
+            .client
+            .get(&http_url)
+            .timeout(Duration::from_secs(3))
+            .send()
+            .await
+        {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
         }
@@ -178,8 +194,9 @@ impl NetworkDetector {
 
         // Test latency to gateway
         let start = std::time::Instant::now();
-        match self.client
-            .get(&format!("http://{}:2122/pubkey", gateway_ip))
+        match self
+            .client
+            .get(format!("http://{}:2122/pubkey", gateway_ip))
             .timeout(Duration::from_secs(2))
             .send()
             .await
@@ -206,6 +223,7 @@ impl NetworkDetector {
 /// Network quality metrics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
+#[derive(Default)]
 pub struct NetworkQuality {
     pub latency_ms: u32,
     pub gateway_reachable: bool,
@@ -213,49 +231,37 @@ pub struct NetworkQuality {
     pub relay_reachable: bool,
 }
 
-impl Default for NetworkQuality {
-    fn default() -> Self {
-        Self {
-            latency_ms: 0,
-            gateway_reachable: false,
-            internet_reachable: false,
-            relay_reachable: false,
-        }
-    }
-}
-
 impl NetworkQuality {
     /// Check if network quality is good enough for TollGate operations
     #[allow(dead_code)]
     pub fn is_good_quality(&self) -> bool {
-        self.gateway_reachable && 
-        self.relay_reachable && 
-        self.latency_ms < 1000 // Less than 1 second latency
+        self.gateway_reachable && self.relay_reachable && self.latency_ms < 1000
+        // Less than 1 second latency
     }
 
     /// Get quality score (0.0 to 1.0)
     #[allow(dead_code)]
     pub fn quality_score(&self) -> f64 {
         let mut score = 0.0;
-        
+
         if self.gateway_reachable {
             score += 0.4;
         }
-        
+
         if self.relay_reachable {
             score += 0.3;
         }
-        
+
         if self.internet_reachable {
             score += 0.2;
         }
-        
+
         // Latency score (better latency = higher score)
         if self.latency_ms > 0 {
             let latency_score = (1000.0 - self.latency_ms.min(1000) as f64) / 1000.0;
             score += latency_score * 0.1;
         }
-        
+
         score
     }
 }
@@ -273,7 +279,7 @@ mod tests {
     #[test]
     fn test_validate_gateway_ip() {
         let detector = NetworkDetector::new();
-        
+
         assert!(detector.validate_gateway_ip("192.168.1.1").is_ok());
         assert!(detector.validate_gateway_ip("10.0.0.1").is_ok());
         assert!(detector.validate_gateway_ip("invalid_ip").is_err());
@@ -283,7 +289,7 @@ mod tests {
     #[test]
     fn test_validate_mac_address() {
         let detector = NetworkDetector::new();
-        
+
         assert!(detector.validate_mac_address("aa:bb:cc:dd:ee:ff").is_ok());
         assert!(detector.validate_mac_address("00:11:22:33:44:55").is_ok());
         assert!(detector.validate_mac_address("invalid_mac").is_err());
@@ -295,12 +301,12 @@ mod tests {
     fn test_network_quality_score() {
         let mut quality = NetworkQuality::default();
         assert_eq!(quality.quality_score(), 0.0);
-        
+
         quality.gateway_reachable = true;
         quality.relay_reachable = true;
         quality.internet_reachable = true;
         quality.latency_ms = 100;
-        
+
         let score = quality.quality_score();
         assert!(score > 0.8); // Should be high quality
         assert!(quality.is_good_quality());

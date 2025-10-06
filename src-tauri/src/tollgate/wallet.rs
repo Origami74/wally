@@ -567,7 +567,7 @@ impl TollGateWallet {
         Ok(Bolt11InvoiceInfo {
             quote_id: quote.id.clone(),
             request: quote.request.clone(),
-            amount: quote.amount.map(|a| u64::from(a)),
+            amount: quote.amount.map(u64::from),
             unit: quote.unit.to_string(),
             expiry: quote.expiry,
             mint_url: quote.mint_url.to_string(),

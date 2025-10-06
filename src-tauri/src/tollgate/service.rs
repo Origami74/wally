@@ -341,16 +341,16 @@ impl TollGateService {
         let cost = self.protocol.calculate_cost(&pricing_option, initial_steps);
 
         // Create session
-        let mut session = Session::new(
-            advertisement.tollgate_pubkey.clone(),
-            network_info.gateway_ip.clone(),
-            device_value,
+        let mut session = Session::new(super::session::SessionParams {
+            tollgate_pubkey: advertisement.tollgate_pubkey.clone(),
+            gateway_ip: network_info.gateway_ip.clone(),
+            mac_address: device_value,
             pricing_option,
-            advertisement.clone(),
-            allotment,
-            session_response.session_end,
-            cost,
-        )?;
+            advertisement: advertisement.clone(),
+            initial_allotment: allotment,
+            session_end: session_response.session_end,
+            initial_cost: cost,
+        })?;
 
         // Update session with response
         session.update_from_response(&session_response)?;
