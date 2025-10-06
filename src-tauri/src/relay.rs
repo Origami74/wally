@@ -4,6 +4,7 @@
 //! the NWC service to communicate with external applications.
 
 use nostr::{Event, Filter};
+use nostr_sdk::filter::MatchEventOptions;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -49,7 +50,11 @@ impl EventStore {
 
         events
             .iter()
-            .filter(|event| filters.iter().any(|filter| filter.match_event(event)))
+            .filter(|event| {
+                filters
+                    .iter()
+                    .any(|filter| filter.match_event(event, MatchEventOptions::default()))
+            })
             .cloned()
             .collect()
     }
@@ -168,7 +173,7 @@ async fn handle_connection(
                         let subs = subscriptions.read().await;
                         for (sub_id, filters) in subs.iter() {
                             for filter in filters.iter() {
-                                if filter.match_event(&event) {
+                                if filter.match_event(&event, MatchEventOptions::default()) {
                                     log::info!("✅ Broadcasting event {} to subscription '{}'", event.id, sub_id);
                                     let event_msg = serde_json::json!([
                                         "EVENT",

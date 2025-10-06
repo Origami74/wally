@@ -227,21 +227,26 @@ impl TollGateProtocol {
         device_value: &str,
     ) -> TollGateResult<Event> {
         let tags = vec![
-            Tag::parse(&["p", &payment.tollgate_pubkey])
+            Tag::parse(vec!["p".to_string(), payment.tollgate_pubkey.clone()])
                 .map_err(|e| TollGateError::protocol(format!("Invalid pubkey tag: {}", e)))?,
-            Tag::parse(&["device-identifier", device_type, device_value]).map_err(|e| {
+            Tag::parse(vec![
+                "device-identifier".to_string(),
+                device_type.to_string(),
+                device_value.to_string(),
+            ])
+            .map_err(|e| {
                 TollGateError::protocol(format!("Invalid device-identifier tag: {}", e))
             })?,
-            Tag::parse(&["payment", &payment.cashu_token])
+            Tag::parse(vec!["payment".to_string(), payment.cashu_token.clone()])
                 .map_err(|e| TollGateError::protocol(format!("Invalid payment tag: {}", e)))?,
         ];
 
         let event = EventBuilder::new(
             Kind::Custom(21000),
             "", // Empty content for payment events
-            tags,
         )
-        .to_event(customer_keys)
+        .tags(tags)
+        .sign_with_keys(customer_keys)
         .map_err(|e| TollGateError::protocol(format!("Failed to create event: {}", e)))?;
 
         Ok(event)
@@ -380,6 +385,7 @@ impl TollGateProtocol {
 
         Ok(session_response)
     }
+
 
     /// Validate TollGate advertisement
     pub fn validate_advertisement(&self, ad: &TollGateAdvertisement) -> TollGateResult<()> {

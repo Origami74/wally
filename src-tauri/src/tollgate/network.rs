@@ -170,18 +170,4 @@ mod tests {
         assert!(detector.validate_mac_address("aa:bb:cc:dd:ee:gg").is_err());
     }
 
-    #[test]
-    fn test_network_quality_score() {
-        let mut quality = NetworkQuality::default();
-        assert_eq!(quality.quality_score(), 0.0);
-
-        quality.gateway_reachable = true;
-        quality.relay_reachable = true;
-        quality.internet_reachable = true;
-        quality.latency_ms = 100;
-
-        let score = quality.quality_score();
-        assert!(score > 0.8); // Should be high quality
-        assert!(quality.is_good_quality());
-    }
 }

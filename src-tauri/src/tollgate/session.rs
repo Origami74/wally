@@ -254,6 +254,12 @@ impl SessionManager {
         self.sessions.len()
     }
 
+    /// Remove session
+    #[cfg(test)]
+    pub fn remove_session(&mut self, tollgate_pubkey: &str) -> Option<Session> {
+        self.sessions.remove(tollgate_pubkey)
+    }
+
     /// Update usage for all sessions based on time (for time-based sessions)
     pub fn update_time_based_usage(&mut self) {
         let now = Utc::now();
