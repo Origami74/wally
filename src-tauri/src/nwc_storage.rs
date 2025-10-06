@@ -18,11 +18,13 @@ pub struct NwcConnectionStorage {
 impl NwcConnectionStorage {
     /// Create a new storage manager
     pub fn new() -> Result<Self, StorageError> {
-        let project_dirs = ProjectDirs::from("com", "Tollgate", "TollgateApp")
-            .ok_or_else(|| StorageError::Path("Unable to determine storage directory".to_string()))?;
+        let project_dirs =
+            ProjectDirs::from("com", "Tollgate", "TollgateApp").ok_or_else(|| {
+                StorageError::Path("Unable to determine storage directory".to_string())
+            })?;
 
         let base_dir = project_dirs.data_dir().to_path_buf();
-        
+
         // Create directory if it doesn't exist
         if let Some(parent) = base_dir.parent() {
             fs::create_dir_all(parent)?;
@@ -30,17 +32,17 @@ impl NwcConnectionStorage {
         fs::create_dir_all(&base_dir)?;
 
         let db_path = base_dir.join("nwc-connections.sqlite");
-        
+
         let storage = Self { db_path };
         storage.init_database()?;
-        
+
         Ok(storage)
     }
 
     /// Initialize the database schema
     fn init_database(&self) -> Result<(), StorageError> {
         let conn = Connection::open(&self.db_path)?;
-        
+
         conn.execute(
             "CREATE TABLE IF NOT EXISTS connections (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,10 +54,13 @@ impl NwcConnectionStorage {
                 renews_at INTEGER,
                 total_budget_msats INTEGER NOT NULL,
                 used_budget_msats INTEGER NOT NULL,
+                name TEXT,
                 created_at INTEGER NOT NULL
             )",
             [],
         )?;
+
+        let _ = conn.execute("ALTER TABLE connections ADD COLUMN name TEXT", []);
 
         Ok(())
     }
@@ -63,12 +68,12 @@ impl NwcConnectionStorage {
     /// Save a connection to the database
     pub fn save_connection(&self, connection: &WalletConnection) -> Result<(), StorageError> {
         let conn = Connection::open(&self.db_path)?;
-        
+
         let connection_secret = connection.keys.secret_key().to_secret_hex();
         let connection_pubkey = connection.keys.public_key().to_hex();
         let app_pubkey = connection.app_pubkey.map(|pk| pk.to_hex());
         let secret = connection.secret.clone();
-        
+
         let renewal_period = match connection.budget.renewal_period {
             BudgetRenewalPeriod::Daily => "daily",
             BudgetRenewalPeriod::Weekly => "weekly",
@@ -76,17 +81,18 @@ impl NwcConnectionStorage {
             BudgetRenewalPeriod::Yearly => "yearly",
             BudgetRenewalPeriod::Never => "never",
         };
-        
+
         let renews_at = connection.budget.renews_at.map(|t| t.as_u64() as i64);
         let total_budget_msats = connection.budget.total_budget_msats as i64;
         let used_budget_msats = connection.budget.used_budget_msats as i64;
         let created_at = Timestamp::now().as_u64() as i64;
+        let name = &connection.name;
 
         conn.execute(
             "INSERT OR REPLACE INTO connections 
              (connection_secret, connection_pubkey, app_pubkey, secret, 
-              renewal_period, renews_at, total_budget_msats, used_budget_msats, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+              renewal_period, renews_at, total_budget_msats, used_budget_msats, name, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 connection_secret,
                 connection_pubkey,
@@ -96,6 +102,7 @@ impl NwcConnectionStorage {
                 renews_at,
                 total_budget_msats,
                 used_budget_msats,
+                name,
                 created_at,
             ],
         )?;
@@ -107,17 +114,15 @@ impl NwcConnectionStorage {
     /// Load all connections from the database
     pub fn load_connections(&self) -> Result<Vec<WalletConnection>, StorageError> {
         let conn = Connection::open(&self.db_path)?;
-        
+
         let mut stmt = conn.prepare(
             "SELECT connection_secret, connection_pubkey, app_pubkey, secret,
-                    renewal_period, renews_at, total_budget_msats, used_budget_msats
+                    renewal_period, renews_at, total_budget_msats, used_budget_msats, name
              FROM connections
-             ORDER BY created_at DESC"
+             ORDER BY created_at DESC",
         )?;
 
-        let connections = stmt.query_map([], |row| {
-            Self::row_to_connection(row)
-        })?;
+        let connections = stmt.query_map([], |row| Self::row_to_connection(row))?;
 
         let mut result = Vec::new();
         for connection in connections {
@@ -140,17 +145,21 @@ impl NwcConnectionStorage {
         let renews_at: Option<i64> = row.get(5)?;
         let total_budget_msats: i64 = row.get(6)?;
         let used_budget_msats: i64 = row.get(7)?;
+        let name: Option<String> = row.get(8).unwrap_or(None);
 
         // Parse connection secret key
         let connection_secret_key = SecretKey::from_str(&connection_secret)
             .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-        
+
         let keys = Keys::new(connection_secret_key);
+        let default_name = WalletConnection::default_name(&keys);
 
         // Parse app pubkey if present
         let app_pubkey = if let Some(app_pk_str) = app_pubkey_str {
-            Some(PublicKey::from_str(&app_pk_str)
-                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?)
+            Some(
+                PublicKey::from_str(&app_pk_str)
+                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+            )
         } else {
             None
         };
@@ -177,26 +186,34 @@ impl NwcConnectionStorage {
             budget,
             app_pubkey,
             secret,
+            name: name.unwrap_or(default_name),
         })
     }
 
     /// Delete a connection from the database
     pub fn delete_connection(&self, connection_pubkey: &str) -> Result<(), StorageError> {
         let conn = Connection::open(&self.db_path)?;
-        
+
         conn.execute(
             "DELETE FROM connections WHERE connection_pubkey = ?1",
             params![connection_pubkey],
         )?;
 
-        log::info!("Deleted NWC connection from database: {}", connection_pubkey);
+        log::info!(
+            "Deleted NWC connection from database: {}",
+            connection_pubkey
+        );
         Ok(())
     }
 
     /// Update the budget for a connection
-    pub fn update_budget(&self, connection_pubkey: &str, budget: &ConnectionBudget) -> Result<(), StorageError> {
+    pub fn update_budget(
+        &self,
+        connection_pubkey: &str,
+        budget: &ConnectionBudget,
+    ) -> Result<(), StorageError> {
         let conn = Connection::open(&self.db_path)?;
-        
+
         let renews_at = budget.renews_at.map(|t| t.as_u64() as i64);
         let total_budget_msats = budget.total_budget_msats as i64;
         let used_budget_msats = budget.used_budget_msats as i64;
@@ -205,9 +222,28 @@ impl NwcConnectionStorage {
             "UPDATE connections 
              SET renews_at = ?1, total_budget_msats = ?2, used_budget_msats = ?3
              WHERE connection_pubkey = ?4",
-            params![renews_at, total_budget_msats, used_budget_msats, connection_pubkey],
+            params![
+                renews_at,
+                total_budget_msats,
+                used_budget_msats,
+                connection_pubkey
+            ],
         )?;
 
+        log::info!("Updated budget for NWC connection: {}", connection_pubkey);
+        Ok(())
+    }
+
+    /// Update the display name for a connection
+    pub fn update_name(&self, connection_pubkey: &str, name: &str) -> Result<(), StorageError> {
+        let conn = Connection::open(&self.db_path)?;
+
+        conn.execute(
+            "UPDATE connections SET name = ?2 WHERE connection_pubkey = ?1",
+            params![connection_pubkey, name],
+        )?;
+
+        log::info!("Updated name for NWC connection: {}", connection_pubkey);
         Ok(())
     }
 }
@@ -217,11 +253,10 @@ impl NwcConnectionStorage {
 pub enum StorageError {
     #[error("Database error: {0}")]
     Database(#[from] rusqlite::Error),
-    
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-    
+
     #[error("Path error: {0}")]
     Path(String),
 }
-
