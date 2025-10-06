@@ -15,8 +15,8 @@ use nostr_sdk::{
         nip04,
         nip47::{self, NostrWalletConnectURI},
     },
-    Alphabet, Client, Event, EventBuilder, Filter, JsonUtil, Keys, Kind, PublicKey, RelayUrl, SecretKey,
-    SingleLetterTag, Tag, TagStandard, Timestamp, Url,
+    Alphabet, Client, Event, EventBuilder, Filter, JsonUtil, Keys, Kind, PublicKey, RelayUrl,
+    SecretKey, SingleLetterTag, Tag, TagStandard, Timestamp, Url,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -332,22 +332,22 @@ impl NostrWalletConnect {
             log::debug!("Subscribing with {} filter(s)", filters.len());
 
             // Subscribe to events matching our filters
-            // For now, just use the first filter - we may need to subscribe multiple times for multiple filters
-            let filter = filters.first().cloned().unwrap_or_else(|| Filter::new());
-            let subscription_output = match self.client.subscribe(filter, None).await {
-                Ok(sub_output) => {
-                    log::info!(
-                        "Subscribed to NWC events with subscription ID: {:?}",
-                        sub_output.val
-                    );
-                    sub_output
-                }
-                Err(e) => {
-                    log::error!("Failed to subscribe to NWC events: {}", e);
-                    tokio::time::sleep(Duration::from_secs(5)).await;
-                    continue;
-                }
-            };
+            for filter in filters.clone() {
+                let _ = match self.client.subscribe(filter, None).await {
+                    Ok(sub_output) => {
+                        log::info!(
+                            "Subscribed to NWC events with subscription ID: {:?}",
+                            sub_output.val
+                        );
+                        sub_output
+                    }
+                    Err(e) => {
+                        log::error!("Failed to subscribe to NWC events: {}", e);
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        continue;
+                    }
+                };
+            }
 
             // Create a channel to receive notifications
             let mut notifications = self.client.notifications();
@@ -380,21 +380,18 @@ impl NostrWalletConnect {
                                             }
                                         }
                                     }
-                                }
-                                // RelayPoolNotification::RelayStatus { relay_url, status } => {
-                                //     log::debug!("Relay {} status: {:?}", relay_url, status);
-                                // }
+                                },
                                 _ => {}
                             }
                         }
-                    }
+                    },
                     // Periodically check if filters need updating
                     _ = tokio::time::sleep(Duration::from_secs(10)) => {
                         let new_filters = self.filters().await;
                         if new_filters.len() != filters.len() || new_filters.is_empty() {
                             log::info!("Connection count changed, resubscribing...");
                             // Unsubscribe from old filters
-                            let _ = self.client.unsubscribe(&subscription_output.val).await;
+                            let _ = self.client.unsubscribe_all().await;
                             break; // Break inner loop to resubscribe with new filters
                         }
                     }
@@ -414,7 +411,9 @@ impl NostrWalletConnect {
         }
 
         // Get the target pubkey from the 'p' tag
-        let target_pubkey_str = event.tags.iter()
+        let target_pubkey_str = event
+            .tags
+            .iter()
             .find_map(|tag| {
                 let tag_vec = tag.as_slice();
                 if tag_vec.len() >= 2 && tag_vec[0] == "p" {
@@ -659,15 +658,12 @@ impl NostrWalletConnect {
             &self.keys
         };
 
-        let res_event = EventBuilder::new(
-            Kind::WalletConnectResponse,
-            encrypted_response,
-        )
-        .tags(vec![
-            Tag::from_standardized(TagStandard::public_key(event.pubkey)),
-            Tag::from_standardized(TagStandard::event(event.id)),
-        ])
-        .sign_with_keys(signing_keys)?;
+        let res_event = EventBuilder::new(Kind::WalletConnectResponse, encrypted_response)
+            .tags(vec![
+                Tag::from_standardized(TagStandard::public_key(event.pubkey)),
+                Tag::from_standardized(TagStandard::event(event.id)),
+            ])
+            .sign_with_keys(signing_keys)?;
 
         log::info!(
             "📤 Created response event: id={}, kind={}, author={}, p_tag={}, e_tag={}",
@@ -764,15 +760,12 @@ impl NostrWalletConnect {
             &self.keys
         };
 
-        let res_event = EventBuilder::new(
-            Kind::WalletConnectResponse,
-            encrypted_response,
-        )
-        .tags(vec![
-            Tag::from_standardized(TagStandard::public_key(event.pubkey)),
-            Tag::from_standardized(TagStandard::event(event.id)),
-        ])
-        .sign_with_keys(signing_keys)?;
+        let res_event = EventBuilder::new(Kind::WalletConnectResponse, encrypted_response)
+            .tags(vec![
+                Tag::from_standardized(TagStandard::public_key(event.pubkey)),
+                Tag::from_standardized(TagStandard::event(event.id)),
+            ])
+            .sign_with_keys(signing_keys)?;
         // Cache response
         {
             let mut cache = self.response_event_cache.lock().await;
@@ -860,15 +853,12 @@ impl NostrWalletConnect {
             &self.keys
         };
 
-        let res_event = EventBuilder::new(
-            Kind::WalletConnectResponse,
-            encrypted_response,
-        )
-        .tags(vec![
-            Tag::from_standardized(TagStandard::public_key(event.pubkey)),
-            Tag::from_standardized(TagStandard::event(event.id)),
-        ])
-        .sign_with_keys(signing_keys)?;
+        let res_event = EventBuilder::new(Kind::WalletConnectResponse, encrypted_response)
+            .tags(vec![
+                Tag::from_standardized(TagStandard::public_key(event.pubkey)),
+                Tag::from_standardized(TagStandard::event(event.id)),
+            ])
+            .sign_with_keys(signing_keys)?;
         // Cache response
         {
             let mut cache = self.response_event_cache.lock().await;
@@ -1209,14 +1199,11 @@ impl NostrWalletConnect {
         )?;
 
         // Create the event (kind 33194, parameterized replaceable event)
-        let event = EventBuilder::new(
-            Kind::from(33194),
-            encrypted_content,
-        )
-        .tags(vec![
-            Tag::from_standardized(TagStandard::Identifier(app_pubkey.to_string())),
-        ])
-        .sign_with_keys(&connection.keys)?;
+        let event = EventBuilder::new(Kind::from(33194), encrypted_content)
+            .tags(vec![Tag::from_standardized(TagStandard::Identifier(
+                app_pubkey.to_string(),
+            ))])
+            .sign_with_keys(&connection.keys)?;
         // Add specified relays if they're different from our default
         for relay_url in relays {
             if relay_url != REMOTE_RELAY_URL {
@@ -1373,7 +1360,8 @@ impl WalletConnection {
 
     /// Gets the Wallet Connect URI for this connection.
     pub fn uri(&self, service_pubkey: PublicKey, relay: Url) -> Result<String, Error> {
-        let relay_url = RelayUrl::parse(&relay.to_string()).map_err(|e| Error::Url(e.to_string()))?;
+        let relay_url =
+            RelayUrl::parse(&relay.to_string()).map_err(|e| Error::Url(e.to_string()))?;
         let uri = NostrWalletConnectURI::new(
             service_pubkey,
             vec![relay_url],
