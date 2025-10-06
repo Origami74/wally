@@ -1328,8 +1328,7 @@ impl WalletConnection {
 
     /// Gets the Wallet Connect URI for this connection.
     pub fn uri(&self, service_pubkey: PublicKey, relay: Url) -> Result<String, Error> {
-        let relay_url =
-            RelayUrl::parse(relay.as_ref()).map_err(|e| Error::Url(e.to_string()))?;
+        let relay_url = RelayUrl::parse(relay.as_ref()).map_err(|e| Error::Url(e.to_string()))?;
         let uri = NostrWalletConnectURI::new(
             service_pubkey,
             vec![relay_url],

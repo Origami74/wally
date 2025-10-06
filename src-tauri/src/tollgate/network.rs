@@ -169,5 +169,4 @@ mod tests {
         assert!(detector.validate_mac_address("aa:bb:cc:dd:ee").is_err());
         assert!(detector.validate_mac_address("aa:bb:cc:dd:ee:gg").is_err());
     }
-
 }
