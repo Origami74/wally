@@ -386,7 +386,6 @@ impl TollGateProtocol {
         Ok(session_response)
     }
 
-
     /// Validate TollGate advertisement
     pub fn validate_advertisement(&self, ad: &TollGateAdvertisement) -> TollGateResult<()> {
         if ad.metric != "milliseconds" && ad.metric != "bytes" {
