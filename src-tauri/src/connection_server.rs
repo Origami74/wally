@@ -85,15 +85,6 @@ pub struct ConnectionResponse {
     pub message: String,
 }
 
-/// Response for wallet info endpoint
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WalletInfoResponse {
-    /// Relay URLs where the wallet is available
-    pub relays: Vec<String>,
-    /// Supported NWC commands
-    pub supported_commands: Vec<String>,
-}
-
 /// Start the connection HTTP server
 pub async fn start_connection_server(
     app_handle: AppHandle,
