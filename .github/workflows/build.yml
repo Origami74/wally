@@ -3,22 +3,22 @@ name: "Build"
 on:
   workflow_call:
     secrets:
-#      APPLE_ID:
-#        required: true
-#      APPLE_PASSWORD:
-#        required: true
-#      APPLE_TEAM_ID:
-#        required: true
-#      APPLE_CERTIFICATE:
-#        required: true
-#      APPLE_CERTIFICATE_PASSWORD:
-#        required: true
-#      KEYCHAIN_PASSWORD:
-#        required: true
-#      GPG_PRIVATE_KEY:
-#        required: true
-#      GPG_PASSPHRASE:
-#        required: true
+      #      APPLE_ID:
+      #        required: true
+      #      APPLE_PASSWORD:
+      #        required: true
+      #      APPLE_TEAM_ID:
+      #        required: true
+      #      APPLE_CERTIFICATE:
+      #        required: true
+      #      APPLE_CERTIFICATE_PASSWORD:
+      #        required: true
+      #      KEYCHAIN_PASSWORD:
+      #        required: true
+      #      GPG_PRIVATE_KEY:
+      #        required: true
+      #      GPG_PASSPHRASE:
+      #        required: true
       ANDROID_KEY_ALIAS:
         required: true
       ANDROID_KEY_PASSWORD:
@@ -59,6 +59,7 @@ jobs:
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
+            protobuf-compiler \
             librsvg2-dev \
             patchelf \
             libssl-dev \
@@ -96,8 +97,6 @@ jobs:
         with:
           version: 9.15.0
 
-
-
       - name: Add Rust cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -131,8 +130,8 @@ jobs:
         if: matrix.android
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: "temurin"
+          java-version: "17"
 
       - name: Setup Android SDK
         if: matrix.android
@@ -213,7 +212,7 @@ jobs:
         if: matrix.android
         run: |
           find android-artifacts-unsigned/* -type f
-          
+
           # Store for upload to blossom
           echo "ANDROID_UNIVERSAL_IPK_PATH=$(find android-artifacts-unsigned/*-universal.apk -type f)" >> $GITHUB_ENV
 
