@@ -97,26 +97,6 @@ impl NostrProviderDiscovery {
         })
     }
 
-    #[allow(dead_code)]
-    pub async fn with_relays(relay_urls: Vec<String>) -> Result<Self> {
-        let client = Client::default();
-        let http_client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()?;
-
-        for relay in &relay_urls {
-            if let Err(e) = client.add_relay(relay).await {
-                log::warn!("Failed to add relay {}: {}", relay, e);
-            }
-        }
-
-        Ok(Self {
-            relays: relay_urls,
-            client,
-            http_client,
-        })
-    }
-
     pub async fn discover_providers(&self) -> Result<Vec<NostrProvider>> {
         log::info!("Starting provider discovery from Nostr relays...");
 
@@ -234,7 +214,8 @@ impl NostrProviderDiscovery {
             return false;
         }
 
-        if url.contains(".") && !url.starts_with("http://192.") && !url.starts_with("https://192.") {
+        if url.contains(".") && !url.starts_with("http://192.") && !url.starts_with("https://192.")
+        {
             return true;
         }
 
@@ -259,20 +240,9 @@ impl NostrProviderDiscovery {
             Err(_) => false,
         }
     }
-
-    #[allow(dead_code)]
-    pub async fn get_updated_providers(&self, _since: DateTime<Utc>) -> Result<Vec<NostrProvider>> {
-        self.discover_providers().await
-    }
 }
 
 pub async fn discover_providers() -> Result<Vec<NostrProvider>> {
     let discovery = NostrProviderDiscovery::new().await?;
     discovery.discover_providers().await
-}
-
-#[allow(dead_code)]
-pub async fn get_updated_providers_since(since: DateTime<Utc>) -> Result<Vec<NostrProvider>> {
-    let discovery = NostrProviderDiscovery::new().await?;
-    discovery.get_updated_providers(since).await
 }

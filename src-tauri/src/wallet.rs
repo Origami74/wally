@@ -115,7 +115,8 @@ pub async fn create_external_token(
     state: State<'_, TollGateState>,
 ) -> Result<String, String> {
     let service = state.lock().await;
-    service.create_external_token(amount_sats, mint_url)
+    service
+        .create_external_token(amount_sats, mint_url)
         .await
         .map_err(|e| e.to_string())
 }

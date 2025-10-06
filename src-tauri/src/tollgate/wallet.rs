@@ -14,9 +14,9 @@ use cdk::nuts::nut18::payment_request::PaymentRequest;
 use cdk::nuts::CurrencyUnit;
 use cdk::wallet::{
     types::{Transaction, TransactionDirection},
-    SendOptions, Wallet, MintQuote,
+    MintQuote, SendOptions, Wallet,
 };
-use cdk::{Amount, amount::SplitTarget};
+use cdk::{amount::SplitTarget, Amount};
 use cdk_sqlite::wallet::WalletSqliteDatabase;
 use directories::ProjectDirs;
 use nostr::prelude::{Keys, SecretKey, ToBech32};
@@ -780,7 +780,11 @@ impl TollGateWallet {
         })
     }
 
-    pub async fn create_external_token(&self, amount_sats: u64, mint_url: Option<String>) -> TollGateResult<String> {
+    pub async fn create_external_token(
+        &self,
+        amount_sats: u64,
+        mint_url: Option<String>,
+    ) -> TollGateResult<String> {
         let target_mint = if let Some(mint) = mint_url {
             mint
         } else {
@@ -837,7 +841,11 @@ impl TollGateWallet {
             .await
             .map_err(|e| TollGateError::wallet(format!("Failed to create token: {}", e)))?;
 
-        log::info!("Created external token: {} sats from mint {}", amount_sats, target_mint);
+        log::info!(
+            "Created external token: {} sats from mint {}",
+            amount_sats,
+            target_mint
+        );
         Ok(token.to_string())
     }
 
