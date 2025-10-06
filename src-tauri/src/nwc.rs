@@ -1261,18 +1261,6 @@ impl WalletConnection {
         }
     }
 
-    /// Creates a wallet connection from a Wallet Connect URI.
-    pub fn from_uri(uri: NostrWalletConnectURI, budget: ConnectionBudget) -> Self {
-        let keys = Keys::new(uri.secret);
-        Self {
-            name: Self::default_name(&keys),
-            keys,
-            budget,
-            app_pubkey: None,
-            secret: None,
-        }
-    }
-
     /// Creates a wallet connection from NWA request.
     ///
     /// For each NWA connection, we generate a unique keypair:
@@ -1290,20 +1278,6 @@ impl WalletConnection {
             app_pubkey: Some(app_pubkey),
             secret: Some(secret),
         }
-    }
-
-    /// Checks and updates the remaining budget, handling renewal if needed.
-    fn check_and_update_remaining_budget(&mut self) -> u64 {
-        if let Some(renews_at) = self.budget.renews_at {
-            if renews_at <= Timestamp::now() {
-                self.budget.used_budget_msats = 0;
-                self.budget.renews_at = self.budget_renews_at();
-            }
-        }
-        if self.budget.used_budget_msats >= self.budget.total_budget_msats {
-            return 0;
-        }
-        self.budget.total_budget_msats - self.budget.used_budget_msats
     }
 
     /// Creates a Nostr filter for this connection.
@@ -1611,7 +1585,7 @@ mod tests {
         let connections = nwc.get_connections().await;
         println!("✓ Retrieved {} connection(s)", connections.len());
         assert!(
-            connections.len() >= 1,
+            !connections.is_empty(),
             "Should have at least one connection"
         );
 
@@ -1692,7 +1666,7 @@ mod tests {
         let connections = nwc.get_connections().await;
         println!("✓ Retrieved {} connection(s)", connections.len());
         assert!(
-            connections.len() >= 1,
+            !connections.is_empty(),
             "Should have at least one connection"
         );
 
@@ -1882,7 +1856,7 @@ mod tests {
         // Step 2: Add the mint and some balance
         println!("Step 2: Adding test mint...");
         {
-            let mut service = service_state.lock().await;
+            let service = service_state.lock().await;
             match service.add_mint("https://nofees.testnut.cashu.space").await {
                 Ok(_) => println!("✓ Mint added"),
                 Err(e) => println!("! Mint add failed (may already exist): {}", e),
@@ -2022,7 +1996,7 @@ mod tests {
                 );
                 panic!("Should have failed when no amount is provided");
             }
-            Err(e) => {
+            Err(_e) => {
                 println!("✓ Correctly failed to pay amount-less request without custom amount");
             }
         }

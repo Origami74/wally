@@ -3,7 +3,6 @@
 //! This module provides a simple HTTP server that handles Nostr Wallet Connect
 //! connection requests and exposes wallet information to connecting applications.
 
-use crate::TollGateState;
 use axum::{
     extract::{Path, State},
     http::{Method, StatusCode},
@@ -25,12 +24,6 @@ use tower_http::cors::CorsLayer;
 
 /// Default port for the connection server
 pub const DEFAULT_CONNECTION_PORT: u16 = 3737;
-
-/// NWC relay URL configuration
-pub const NWC_RELAY_URL: &str = "wss://nostrue.com";
-
-/// Supported NWC commands
-pub const SUPPORTED_NWC_COMMANDS: &[&str] = &["get_balance", "make_invoice", "pay_invoice"];
 
 /// Request body for POST / endpoint
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,8 +74,6 @@ pub type PendingConnectionsState = Arc<Mutex<HashMap<String, PendingConnectionRe
 /// Server state that includes both TollGate and AppHandle
 #[derive(Clone)]
 pub struct ConnectionServerState {
-    #[allow(dead_code)]
-    pub tollgate_state: TollGateState,
     pub app_handle: AppHandle,
     pub pending_connections: PendingConnectionsState,
 }
@@ -105,13 +96,11 @@ pub struct WalletInfoResponse {
 
 /// Start the connection HTTP server
 pub async fn start_connection_server(
-    tollgate_state: Arc<Mutex<crate::tollgate::TollGateService>>,
     app_handle: AppHandle,
     pending_connections: PendingConnectionsState,
     port: u16,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let server_state = ConnectionServerState {
-        tollgate_state,
         app_handle,
         pending_connections,
     };

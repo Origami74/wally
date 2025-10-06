@@ -223,12 +223,6 @@ impl SessionManager {
         self.sessions.get_mut(tollgate_pubkey)
     }
 
-    /// Remove session
-    #[allow(dead_code)]
-    pub fn remove_session(&mut self, tollgate_pubkey: &str) -> Option<Session> {
-        self.sessions.remove(tollgate_pubkey)
-    }
-
     /// Get all active sessions
     pub fn get_active_sessions(&self) -> Vec<&Session> {
         self.sessions
@@ -245,15 +239,6 @@ impl SessionManager {
             .collect()
     }
 
-    /// Get all expired sessions
-    #[allow(dead_code)]
-    pub fn get_expired_sessions(&self) -> Vec<&Session> {
-        self.sessions
-            .values()
-            .filter(|session| session.is_expired())
-            .collect()
-    }
-
     /// Get all sessions as mutable iterator
     pub fn get_all_sessions_mut(&mut self) -> impl Iterator<Item = &mut Session> {
         self.sessions.values_mut()
@@ -267,15 +252,6 @@ impl SessionManager {
     /// Get session count
     pub fn session_count(&self) -> usize {
         self.sessions.len()
-    }
-
-    /// Get active session count
-    #[allow(dead_code)]
-    pub fn active_session_count(&self) -> usize {
-        self.sessions
-            .values()
-            .filter(|session| session.is_active())
-            .count()
     }
 
     /// Update usage for all sessions based on time (for time-based sessions)
@@ -297,16 +273,6 @@ impl SessionManager {
     pub fn serialize(&self) -> TollGateResult<String> {
         serde_json::to_string(&self.sessions)
             .map_err(|e| TollGateError::session(format!("Failed to serialize sessions: {}", e)))
-    }
-
-    /// Deserialize sessions from persistence
-    #[allow(dead_code)]
-    pub fn deserialize(data: &str) -> TollGateResult<Self> {
-        let sessions: HashMap<String, Session> = serde_json::from_str(data).map_err(|e| {
-            TollGateError::session(format!("Failed to deserialize sessions: {}", e))
-        })?;
-
-        Ok(Self { sessions })
     }
 }
 

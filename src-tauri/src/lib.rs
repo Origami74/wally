@@ -415,7 +415,7 @@ pub fn run() {
         });
 
         // Start connection server to handle wallet connection requests
-        let connection_service = service_arc.clone();
+        let _connection_service = service_arc.clone();
         let connection_app_handle = app.handle().clone();
         let pending_connections =
             Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
@@ -423,7 +423,6 @@ pub fn run() {
         let rt_clone = rt.clone();
         rt_clone.spawn(async move {
             if let Err(e) = connection_server::start_connection_server(
-                connection_service,
                 connection_app_handle,
                 pending_connections_for_server,
                 connection_server::DEFAULT_CONNECTION_PORT,
@@ -613,11 +612,13 @@ fn position_panel_at_menubar_icon(window: &tauri::WebviewWindow, anchor: Physica
 
         let panel_id: id = panel_handle as _;
 
+        #[allow(unexpected_cfgs)]
         let mut frame: NSRect = unsafe { msg_send![panel_id, frame] };
 
         frame.origin.y = (monitor_pos.y + monitor_size.height) - menubar_height - frame.size.height;
         frame.origin.x = logical_pos.x - frame.size.width / 2.0;
 
+        #[allow(unexpected_cfgs)]
         let _: () = unsafe { msg_send![panel_id, setFrame: frame display: NO] };
     }
 }

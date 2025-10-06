@@ -381,53 +381,6 @@ impl TollGateProtocol {
         Ok(session_response)
     }
 
-    /// Parse session response from TollGate
-    #[allow(dead_code)]
-    pub fn parse_session_response(&self, event: &Event) -> TollGateResult<SessionResponse> {
-        // Extract session information from event tags
-        let mut session_id = None;
-        let mut allotment = None;
-        let mut session_end = None;
-        let mut mac_address = None;
-
-        for tag in &event.tags {
-            match tag.as_slice() {
-                [session_tag, id] if session_tag == "session-id" => {
-                    session_id = Some(id.to_string())
-                }
-                [allotment_tag, amount] if allotment_tag == "allotment" => {
-                    allotment = Some(
-                        amount
-                            .parse::<u64>()
-                            .map_err(|_| TollGateError::protocol("Invalid allotment value"))?,
-                    );
-                }
-                [session_end_tag, timestamp] if session_end_tag == "session-end" => {
-                    let ts = timestamp
-                        .parse::<i64>()
-                        .map_err(|_| TollGateError::protocol("Invalid session-end timestamp"))?;
-                    session_end = Some(
-                        DateTime::from_timestamp(ts, 0)
-                            .ok_or_else(|| TollGateError::protocol("Invalid timestamp"))?,
-                    );
-                }
-                [mac_tag, mac] if mac_tag == "mac" => mac_address = Some(mac.to_string()),
-                _ => {} // Ignore unknown tags
-            }
-        }
-
-        let session_response = SessionResponse {
-            session_id: session_id.ok_or_else(|| TollGateError::protocol("Missing session-id"))?,
-            allotment: allotment.ok_or_else(|| TollGateError::protocol("Missing allotment"))?,
-            session_end: session_end
-                .ok_or_else(|| TollGateError::protocol("Missing session-end"))?,
-            mac_address: mac_address
-                .ok_or_else(|| TollGateError::protocol("Missing mac address"))?,
-        };
-
-        Ok(session_response)
-    }
-
     /// Validate TollGate advertisement
     pub fn validate_advertisement(&self, ad: &TollGateAdvertisement) -> TollGateResult<()> {
         if ad.metric != "milliseconds" && ad.metric != "bytes" {
@@ -471,34 +424,6 @@ impl TollGateProtocol {
         }
 
         Ok(())
-    }
-
-    /// Select best pricing option based on available mints and preferences
-    #[allow(dead_code)]
-    pub fn select_best_pricing_option(
-        &self,
-        options: &[PricingOption],
-        available_mints: &[String],
-    ) -> TollGateResult<PricingOption> {
-        // Find compatible options (mints we support)
-        let compatible_options: Vec<&PricingOption> = options
-            .iter()
-            .filter(|option| available_mints.contains(&option.mint_url))
-            .collect();
-
-        if compatible_options.is_empty() {
-            return Err(TollGateError::protocol(
-                "No compatible pricing options found",
-            ));
-        }
-
-        // Select the option with the lowest price per step
-        let best_option = compatible_options
-            .into_iter()
-            .min_by_key(|option| option.price_per_step)
-            .unwrap();
-
-        Ok(best_option.clone())
     }
 
     /// Calculate total cost for a purchase
