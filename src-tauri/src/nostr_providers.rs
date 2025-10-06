@@ -97,6 +97,7 @@ impl NostrProviderDiscovery {
         })
     }
 
+    #[allow(dead_code)]
     pub async fn with_relays(relay_urls: Vec<String>) -> Result<Self> {
         let client = Client::default();
         let http_client = reqwest::Client::builder()
@@ -210,7 +211,7 @@ impl NostrProviderDiscovery {
             mints,
             version,
             created_at: DateTime::from_timestamp(event.created_at.as_u64() as i64, 0)
-                .unwrap_or_else(|| Utc::now()),
+                .unwrap_or_else(Utc::now),
             updated_at: Utc::now(),
             followers: 0,
             zaps: 0,
@@ -259,6 +260,7 @@ impl NostrProviderDiscovery {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn get_updated_providers(&self, _since: DateTime<Utc>) -> Result<Vec<NostrProvider>> {
         self.discover_providers().await
     }
@@ -269,6 +271,7 @@ pub async fn discover_providers() -> Result<Vec<NostrProvider>> {
     discovery.discover_providers().await
 }
 
+#[allow(dead_code)]
 pub async fn get_updated_providers_since(since: DateTime<Utc>) -> Result<Vec<NostrProvider>> {
     let discovery = NostrProviderDiscovery::new().await?;
     discovery.get_updated_providers(since).await

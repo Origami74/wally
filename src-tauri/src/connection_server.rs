@@ -3,7 +3,6 @@
 //! This module provides a simple HTTP server that handles Nostr Wallet Connect
 //! connection requests and exposes wallet information to connecting applications.
 
-use crate::TollGateState;
 use axum::{
     extract::{Path, State},
     http::{Method, StatusCode},
@@ -25,12 +24,6 @@ use tower_http::cors::CorsLayer;
 
 /// Default port for the connection server
 pub const DEFAULT_CONNECTION_PORT: u16 = 3737;
-
-/// NWC relay URL configuration
-pub const NWC_RELAY_URL: &str = "wss://nostrue.com";
-
-/// Supported NWC commands
-pub const SUPPORTED_NWC_COMMANDS: &[&str] = &["get_balance", "make_invoice", "pay_invoice"];
 
 /// Request body for POST / endpoint
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,8 +74,6 @@ pub type PendingConnectionsState = Arc<Mutex<HashMap<String, PendingConnectionRe
 /// Server state that includes both TollGate and AppHandle
 #[derive(Clone)]
 pub struct ConnectionServerState {
-    #[allow(dead_code)]
-    pub tollgate_state: TollGateState,
     pub app_handle: AppHandle,
     pub pending_connections: PendingConnectionsState,
 }
@@ -105,13 +96,11 @@ pub struct WalletInfoResponse {
 
 /// Start the connection HTTP server
 pub async fn start_connection_server(
-    tollgate_state: Arc<Mutex<crate::tollgate::TollGateService>>,
     app_handle: AppHandle,
     pending_connections: PendingConnectionsState,
     port: u16,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let server_state = ConnectionServerState {
-        tollgate_state,
         app_handle,
         pending_connections,
     };
@@ -368,47 +357,47 @@ async fn poll_connection_status(
                     "Connection approved, returning NWC URI for request: {}",
                     request_id
                 );
-                return Json(json!({
+                Json(json!({
                     "status": "approved",
                     "nwc_uri": nwc_uri
                 }))
-                .into_response();
+                .into_response()
             } else {
                 log::warn!(
                     "Connection approved but NWC URI not set for request: {}",
                     request_id
                 );
-                return Json(json!({
+                Json(json!({
                     "status": "approved",
                     "error": "NWC URI not available yet"
                 }))
-                .into_response();
+                .into_response()
             }
         } else if pending_request.rejected {
             log::info!("Connection rejected for request: {}", request_id);
-            return Json(json!({
+            Json(json!({
                 "status": "rejected",
                 "message": "Connection request was rejected by user"
             }))
-            .into_response();
+            .into_response()
         } else {
             log::debug!("Connection still pending for request: {}", request_id);
-            return Json(json!({
+            Json(json!({
                 "status": "pending",
                 "message": "Waiting for user approval"
             }))
-            .into_response();
+            .into_response()
         }
     } else {
         log::warn!("Connection request not found: {}", request_id);
-        return (
+        (
             StatusCode::NOT_FOUND,
             Json(json!({
                 "status": "not_found",
                 "error": "Connection request not found or expired"
             })),
         )
-            .into_response();
+            .into_response()
     }
 }
 
@@ -514,7 +503,7 @@ fn parse_query_string(query: &str) -> HashMap<String, Vec<String>> {
         if parts.len() == 2 {
             let key = parts[0].to_string();
             let value = parts[1].to_string();
-            params.entry(key).or_insert_with(Vec::new).push(value);
+            params.entry(key).or_default().push(value);
         }
     }
 

@@ -3,45 +3,45 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Empty {
-  pub value: Option<String>,
+    pub value: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WifiDetails {
-  pub ssid: String,
-  pub bssid: String,
-  pub rssi: String,
-  pub capabilities: String,
-  pub frequency: String,
-  pub information_elements: Vec<InformationElement>,
+    pub ssid: String,
+    pub bssid: String,
+    pub rssi: String,
+    pub capabilities: String,
+    pub frequency: String,
+    pub information_elements: Vec<InformationElement>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InformationElement {
-  pub id: i64,
-  pub id_ext: i64,
-  pub bytes: Vec<u16>,
+    pub id: i64,
+    pub id_ext: i64,
+    pub bytes: Vec<u16>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WifiDetailsResponse {
-  pub wifis: Option<Vec<WifiDetails>>,
+    pub wifis: Option<Vec<WifiDetails>>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CurrentWifiResponse {
-  pub wifi: Option<CurrentWifi>,
+    pub wifi: Option<CurrentWifi>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CurrentWifi {
-  pub ssid: String,
-  pub bssid: String,
+    pub ssid: String,
+    pub bssid: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -67,8 +67,6 @@ pub struct ConnectWifiPayload {
 pub struct GetMacAddressPayload {
     pub gateway_ip: String,
 }
-
-
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

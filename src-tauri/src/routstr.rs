@@ -1,12 +1,12 @@
 use anyhow::{anyhow, Result};
 use directories::ProjectDirs;
-use reqwest;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub struct RoutstrStoragePaths {
+    #[allow(dead_code)]
     pub base_dir: PathBuf,
     pub config_file: PathBuf,
 }
@@ -37,19 +37,10 @@ pub struct ApiKeyEntry {
     pub alias: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct RoutstrStoredConfig {
     pub base_url: Option<String>,
     pub api_keys: Vec<ApiKeyEntry>,
-}
-
-impl Default for RoutstrStoredConfig {
-    fn default() -> Self {
-        Self {
-            base_url: None,
-            api_keys: Vec::new(),
-        }
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

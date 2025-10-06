@@ -9,15 +9,14 @@
 use crate::tollgate::errors::{TollGateError, TollGateResult};
 use crate::tollgate::protocol::PricingOption;
 use bip39::{Language, Mnemonic};
-use cdk::amount::SplitTarget;
 use cdk::mint_url::MintUrl;
 use cdk::nuts::nut18::payment_request::PaymentRequest;
 use cdk::nuts::CurrencyUnit;
 use cdk::wallet::{
     types::{Transaction, TransactionDirection},
-    MintQuote, SendOptions, Wallet,
+    SendOptions, Wallet, MintQuote,
 };
-use cdk::Amount;
+use cdk::{Amount, amount::SplitTarget};
 use cdk_sqlite::wallet::WalletSqliteDatabase;
 use directories::ProjectDirs;
 use nostr::prelude::{Keys, SecretKey, ToBech32};
@@ -25,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -123,7 +122,6 @@ pub struct WalletBalance {
 
 #[derive(Debug, Clone)]
 struct WalletStoragePaths {
-    base_dir: PathBuf,
     secrets_file: PathBuf,
     wallets_dir: PathBuf,
     mints_file: PathBuf,
@@ -147,7 +145,6 @@ impl WalletStoragePaths {
         let mints_file = base_dir.join("mints.json");
 
         Ok(Self {
-            base_dir,
             secrets_file,
             wallets_dir,
             mints_file,
@@ -169,11 +166,6 @@ impl WalletStoragePaths {
 
         Ok(self.wallets_dir.join(format!("{}.sqlite", stem)))
     }
-
-    #[allow(dead_code)]
-    fn base_dir(&self) -> &Path {
-        &self.base_dir
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -188,17 +180,8 @@ struct StoredMints {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
-enum SecretSource {
-    Mnemonic { phrase: String },
-}
-
-#[derive(Debug, Clone)]
 pub struct WalletSecrets {
-    #[allow(dead_code)]
-    source: SecretSource,
     wallet_seed: [u8; 64],
-    #[allow(dead_code)]
     nostr_keys: Keys,
 }
 
@@ -219,12 +202,9 @@ impl WalletSecrets {
             .map_err(|e| TollGateError::wallet(format!("Failed to generate mnemonic: {}", e)))?;
         let phrase = mnemonic.to_string();
         let wallet_seed = mnemonic.to_seed("");
-        let nostr_keys = derive_nostr_keys_from_seed(&wallet_seed)?;
 
+        let nostr_keys = derive_nostr_keys_from_seed(&wallet_seed)?;
         let secrets = Self {
-            source: SecretSource::Mnemonic {
-                phrase: phrase.clone(),
-            },
             wallet_seed,
             nostr_keys,
         };
@@ -253,10 +233,9 @@ impl WalletSecrets {
         let mnemonic = Mnemonic::parse_in(Language::English, phrase.trim())
             .map_err(|e| TollGateError::wallet(format!("Invalid mnemonic: {}", e)))?;
         let wallet_seed = mnemonic.to_seed("");
-        let nostr_keys = derive_nostr_keys_from_seed(&wallet_seed)?;
 
+        let nostr_keys = derive_nostr_keys_from_seed(&wallet_seed)?;
         Ok(Self {
-            source: SecretSource::Mnemonic { phrase },
             wallet_seed,
             nostr_keys,
         })
@@ -266,22 +245,11 @@ impl WalletSecrets {
         self.wallet_seed
     }
 
-    #[allow(dead_code)]
     pub(crate) fn nostr_npub(&self) -> TollGateResult<String> {
         self.nostr_keys
             .public_key()
             .to_bech32()
             .map_err(|e| TollGateError::wallet(format!("Failed to encode npub: {}", e)))
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn nostr_pubkey_hex(&self) -> String {
-        self.nostr_keys.public_key().to_hex()
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn nostr_keys(&self) -> &Keys {
-        &self.nostr_keys
     }
 }
 
@@ -441,20 +409,9 @@ impl TollGateWallet {
         self.secrets.nostr_npub().ok()
     }
 
-    /// Return the wallet's public key in hex format
-    pub fn nostr_pubkey_hex(&self) -> String {
-        self.secrets.nostr_pubkey_hex()
-    }
-
     /// Get the wallet's Nostr keys
     pub fn get_keys(&self) -> nostr::Keys {
         self.secrets.nostr_keys.clone()
-    }
-
-    /// Get available mints
-    #[allow(dead_code)]
-    pub fn get_available_mints(&self) -> Vec<String> {
-        self.wallets.keys().cloned().collect()
     }
 
     /// Get balance for a specific mint
@@ -567,7 +524,7 @@ impl TollGateWallet {
         Ok(Bolt11InvoiceInfo {
             quote_id: quote.id.clone(),
             request: quote.request.clone(),
-            amount: quote.amount.map(|a| u64::from(a)),
+            amount: quote.amount.map(u64::from),
             unit: quote.unit.to_string(),
             expiry: quote.expiry,
             mint_url: quote.mint_url.to_string(),
@@ -885,6 +842,7 @@ impl TollGateWallet {
     }
 
     /// Request a mint quote for loading the wallet
+    #[allow(dead_code)]
     pub async fn request_mint_quote(
         &self,
         mint_url: &str,
@@ -904,6 +862,7 @@ impl TollGateWallet {
     }
 
     /// Check mint quote status and mint tokens if paid
+    #[allow(dead_code)]
     pub async fn check_mint_quote(&self, mint_url: &str, quote_id: &str) -> TollGateResult<bool> {
         let wallet = self
             .wallets
@@ -961,42 +920,6 @@ impl TollGateWallet {
 
         Ok(best_option)
     }
-
-    /// Get wallet statistics
-    #[allow(dead_code)]
-    pub async fn get_wallet_stats(&self) -> TollGateResult<WalletStats> {
-        let balances = self.get_all_balances().await?;
-        let total_balance: u64 = balances.iter().map(|b| b.balance).sum();
-        let mint_count = self.wallets.len();
-
-        Ok(WalletStats {
-            total_balance,
-            mint_count,
-            balances,
-            default_mint: self.default_mint.clone(),
-        })
-    }
-
-    /// Set default mint
-    #[allow(dead_code)]
-    pub fn set_default_mint(&mut self, mint_url: &str) -> TollGateResult<()> {
-        if !self.wallets.contains_key(mint_url) {
-            return Err(TollGateError::wallet(format!(
-                "Mint not found: {}",
-                mint_url
-            )));
-        }
-
-        self.default_mint = Some(mint_url.to_string());
-        self.save_mints_config()?;
-        Ok(())
-    }
-
-    /// Get default mint
-    #[allow(dead_code)]
-    pub fn get_default_mint(&self) -> Option<&String> {
-        self.default_mint.as_ref()
-    }
 }
 
 impl From<Transaction> for WalletTransactionEntry {
@@ -1024,16 +947,6 @@ impl From<Transaction> for WalletTransactionEntry {
     }
 }
 
-/// Wallet statistics
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(dead_code)]
-pub struct WalletStats {
-    pub total_balance: u64,
-    pub mint_count: usize,
-    pub balances: Vec<WalletBalance>,
-    pub default_mint: Option<String>,
-}
-
 impl Default for TollGateWallet {
     fn default() -> Self {
         Self::new().expect("Failed to initialize TollGate wallet")
@@ -1046,9 +959,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_wallet_creation() {
-        let wallet = TollGateWallet::new().expect("wallet");
-        assert_eq!(wallet.get_available_mints().len(), 0);
-        assert!(wallet.get_default_mint().is_none());
+        let _wallet = TollGateWallet::new().expect("wallet");
+        // Basic wallet creation test
     }
 
     #[test]
