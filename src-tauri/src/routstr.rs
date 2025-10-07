@@ -913,12 +913,12 @@ mod tests {
         assert_eq!(service.api_keys[1].api_key, "test_key_2");
 
         // Test removing API key
-        assert_eq!(service.remove_api_key("test_key_1"), true);
+        assert!(service.remove_api_key("test_key_1"));
         assert_eq!(service.api_keys.len(), 1);
         assert_eq!(service.api_keys[0].api_key, "test_key_2");
 
         // Test removing non-existent key
-        assert_eq!(service.remove_api_key("non_existent"), false);
+        assert!(!service.remove_api_key("non_existent"));
         assert_eq!(service.api_keys.len(), 1);
     }
 }

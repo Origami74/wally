@@ -354,6 +354,16 @@ function AppContent() {
       onClick: () => setLocation("/connections"),
     });
 
+    if (featureEnabled("routstr")) {
+      badges.push({
+        id: "routstr",
+        label: "Routstr",
+        value: "Enabled",
+        tone: "info",
+        onClick: () => setLocation("/routstr"),
+      });
+    }
+
     return badges;
   }, [currentSession, currentNetwork, features, setLocation]);
 
