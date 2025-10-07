@@ -142,15 +142,6 @@ impl TollGateService {
         Ok(())
     }
 
-    /// Stop the background service
-    #[allow(dead_code)]
-    pub async fn stop_background_service(&mut self) {
-        if let Some(task) = self.background_task.take() {
-            task.abort();
-            log::info!("Background service stopped");
-        }
-    }
-
     /// Enable or disable auto-tollgate functionality
     pub async fn set_auto_tollgate_enabled(&self, enabled: bool) -> TollGateResult<()> {
         *self.auto_tollgate_enabled.write().await = enabled;
@@ -341,16 +332,16 @@ impl TollGateService {
         let cost = self.protocol.calculate_cost(&pricing_option, initial_steps);
 
         // Create session
-        let mut session = Session::new(
-            advertisement.tollgate_pubkey.clone(),
-            network_info.gateway_ip.clone(),
-            device_value,
+        let mut session = Session::new(super::session::SessionParams {
+            tollgate_pubkey: advertisement.tollgate_pubkey.clone(),
+            gateway_ip: network_info.gateway_ip.clone(),
+            mac_address: device_value,
             pricing_option,
-            advertisement.clone(),
-            allotment,
-            session_response.session_end,
-            cost,
-        )?;
+            advertisement: advertisement.clone(),
+            initial_allotment: allotment,
+            session_end: session_response.session_end,
+            initial_cost: cost,
+        })?;
 
         // Update session with response
         session.update_from_response(&session_response)?;
@@ -533,12 +524,6 @@ impl TollGateService {
         wallet.summary().await
     }
 
-    /// Get the wallet's public key in hex format
-    pub async fn get_pubkey_hex(&self) -> String {
-        let wallet = self.wallet.lock().await;
-        wallet.nostr_pubkey_hex()
-    }
-
     /// List wallet transactions across mints
     pub async fn list_wallet_transactions(&self) -> TollGateResult<Vec<WalletTransactionEntry>> {
         let wallet = self.wallet.lock().await;
@@ -572,12 +557,6 @@ impl TollGateService {
         );
 
         Ok(invoice)
-    }
-
-    /// Check a mint quote status and mint tokens if paid.
-    pub async fn check_mint_quote(&self, mint_url: &str, quote_id: &str) -> TollGateResult<bool> {
-        let wallet = self.wallet.lock().await;
-        wallet.check_mint_quote(mint_url, quote_id).await
     }
 
     fn spawn_mint_quote_monitor(&self, mint_url: String, quote_id: String, expiry: u64) {

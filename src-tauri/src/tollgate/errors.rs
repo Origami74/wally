@@ -33,29 +33,14 @@ pub enum TollGateError {
     #[error("Insufficient funds: need {needed} sats, have {available} sats")]
     InsufficientFunds { needed: u64, available: u64 },
 
-    #[error("Session expired")]
-    SessionExpired,
-
-    #[error("Network disconnected")]
-    NetworkDisconnected,
-
     #[error("Invalid MAC address: {0}")]
     InvalidMacAddress(String),
 
     #[error("Invalid gateway IP: {0}")]
     InvalidGatewayIp(String),
 
-    #[error("Timeout waiting for session confirmation")]
-    SessionTimeout,
-
-    #[error("Background service error: {0}")]
-    BackgroundService(String),
-
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-
-    #[error("Other error: {0}")]
-    Other(String),
 }
 
 impl TollGateError {
@@ -69,15 +54,5 @@ impl TollGateError {
 
     pub fn protocol(msg: impl Into<String>) -> Self {
         Self::Protocol(msg.into())
-    }
-
-    #[allow(dead_code)]
-    pub fn background_service(msg: impl Into<String>) -> Self {
-        Self::BackgroundService(msg.into())
-    }
-
-    #[allow(dead_code)]
-    pub fn other(msg: impl Into<String>) -> Self {
-        Self::Other(msg.into())
     }
 }

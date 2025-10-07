@@ -1,5 +1,5 @@
 //! Simple local Nostr relay for NWC communication
-//! 
+//!
 //! This module provides a lightweight, in-process Nostr relay that allows
 //! the NWC service to communicate with external applications.
 
@@ -10,7 +10,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 // Note: AsyncReadExt and AsyncWriteExt are not used directly but are required for tokio-tungstenite
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::{broadcast, RwLock};
 
 /// Default port for the local relay
 pub const DEFAULT_RELAY_PORT: u16 = 4869;
@@ -43,18 +43,22 @@ impl EventStore {
 
     async fn query_events(&self, filters: &[Filter]) -> Vec<Event> {
         let events = self.events.read().await;
-        
+
         if filters.is_empty() {
             return events.clone();
         }
 
         events
             .iter()
-            .filter(|event| filters.iter().any(|filter| filter.match_event(event, MatchEventOptions::default())))
+            .filter(|event| {
+                filters
+                    .iter()
+                    .any(|filter| filter.match_event(event, MatchEventOptions::default()))
+            })
             .cloned()
             .collect()
     }
-    
+
     fn subscribe_to_events(&self) -> broadcast::Receiver<Event> {
         self.broadcast_tx.subscribe()
     }
@@ -63,7 +67,7 @@ impl EventStore {
 /// Start the local Nostr relay server
 pub async fn start_relay_server(port: u16) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    
+
     log::info!("Attempting to bind local Nostr relay to {}", addr);
     let listener = match TcpListener::bind(addr).await {
         Ok(l) => {
@@ -75,11 +79,11 @@ pub async fn start_relay_server(port: u16) -> Result<(), Box<dyn std::error::Err
             return Err(Box::new(e));
         }
     };
-    
+
     log::info!("✓ Local Nostr relay listening on ws://{}", addr);
-    
+
     let event_store = EventStore::new();
-    
+
     tokio::spawn(async move {
         log::info!("Relay server task started, waiting for connections...");
         let mut connection_count = 0;
@@ -87,7 +91,11 @@ pub async fn start_relay_server(port: u16) -> Result<(), Box<dyn std::error::Err
             match listener.accept().await {
                 Ok((stream, peer_addr)) => {
                     connection_count += 1;
-                    log::info!("✓ New relay connection #{} from: {}", connection_count, peer_addr);
+                    log::info!(
+                        "✓ New relay connection #{} from: {}",
+                        connection_count,
+                        peer_addr
+                    );
                     let store = event_store.clone();
                     let conn_id = connection_count;
                     tokio::spawn(async move {
@@ -105,7 +113,7 @@ pub async fn start_relay_server(port: u16) -> Result<(), Box<dyn std::error::Err
             }
         }
     });
-    
+
     Ok(())
 }
 
@@ -114,9 +122,9 @@ async fn handle_connection(
     stream: TcpStream,
     event_store: EventStore,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    use tokio_tungstenite::{accept_async, tungstenite::Message};
     use futures_util::{SinkExt, StreamExt};
-    
+    use tokio_tungstenite::{accept_async, tungstenite::Message};
+
     log::debug!("Accepting WebSocket connection...");
     let ws_stream = match accept_async(stream).await {
         Ok(ws) => {
@@ -128,17 +136,17 @@ async fn handle_connection(
             return Err(Box::new(e));
         }
     };
-    
+
     let (mut write, mut read) = ws_stream.split();
     log::debug!("WebSocket connection established, ready to receive messages");
-    
+
     // Track active subscriptions for this connection
-    let subscriptions: Arc<RwLock<HashMap<String, Vec<Filter>>>> = 
+    let subscriptions: Arc<RwLock<HashMap<String, Vec<Filter>>>> =
         Arc::new(RwLock::new(HashMap::new()));
-    
+
     // Subscribe to broadcast events
     let mut event_rx = event_store.subscribe_to_events();
-    
+
     loop {
         tokio::select! {
             // Handle incoming WebSocket messages
@@ -151,7 +159,7 @@ async fn handle_connection(
                     }
                     None => break,
                 };
-                
+
                 if let Err(e) = handle_message(msg, &mut write, &event_store, &subscriptions).await {
                     log::error!("Error handling message: {}", e);
                     break;
@@ -191,24 +199,27 @@ async fn handle_connection(
             }
         }
     }
-    
+
     Ok(())
 }
 
 /// Handle a single WebSocket message
 async fn handle_message(
     msg: tokio_tungstenite::tungstenite::Message,
-    write: &mut futures_util::stream::SplitSink<tokio_tungstenite::WebSocketStream<TcpStream>, tokio_tungstenite::tungstenite::Message>,
+    write: &mut futures_util::stream::SplitSink<
+        tokio_tungstenite::WebSocketStream<TcpStream>,
+        tokio_tungstenite::tungstenite::Message,
+    >,
     event_store: &EventStore,
     subscriptions: &Arc<RwLock<HashMap<String, Vec<Filter>>>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    use tokio_tungstenite::tungstenite::Message;
     use futures_util::SinkExt;
-    
+    use tokio_tungstenite::tungstenite::Message;
+
     match msg {
         Message::Text(text) => {
             log::debug!("Received relay message: {}", text);
-            
+
             // Parse Nostr message
             if let Ok(message) = serde_json::from_str::<serde_json::Value>(&text) {
                 if let Some(msg_type) = message.get(0).and_then(|v| v.as_str()) {
@@ -220,7 +231,7 @@ async fn handle_message(
                                     Ok(event) => {
                                         // Store event (will broadcast to all connections)
                                         event_store.add_event(event.clone()).await;
-                                        
+
                                         // Send OK response
                                         let ok_msg = serde_json::json!([
                                             "OK",
@@ -231,7 +242,7 @@ async fn handle_message(
                                         if let Ok(ok_str) = serde_json::to_string(&ok_msg) {
                                             let _ = write.send(Message::Text(ok_str)).await;
                                         }
-                                        
+
                                         log::info!(
                                             "📦 Stored event: id={}, kind={}, author={}, p_tags={:?}",
                                             event.id,
@@ -253,11 +264,12 @@ async fn handle_message(
                             // ["REQ", <subscription_id>, <filter1>, <filter2>, ...]
                             if let Some(sub_id) = message.get(1).and_then(|v| v.as_str()) {
                                 let mut filters = Vec::new();
-                                
+
                                 // Parse all filters
                                 for i in 2..message.as_array().map(|a| a.len()).unwrap_or(0) {
                                     if let Some(filter_json) = message.get(i) {
-                                        match serde_json::from_value::<Filter>(filter_json.clone()) {
+                                        match serde_json::from_value::<Filter>(filter_json.clone())
+                                        {
                                             Ok(filter) => {
                                                 // Log detailed filter info
                                                 log::info!(
@@ -270,35 +282,39 @@ async fn handle_message(
                                                         .map(|(_, values)| values.clone())
                                                 );
                                                 filters.push(filter);
-                                            },
+                                            }
                                             Err(e) => log::warn!("Failed to parse filter: {}", e),
                                         }
                                     }
                                 }
-                                
-                                log::info!("📥 New subscription: {} with {} filters", sub_id, filters.len());
-                                
+
+                                log::info!(
+                                    "📥 New subscription: {} with {} filters",
+                                    sub_id,
+                                    filters.len()
+                                );
+
                                 // Store subscription
                                 {
                                     let mut subs = subscriptions.write().await;
                                     subs.insert(sub_id.to_string(), filters.clone());
                                 }
-                                
+
                                 // Send matching events
                                 let events = event_store.query_events(&filters).await;
-                                log::info!("Found {} matching events for subscription {}", events.len(), sub_id);
-                                
+                                log::info!(
+                                    "Found {} matching events for subscription {}",
+                                    events.len(),
+                                    sub_id
+                                );
+
                                 for event in events {
-                                    let event_msg = serde_json::json!([
-                                        "EVENT",
-                                        sub_id,
-                                        event
-                                    ]);
+                                    let event_msg = serde_json::json!(["EVENT", sub_id, event]);
                                     if let Ok(event_str) = serde_json::to_string(&event_msg) {
                                         let _ = write.send(Message::Text(event_str)).await;
                                     }
                                 }
-                                
+
                                 // Send EOSE
                                 let eose_msg = serde_json::json!(["EOSE", sub_id]);
                                 if let Ok(eose_str) = serde_json::to_string(&eose_msg) {
@@ -330,7 +346,6 @@ async fn handle_message(
         }
         _ => {}
     }
-    
+
     Ok(())
 }
-

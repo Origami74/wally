@@ -415,7 +415,7 @@ pub fn run() {
         });
 
         // Start connection server to handle wallet connection requests
-        let connection_service = service_arc.clone();
+        let _connection_service = service_arc.clone();
         let connection_app_handle = app.handle().clone();
         let pending_connections =
             Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
@@ -423,7 +423,6 @@ pub fn run() {
         let rt_clone = rt.clone();
         rt_clone.spawn(async move {
             if let Err(e) = connection_server::start_connection_server(
-                connection_service,
                 connection_app_handle,
                 pending_connections_for_server,
                 connection_server::DEFAULT_CONNECTION_PORT,
@@ -453,7 +452,7 @@ pub fn run() {
             }
 
             let app_handle = app.app_handle();
-            setup_macos_panel(&app_handle)?;
+            setup_macos_panel(app_handle)?;
         }
 
         log::info!("TollGate service initialized");
@@ -566,7 +565,7 @@ fn setup_macos_panel(app: &tauri::AppHandle) -> tauri::Result<()> {
             } = event
             {
                 if button_state == MouseButtonState::Up {
-                    toggle_panel(&tray.app_handle(), Some(position));
+                    toggle_panel(tray.app_handle(), Some(position));
                 }
             }
         })
@@ -581,7 +580,7 @@ fn toggle_panel(app: &tauri::AppHandle, anchor: Option<PhysicalPosition<f64>>) {
     let _ = app.run_on_main_thread(move || {
         if let Ok(panel) = app_handle.get_webview_panel("main") {
             if panel.is_visible() {
-                let _ = panel.order_out(None);
+                panel.order_out(None);
             } else {
                 if let Some(position) = anchor {
                     if let Some(window) = app_handle.get_webview_window("main") {
@@ -613,11 +612,13 @@ fn position_panel_at_menubar_icon(window: &tauri::WebviewWindow, anchor: Physica
 
         let panel_id: id = panel_handle as _;
 
+        #[allow(unexpected_cfgs)]
         let mut frame: NSRect = unsafe { msg_send![panel_id, frame] };
 
         frame.origin.y = (monitor_pos.y + monitor_size.height) - menubar_height - frame.size.height;
         frame.origin.x = logical_pos.x - frame.size.width / 2.0;
 
+        #[allow(unexpected_cfgs)]
         let _: () = unsafe { msg_send![panel_id, setFrame: frame display: NO] };
     }
 }

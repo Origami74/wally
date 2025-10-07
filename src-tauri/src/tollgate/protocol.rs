@@ -1,8 +1,8 @@
 //! TollGate protocol implementation
-//! 
+//!
 //! Handles TollGate protocol operations following the reference implementation:
 //! - Advertisement parsing (kind 10021)
-//! - Payment creation (kind 21000) 
+//! - Payment creation (kind 21000)
 //! - Session confirmation (kind 21001)
 
 use crate::tollgate::errors::{TollGateError, TollGateResult};
@@ -13,21 +13,21 @@ use serde::{Deserialize, Serialize};
 /// TollGate advertisement information (parsed from kind 10021 events)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TollGateAdvertisement {
-    pub metric: String,                    // "milliseconds" or "bytes"
-    pub step_size: u64,                   // Step size from advertisement
+    pub metric: String, // "milliseconds" or "bytes"
+    pub step_size: u64, // Step size from advertisement
     pub pricing_options: Vec<PricingOption>,
-    pub tips: Vec<String>,                // Supported TIP numbers
-    pub tollgate_pubkey: String,          // TollGate's public key
+    pub tips: Vec<String>,       // Supported TIP numbers
+    pub tollgate_pubkey: String, // TollGate's public key
 }
 
 /// Pricing option from advertisement
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PricingOption {
-    pub asset_type: String,               // "cashu"
-    pub price_per_step: u64,             // Price per step in units
-    pub price_unit: String,              // Price unit (e.g., "sat")
-    pub mint_url: String,                // Accepted mint URL
-    pub min_steps: u64,                  // Minimum steps to purchase
+    pub asset_type: String,  // "cashu"
+    pub price_per_step: u64, // Price per step in units
+    pub price_unit: String,  // Price unit (e.g., "sat")
+    pub mint_url: String,    // Accepted mint URL
+    pub min_steps: u64,      // Minimum steps to purchase
 }
 
 /// Payment event to send to TollGate (kind 21000)
@@ -43,8 +43,8 @@ pub struct PaymentEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionResponse {
     pub session_id: String,
-    pub allotment: u64,                  // Granted usage amount
-    pub session_end: DateTime<Utc>,     // When session expires
+    pub allotment: u64,             // Granted usage amount
+    pub session_end: DateTime<Utc>, // When session expires
     pub mac_address: String,
 }
 
@@ -62,11 +62,15 @@ impl TollGateProtocol {
     }
 
     /// Fetch TollGate advertisement from gateway using TIP-03 HTTP endpoint
-    pub async fn fetch_advertisement(&self, gateway_ip: &str) -> TollGateResult<TollGateAdvertisement> {
+    pub async fn fetch_advertisement(
+        &self,
+        gateway_ip: &str,
+    ) -> TollGateResult<TollGateAdvertisement> {
         // Use TIP-03: GET / endpoint to get the advertisement (kind 10021)
         let advertisement_url = format!("http://{}:2121/", gateway_ip);
-        
-        let response = self.client
+
+        let response = self
+            .client
             .get(&advertisement_url)
             .timeout(std::time::Duration::from_secs(5))
             .send()
@@ -77,27 +81,34 @@ impl TollGateProtocol {
         }
 
         let event_json: serde_json::Value = response.json().await?;
-        
+
         // Parse the kind 10021 event
         self.parse_advertisement_event(&event_json)
     }
 
     /// Parse advertisement event (kind 10021) following TIP-01 and TIP-02
-    fn parse_advertisement_event(&self, event: &serde_json::Value) -> TollGateResult<TollGateAdvertisement> {
-        let kind = event["kind"].as_u64()
+    fn parse_advertisement_event(
+        &self,
+        event: &serde_json::Value,
+    ) -> TollGateResult<TollGateAdvertisement> {
+        let kind = event["kind"]
+            .as_u64()
             .ok_or_else(|| TollGateError::InvalidAdvertisement("Missing kind".to_string()))?;
-        
+
         if kind != 10021 {
-            return Err(TollGateError::InvalidAdvertisement(
-                format!("Expected kind 10021, got {}", kind)
-            ));
+            return Err(TollGateError::InvalidAdvertisement(format!(
+                "Expected kind 10021, got {}",
+                kind
+            )));
         }
 
-        let tollgate_pubkey = event["pubkey"].as_str()
+        let tollgate_pubkey = event["pubkey"]
+            .as_str()
             .ok_or_else(|| TollGateError::InvalidAdvertisement("Missing pubkey".to_string()))?
             .to_string();
 
-        let tags = event["tags"].as_array()
+        let tags = event["tags"]
+            .as_array()
             .ok_or_else(|| TollGateError::InvalidAdvertisement("Missing tags".to_string()))?;
 
         let mut metric = None;
@@ -106,15 +117,17 @@ impl TollGateProtocol {
         let mut tips = Vec::new();
 
         for tag in tags {
-            let tag_array = tag.as_array()
-                .ok_or_else(|| TollGateError::InvalidAdvertisement("Invalid tag format".to_string()))?;
-            
+            let tag_array = tag.as_array().ok_or_else(|| {
+                TollGateError::InvalidAdvertisement("Invalid tag format".to_string())
+            })?;
+
             if tag_array.is_empty() {
                 continue;
             }
 
-            let tag_name = tag_array[0].as_str()
-                .ok_or_else(|| TollGateError::InvalidAdvertisement("Invalid tag name".to_string()))?;
+            let tag_name = tag_array[0].as_str().ok_or_else(|| {
+                TollGateError::InvalidAdvertisement("Invalid tag name".to_string())
+            })?;
 
             match tag_name {
                 "metric" => {
@@ -124,20 +137,21 @@ impl TollGateProtocol {
                 }
                 "step_size" => {
                     if tag_array.len() >= 2 {
-                        step_size = tag_array[1].as_str()
-                            .and_then(|s| s.parse::<u64>().ok());
+                        step_size = tag_array[1].as_str().and_then(|s| s.parse::<u64>().ok());
                     }
                 }
                 "price_per_step" => {
                     // TIP-02: ["price_per_step", "cashu", "210", "sat", "https://mint.url", "1"]
                     if tag_array.len() >= 6 {
                         let asset_type = tag_array[1].as_str().unwrap_or("").to_string();
-                        let price_per_step = tag_array[2].as_str()
+                        let price_per_step = tag_array[2]
+                            .as_str()
                             .and_then(|s| s.parse::<u64>().ok())
                             .unwrap_or(0);
                         let price_unit = tag_array[3].as_str().unwrap_or("").to_string();
                         let mint_url = tag_array[4].as_str().unwrap_or("").to_string();
-                        let min_steps = tag_array[5].as_str()
+                        let min_steps = tag_array[5]
+                            .as_str()
                             .and_then(|s| s.parse::<u64>().ok())
                             .unwrap_or(1);
 
@@ -152,8 +166,8 @@ impl TollGateProtocol {
                 }
                 "tips" => {
                     // Collect all TIP numbers
-                    for i in 1..tag_array.len() {
-                        if let Some(tip) = tag_array[i].as_str() {
+                    for item in tag_array.iter().skip(1) {
+                        if let Some(tip) = item.as_str() {
                             tips.push(tip.to_string());
                         }
                     }
@@ -163,8 +177,11 @@ impl TollGateProtocol {
         }
 
         let advertisement = TollGateAdvertisement {
-            metric: metric.ok_or_else(|| TollGateError::InvalidAdvertisement("Missing metric".to_string()))?,
-            step_size: step_size.ok_or_else(|| TollGateError::InvalidAdvertisement("Missing step_size".to_string()))?,
+            metric: metric
+                .ok_or_else(|| TollGateError::InvalidAdvertisement("Missing metric".to_string()))?,
+            step_size: step_size.ok_or_else(|| {
+                TollGateError::InvalidAdvertisement("Missing step_size".to_string())
+            })?,
             pricing_options,
             tips,
             tollgate_pubkey,
@@ -174,10 +191,14 @@ impl TollGateProtocol {
     }
 
     /// Get device identifier using TIP-04 /whoami endpoint
-    pub async fn get_device_identifier(&self, gateway_ip: &str) -> TollGateResult<(String, String)> {
+    pub async fn get_device_identifier(
+        &self,
+        gateway_ip: &str,
+    ) -> TollGateResult<(String, String)> {
         let whoami_url = format!("http://{}:2121/whoami", gateway_ip);
-        
-        let response = self.client
+
+        let response = self
+            .client
             .get(&whoami_url)
             .timeout(std::time::Duration::from_secs(5))
             .send()
@@ -188,7 +209,7 @@ impl TollGateProtocol {
         }
 
         let body = response.text().await?;
-        
+
         // Parse format: "type=value" (e.g., "mac=00:1A:2B:3C:4D:5E")
         if let Some((device_type, device_value)) = body.trim().split_once('=') {
             Ok((device_type.to_string(), device_value.to_string()))
@@ -208,8 +229,14 @@ impl TollGateProtocol {
         let tags = vec![
             Tag::parse(vec!["p".to_string(), payment.tollgate_pubkey.clone()])
                 .map_err(|e| TollGateError::protocol(format!("Invalid pubkey tag: {}", e)))?,
-            Tag::parse(vec!["device-identifier".to_string(), device_type.to_string(), device_value.to_string()])
-                .map_err(|e| TollGateError::protocol(format!("Invalid device-identifier tag: {}", e)))?,
+            Tag::parse(vec![
+                "device-identifier".to_string(),
+                device_type.to_string(),
+                device_value.to_string(),
+            ])
+            .map_err(|e| {
+                TollGateError::protocol(format!("Invalid device-identifier tag: {}", e))
+            })?,
             Tag::parse(vec!["payment".to_string(), payment.cashu_token.clone()])
                 .map_err(|e| TollGateError::protocol(format!("Invalid payment tag: {}", e)))?,
         ];
@@ -232,8 +259,9 @@ impl TollGateProtocol {
         payment_event: &Event,
     ) -> TollGateResult<SessionResponse> {
         let payment_url = format!("http://{}:2121/", gateway_ip);
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(&payment_url)
             .header("Content-Type", "application/json")
             .json(payment_event)
@@ -249,27 +277,44 @@ impl TollGateProtocol {
             }
             402 => {
                 // Payment Required - get error message
-                let error_msg = response.text().await.unwrap_or_else(|_| "Payment required".to_string());
-                Err(TollGateError::protocol(format!("Payment rejected: {}", error_msg)))
+                let error_msg = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "Payment required".to_string());
+                Err(TollGateError::protocol(format!(
+                    "Payment rejected: {}",
+                    error_msg
+                )))
             }
             _ => {
                 let status = response.status();
-                let error_msg = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                Err(TollGateError::protocol(format!("HTTP error {}: {}", status, error_msg)))
+                let error_msg = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "Unknown error".to_string());
+                Err(TollGateError::protocol(format!(
+                    "HTTP error {}: {}",
+                    status, error_msg
+                )))
             }
         }
     }
 
     /// Parse session event (kind 1022) following TIP-01
     fn parse_session_event(&self, event: &serde_json::Value) -> TollGateResult<SessionResponse> {
-        let kind = event["kind"].as_u64()
+        let kind = event["kind"]
+            .as_u64()
             .ok_or_else(|| TollGateError::protocol("Missing kind in session response"))?;
-        
+
         if kind != 1022 {
-            return Err(TollGateError::protocol(format!("Expected kind 1022, got {}", kind)));
+            return Err(TollGateError::protocol(format!(
+                "Expected kind 1022, got {}",
+                kind
+            )));
         }
 
-        let tags = event["tags"].as_array()
+        let tags = event["tags"]
+            .as_array()
             .ok_or_else(|| TollGateError::protocol("Missing tags in session response"))?;
 
         let mut _customer_pubkey = None;
@@ -278,14 +323,16 @@ impl TollGateProtocol {
         let mut _metric = None;
 
         for tag in tags {
-            let tag_array = tag.as_array()
+            let tag_array = tag
+                .as_array()
                 .ok_or_else(|| TollGateError::protocol("Invalid tag format in session response"))?;
-            
+
             if tag_array.is_empty() {
                 continue;
             }
 
-            let tag_name = tag_array[0].as_str()
+            let tag_name = tag_array[0]
+                .as_str()
                 .ok_or_else(|| TollGateError::protocol("Invalid tag name in session response"))?;
 
             match tag_name {
@@ -296,7 +343,8 @@ impl TollGateProtocol {
                 }
                 "device-identifier" => {
                     if tag_array.len() >= 3 {
-                        device_identifier = Some(format!("{}={}",
+                        device_identifier = Some(format!(
+                            "{}={}",
                             tag_array[1].as_str().unwrap_or(""),
                             tag_array[2].as_str().unwrap_or("")
                         ));
@@ -304,8 +352,7 @@ impl TollGateProtocol {
                 }
                 "allotment" => {
                     if tag_array.len() >= 2 {
-                        allotment = tag_array[1].as_str()
-                            .and_then(|s| s.parse::<u64>().ok());
+                        allotment = tag_array[1].as_str().and_then(|s| s.parse::<u64>().ok());
                     }
                 }
                 "metric" => {
@@ -318,7 +365,8 @@ impl TollGateProtocol {
         }
 
         // Generate session ID from event ID or create one
-        let session_id = event["id"].as_str()
+        let session_id = event["id"]
+            .as_str()
             .unwrap_or(&uuid::Uuid::new_v4().to_string())
             .to_string();
 
@@ -327,7 +375,8 @@ impl TollGateProtocol {
 
         let session_response = SessionResponse {
             session_id,
-            allotment: allotment.ok_or_else(|| TollGateError::protocol("Missing allotment in session response"))?,
+            allotment: allotment
+                .ok_or_else(|| TollGateError::protocol("Missing allotment in session response"))?,
             session_end,
             mac_address: device_identifier
                 .and_then(|id| id.split_once('=').map(|(_, value)| value.to_string()))
@@ -337,110 +386,49 @@ impl TollGateProtocol {
         Ok(session_response)
     }
 
-    /// Parse session response from TollGate
-    #[allow(dead_code)]
-    pub fn parse_session_response(&self, event: &Event) -> TollGateResult<SessionResponse> {
-        // Extract session information from event tags
-        let mut session_id = None;
-        let mut allotment = None;
-        let mut session_end = None;
-        let mut mac_address = None;
-
-        for tag in event.tags.iter() {
-            match tag.as_slice() {
-                [session_tag, id] if session_tag == "session-id" => session_id = Some(id.to_string()),
-                [allotment_tag, amount] if allotment_tag == "allotment" => {
-                    allotment = Some(amount.parse::<u64>()
-                        .map_err(|_| TollGateError::protocol("Invalid allotment value"))?);
-                }
-                [session_end_tag, timestamp] if session_end_tag == "session-end" => {
-                    let ts = timestamp.parse::<i64>()
-                        .map_err(|_| TollGateError::protocol("Invalid session-end timestamp"))?;
-                    session_end = Some(DateTime::from_timestamp(ts, 0)
-                        .ok_or_else(|| TollGateError::protocol("Invalid timestamp"))?);
-                }
-                [mac_tag, mac] if mac_tag == "mac" => mac_address = Some(mac.to_string()),
-                _ => {} // Ignore unknown tags
-            }
-        }
-
-        let session_response = SessionResponse {
-            session_id: session_id.ok_or_else(|| TollGateError::protocol("Missing session-id"))?,
-            allotment: allotment.ok_or_else(|| TollGateError::protocol("Missing allotment"))?,
-            session_end: session_end.ok_or_else(|| TollGateError::protocol("Missing session-end"))?,
-            mac_address: mac_address.ok_or_else(|| TollGateError::protocol("Missing mac address"))?,
-        };
-
-        Ok(session_response)
-    }
-
     /// Validate TollGate advertisement
     pub fn validate_advertisement(&self, ad: &TollGateAdvertisement) -> TollGateResult<()> {
         if ad.metric != "milliseconds" && ad.metric != "bytes" {
-            return Err(TollGateError::InvalidAdvertisement(
-                format!("Invalid metric: {}", ad.metric)
-            ));
+            return Err(TollGateError::InvalidAdvertisement(format!(
+                "Invalid metric: {}",
+                ad.metric
+            )));
         }
 
         if ad.step_size == 0 {
             return Err(TollGateError::InvalidAdvertisement(
-                "Step size cannot be zero".to_string()
+                "Step size cannot be zero".to_string(),
             ));
         }
 
         if ad.pricing_options.is_empty() {
             return Err(TollGateError::InvalidAdvertisement(
-                "No pricing options available".to_string()
+                "No pricing options available".to_string(),
             ));
         }
 
         for option in &ad.pricing_options {
             if option.asset_type != "cashu" {
-                return Err(TollGateError::InvalidAdvertisement(
-                    format!("Unsupported asset type: {}", option.asset_type)
-                ));
+                return Err(TollGateError::InvalidAdvertisement(format!(
+                    "Unsupported asset type: {}",
+                    option.asset_type
+                )));
             }
 
             if option.price_per_step == 0 {
                 return Err(TollGateError::InvalidAdvertisement(
-                    "Price per step cannot be zero".to_string()
+                    "Price per step cannot be zero".to_string(),
                 ));
             }
 
             if option.min_steps == 0 {
                 return Err(TollGateError::InvalidAdvertisement(
-                    "Minimum steps cannot be zero".to_string()
+                    "Minimum steps cannot be zero".to_string(),
                 ));
             }
         }
 
         Ok(())
-    }
-
-    /// Select best pricing option based on available mints and preferences
-    #[allow(dead_code)]
-    pub fn select_best_pricing_option(
-        &self,
-        options: &[PricingOption],
-        available_mints: &[String],
-    ) -> TollGateResult<PricingOption> {
-        // Find compatible options (mints we support)
-        let compatible_options: Vec<&PricingOption> = options
-            .iter()
-            .filter(|option| available_mints.contains(&option.mint_url))
-            .collect();
-
-        if compatible_options.is_empty() {
-            return Err(TollGateError::protocol("No compatible pricing options found"));
-        }
-
-        // Select the option with the lowest price per step
-        let best_option = compatible_options
-            .into_iter()
-            .min_by_key(|option| option.price_per_step)
-            .unwrap();
-
-        Ok(best_option.clone())
     }
 
     /// Calculate total cost for a purchase
@@ -467,19 +455,17 @@ mod tests {
     #[test]
     fn test_validate_advertisement() {
         let protocol = TollGateProtocol::new();
-        
+
         let valid_ad = TollGateAdvertisement {
             metric: "milliseconds".to_string(),
             step_size: 1000,
-            pricing_options: vec![
-                PricingOption {
-                    asset_type: "cashu".to_string(),
-                    price_per_step: 1,
-                    price_unit: "sat".to_string(),
-                    mint_url: "https://mint.example.com".to_string(),
-                    min_steps: 60,
-                }
-            ],
+            pricing_options: vec![PricingOption {
+                asset_type: "cashu".to_string(),
+                price_per_step: 1,
+                price_unit: "sat".to_string(),
+                mint_url: "https://mint.example.com".to_string(),
+                min_steps: 60,
+            }],
             tips: vec!["01".to_string()],
             tollgate_pubkey: "test_pubkey".to_string(),
         };

@@ -1,5 +1,5 @@
 //! Session management for TollGate connections
-//! 
+//!
 //! Handles individual TollGate sessions including:
 //! - Session lifecycle management
 //! - Usage tracking and renewal
@@ -12,6 +12,18 @@ use nostr::Keys;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
+
+/// Parameters for creating a new session
+pub struct SessionParams {
+    pub tollgate_pubkey: String,
+    pub gateway_ip: String,
+    pub mac_address: String,
+    pub pricing_option: PricingOption,
+    pub advertisement: TollGateAdvertisement,
+    pub initial_allotment: u64,
+    pub session_end: DateTime<Utc>,
+    pub initial_cost: u64,
+}
 
 /// Session status enumeration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -67,34 +79,25 @@ pub struct Session {
 
 impl Session {
     /// Create a new session
-    pub fn new(
-        tollgate_pubkey: String,
-        gateway_ip: String,
-        mac_address: String,
-        pricing_option: PricingOption,
-        advertisement: TollGateAdvertisement,
-        initial_allotment: u64,
-        session_end: DateTime<Utc>,
-        initial_cost: u64,
-    ) -> TollGateResult<Self> {
+    pub fn new(params: SessionParams) -> TollGateResult<Self> {
         let customer_keys = Keys::generate();
-        
+
         Ok(Session {
             id: Uuid::new_v4().to_string(),
-            tollgate_pubkey,
-            gateway_ip,
-            mac_address,
+            tollgate_pubkey: params.tollgate_pubkey,
+            gateway_ip: params.gateway_ip,
+            mac_address: params.mac_address,
             status: SessionStatus::Initializing,
             customer_keys: customer_keys.secret_key().to_secret_hex(),
-            pricing_option,
-            advertisement,
-            total_allotment: initial_allotment,
+            pricing_option: params.pricing_option,
+            advertisement: params.advertisement,
+            total_allotment: params.initial_allotment,
             current_usage: 0,
-            session_end,
+            session_end: params.session_end,
             renewal_threshold: 0.8, // 80%
             created_at: Utc::now(),
             last_renewal: None,
-            total_spent: initial_cost,
+            total_spent: params.initial_cost,
             payment_count: 1,
         })
     }
@@ -108,13 +111,15 @@ impl Session {
     /// Update session from TollGate response
     pub fn update_from_response(&mut self, response: &SessionResponse) -> TollGateResult<()> {
         if response.mac_address != self.mac_address {
-            return Err(TollGateError::session("MAC address mismatch in session response"));
+            return Err(TollGateError::session(
+                "MAC address mismatch in session response",
+            ));
         }
 
         self.total_allotment += response.allotment;
         self.session_end = response.session_end;
         self.status = SessionStatus::Active;
-        
+
         Ok(())
     }
 
@@ -136,7 +141,7 @@ impl Session {
     /// Update usage and check for expiration
     pub fn update_usage(&mut self, new_usage: u64) {
         self.current_usage = new_usage.min(self.total_allotment);
-        
+
         if self.is_expired() {
             self.status = SessionStatus::Expired;
         }
@@ -204,7 +209,8 @@ impl SessionManager {
 
     /// Add a new session
     pub fn add_session(&mut self, session: Session) {
-        self.sessions.insert(session.tollgate_pubkey.clone(), session);
+        self.sessions
+            .insert(session.tollgate_pubkey.clone(), session);
     }
 
     /// Get session by tollgate pubkey
@@ -215,12 +221,6 @@ impl SessionManager {
     /// Get mutable session by tollgate pubkey
     pub fn get_session_mut(&mut self, tollgate_pubkey: &str) -> Option<&mut Session> {
         self.sessions.get_mut(tollgate_pubkey)
-    }
-
-    /// Remove session
-    #[allow(dead_code)]
-    pub fn remove_session(&mut self, tollgate_pubkey: &str) -> Option<Session> {
-        self.sessions.remove(tollgate_pubkey)
     }
 
     /// Get all active sessions
@@ -239,15 +239,6 @@ impl SessionManager {
             .collect()
     }
 
-    /// Get all expired sessions
-    #[allow(dead_code)]
-    pub fn get_expired_sessions(&self) -> Vec<&Session> {
-        self.sessions
-            .values()
-            .filter(|session| session.is_expired())
-            .collect()
-    }
-
     /// Get all sessions as mutable iterator
     pub fn get_all_sessions_mut(&mut self) -> impl Iterator<Item = &mut Session> {
         self.sessions.values_mut()
@@ -263,25 +254,22 @@ impl SessionManager {
         self.sessions.len()
     }
 
-    /// Get active session count
-    #[allow(dead_code)]
-    pub fn active_session_count(&self) -> usize {
-        self.sessions
-            .values()
-            .filter(|session| session.is_active())
-            .count()
+    /// Remove session
+    #[cfg(test)]
+    pub fn remove_session(&mut self, tollgate_pubkey: &str) -> Option<Session> {
+        self.sessions.remove(tollgate_pubkey)
     }
 
     /// Update usage for all sessions based on time (for time-based sessions)
     pub fn update_time_based_usage(&mut self) {
         let now = Utc::now();
-        
+
         for session in self.sessions.values_mut() {
             if session.advertisement.metric == "milliseconds" && session.is_active() {
                 let elapsed_ms = now
                     .signed_duration_since(session.created_at)
                     .num_milliseconds() as u64;
-                
+
                 session.update_usage(elapsed_ms);
             }
         }
@@ -291,15 +279,6 @@ impl SessionManager {
     pub fn serialize(&self) -> TollGateResult<String> {
         serde_json::to_string(&self.sessions)
             .map_err(|e| TollGateError::session(format!("Failed to serialize sessions: {}", e)))
-    }
-
-    /// Deserialize sessions from persistence
-    #[allow(dead_code)]
-    pub fn deserialize(data: &str) -> TollGateResult<Self> {
-        let sessions: HashMap<String, Session> = serde_json::from_str(data)
-            .map_err(|e| TollGateError::session(format!("Failed to deserialize sessions: {}", e)))?;
-        
-        Ok(Self { sessions })
     }
 }
 
@@ -325,16 +304,17 @@ mod tests {
             tollgate_pubkey: "test_pubkey".to_string(),
         };
 
-        Session::new(
-            "test_pubkey".to_string(),
-            "192.168.1.1".to_string(),
-            "aa:bb:cc:dd:ee:ff".to_string(),
+        Session::new(SessionParams {
+            tollgate_pubkey: "test_pubkey".to_string(),
+            gateway_ip: "192.168.1.1".to_string(),
+            mac_address: "aa:bb:cc:dd:ee:ff".to_string(),
             pricing_option,
             advertisement,
-            60000, // 60 seconds
-            Utc::now() + chrono::Duration::minutes(1),
-            60, // 60 sats
-        ).unwrap()
+            initial_allotment: 60000, // 60 seconds
+            session_end: Utc::now() + chrono::Duration::minutes(1),
+            initial_cost: 60, // 60 sats
+        })
+        .unwrap()
     }
 
     #[test]
@@ -349,11 +329,11 @@ mod tests {
     fn test_needs_renewal() {
         let mut session = create_test_session();
         session.status = SessionStatus::Active;
-        
+
         // At 50% usage, should not need renewal
         session.update_usage(30000);
         assert!(!session.needs_renewal());
-        
+
         // At 80% usage, should need renewal
         session.update_usage(48000);
         assert!(session.needs_renewal());
@@ -362,10 +342,10 @@ mod tests {
     #[test]
     fn test_usage_percentage() {
         let mut session = create_test_session();
-        
+
         session.update_usage(30000);
         assert_eq!(session.usage_percentage(), 0.5);
-        
+
         session.update_usage(60000);
         assert_eq!(session.usage_percentage(), 1.0);
     }
@@ -375,13 +355,13 @@ mod tests {
         let mut manager = SessionManager::new();
         let session = create_test_session();
         let pubkey = session.tollgate_pubkey.clone();
-        
+
         manager.add_session(session);
         assert_eq!(manager.session_count(), 1);
-        
+
         let retrieved = manager.get_session(&pubkey);
         assert!(retrieved.is_some());
-        
+
         manager.remove_session(&pubkey);
         assert_eq!(manager.session_count(), 0);
     }

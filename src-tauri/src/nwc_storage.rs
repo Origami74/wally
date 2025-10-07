@@ -122,7 +122,7 @@ impl NwcConnectionStorage {
              ORDER BY created_at DESC",
         )?;
 
-        let connections = stmt.query_map([], |row| Self::row_to_connection(row))?;
+        let connections = stmt.query_map([], Self::row_to_connection)?;
 
         let mut result = Vec::new();
         for connection in connections {
