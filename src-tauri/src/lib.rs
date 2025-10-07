@@ -31,9 +31,11 @@ type TollGateState = Arc<Mutex<TollGateService>>;
 type NwcState = Arc<Mutex<Option<NostrWalletConnect>>>;
 
 mod connection_server;
+mod nostr_providers;
 mod nwc;
 mod nwc_storage;
 mod relay;
+mod routstr;
 mod wallet;
 
 use nwc::{BudgetRenewalPeriod, NostrWalletConnect};
@@ -438,10 +440,16 @@ pub fn run() {
             }
         });
 
+        // Initialize Routstr service
+        let routstr_arc = Arc::new(Mutex::new(routstr::RoutstrService::new()));
+
         app.manage(service_arc);
         app.manage(nwc_arc);
-        app.manage(rt);
+        app.manage(routstr_arc);
+        app.manage(rt.clone());
         app.manage(pending_connections);
+
+        rt.spawn(start_provider_monitoring());
 
         #[cfg(target_os = "macos")]
         {
@@ -462,6 +470,30 @@ pub fn run() {
         );
         Ok(())
     });
+
+    #[tauri::command]
+    async fn discover_nostr_providers() -> Result<Vec<nostr_providers::NostrProvider>, String> {
+        nostr_providers::discover_providers()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn start_provider_monitoring() {
+        tokio::spawn(async {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
+            loop {
+                interval.tick().await;
+                match nostr_providers::discover_providers().await {
+                    Ok(providers) => {
+                        log::info!("Updated provider list: {} providers found", providers.len());
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to update providers: {}", e);
+                    }
+                }
+            }
+        });
+    }
 
     #[cfg(target_os = "macos")]
     {
@@ -520,6 +552,7 @@ pub fn run() {
             get_wallet_summary,
             list_wallet_transactions,
             receive_cashu_token,
+            create_external_token,
             nwc_list_connections,
             nwc_remove_connection,
             nwc_get_service_pubkey,
@@ -528,6 +561,22 @@ pub fn run() {
             nwc_create_standard_connection,
             connection_server::nwc_approve_connection,
             connection_server::nwc_reject_connection,
+            routstr::routstr_connect_service,
+            routstr::routstr_disconnect_service,
+            routstr::routstr_refresh_models,
+            routstr::routstr_get_models,
+            routstr::routstr_get_connection_status,
+            routstr::routstr_create_wallet,
+            routstr::routstr_create_balance_with_token,
+            routstr::routstr_get_all_api_keys,
+            routstr::routstr_get_all_wallet_balances,
+            routstr::routstr_get_wallet_balance_for_key,
+            routstr::routstr_top_up_wallet_for_key,
+            routstr::routstr_refund_wallet_for_key,
+            routstr::routstr_remove_api_key,
+            routstr::routstr_clear_config,
+            routstr::routstr_force_reset_all_api_keys,
+            discover_nostr_providers,
         ]);
 
     builder
