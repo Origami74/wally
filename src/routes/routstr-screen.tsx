@@ -518,7 +518,24 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
 
               {!useManualUrl && (
                 <div className="space-y-2 ml-6">
-                  <Label>Available Providers</Label>
+                  <div className="flex items-center justify-between">
+                    <Label>Available Providers</Label>
+                    {providers.length > 0 && (
+                      <CopyButton
+                        className="ms-1 h-6"
+                        label=""
+                        copiedLabel="Copied!"
+                        onCopy={() =>
+                          copyToClipboard(
+                            providers
+                              .filter((p) => p.id === selectedProvider)
+                              .at(0)!
+                              .urls[0].replace(/\/$/, ""),
+                          )
+                        }
+                      />
+                    )}
+                  </div>
                   {providers.length > 0 ? (
                     <Select
                       value={selectedProvider}
