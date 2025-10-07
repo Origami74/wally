@@ -77,7 +77,7 @@ export function SettingsScreen({
                 onClick={onSaveMint}
                 disabled={!mintInput.trim() || savingMint}
               >
-                {savingMint ? "Saving…" : "Save mint"}
+                {savingMint ? "Setting…" : "Set Default Mint"}
               </Button>
               <Button variant="outline" onClick={onReset}>
                 Reset

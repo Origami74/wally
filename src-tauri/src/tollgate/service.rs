@@ -511,6 +511,12 @@ impl TollGateService {
         wallet.add_mint(mint_url).await
     }
 
+    /// Set the default mint
+    pub async fn set_default_mint(&self, mint_url: &str) -> TollGateResult<()> {
+        let mut wallet = self.wallet.lock().await;
+        wallet.set_default_mint(mint_url).await
+    }
+
     /// Get wallet balance
     pub async fn get_wallet_balance(&self) -> TollGateResult<u64> {
         let wallet = self.wallet.lock().await;

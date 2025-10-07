@@ -404,6 +404,17 @@ impl TollGateWallet {
         Ok(())
     }
 
+    /// Set the default mint
+    pub async fn set_default_mint(&mut self, mint_url: &str) -> TollGateResult<()> {
+        if !self.wallets.contains_key(mint_url) {
+            self.add_mint_internal(mint_url).await?;
+        }
+
+        self.default_mint = Some(mint_url.to_string());
+        self.save_mints_config()?;
+        Ok(())
+    }
+
     /// Return the wallet's npub, if derivable
     pub fn nostr_npub(&self) -> Option<String> {
         self.secrets.nostr_npub().ok()
@@ -642,7 +653,6 @@ impl TollGateWallet {
             .melt(&quote.id)
             .await
             .map_err(|e| TollGateError::wallet(format!("Failed to pay invoice: {}", e)))?;
-
         let amount: u64 = melted.amount.into();
         let fee_paid: u64 = melted.fee_paid.into();
 

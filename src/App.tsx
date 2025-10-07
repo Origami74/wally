@@ -239,10 +239,10 @@ function AppContent() {
     if (!mintInput.trim()) return;
     setSavingMint(true);
     try {
-      await invoke("add_mint", { mintUrl: mintInput.trim() });
+      await invoke("set_default_mint", { mintUrl: mintInput.trim() });
       await refreshStatus();
     } catch (error) {
-      console.error("Failed to add mint", error);
+      console.error("Failed to set default mint", error);
     } finally {
       setSavingMint(false);
     }
@@ -485,6 +485,9 @@ function AppContent() {
               }}
               handleFeatureUpdate={handleFeatureUpdate}
               periodMeta={periodMeta}
+              copyToClipboard={function (_: string): Promise<void> | void {
+                throw new Error("Function not implemented.");
+              }}
             />
           </Route>
 

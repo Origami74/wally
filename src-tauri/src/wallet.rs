@@ -14,6 +14,18 @@ pub async fn add_mint(mint_url: String, state: State<'_, TollGateState>) -> Resu
 }
 
 #[tauri::command]
+pub async fn set_default_mint(
+    mint_url: String,
+    state: State<'_, TollGateState>,
+) -> Result<(), String> {
+    let service = state.lock().await;
+    service
+        .set_default_mint(&mint_url)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn get_wallet_balance(state: State<'_, TollGateState>) -> Result<u64, String> {
     let service = state.lock().await;
     service
