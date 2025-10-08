@@ -34,6 +34,7 @@ mod connection_server;
 mod nostr_providers;
 mod nwc;
 mod nwc_storage;
+mod proxy;
 mod relay;
 mod routstr;
 mod wallet;
