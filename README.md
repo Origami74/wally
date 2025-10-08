@@ -4,6 +4,20 @@ This is a multiplatform app that allows your device to discover and (auto)connec
 
 The current version is focussing on Android first. Support for Linux and MacOS will be next.
 
+## Cashu Wallet Connect (CWC)
+
+This app implements **Cashu Wallet Connect (CWC)**, an extension of [NIP-47 (Nostr Wallet Connect)](https://github.com/nostr-protocol/nips/blob/master/47.md) that enables applications to interact with Cashu ecash wallets over Nostr. 
+
+**📖 Read the [CWC Specification](SPECIFICATION.md)** for full protocol details.
+
+### Key Features
+
+- 🔌 **NWC Compatible**: Implements NIP-47 with Cashu extensions
+- 🪙 **Multi-Mint Support**: Manage balances across multiple Cashu mints
+- ⚡ **Lightning Bridge**: Pay/receive Lightning invoices via mint gateways
+- 🔐 **Budget Controls**: Per-connection spending limits
+- 🎯 **Cashu Native**: Direct token sending/receiving with NUT-18 support
+
 ## Wallet Public Key Access
 
 The wallet exposes its Nostr public key via a local HTTP server on port **3737**. This allows other services running on the same device to easily retrieve the wallet's public key in hex format.

@@ -1,14 +1,35 @@
+# System files
 .DS_Store
+
+# Dependencies
 node_modules
+
+# Build artifacts
 /build
+/dist
 /.svelte-kit
 /package
+
+# Rust/Tauri build artifacts
+/src-tauri/target
+*.dmg
+*.app
+*.deb
+*.rpm
+*.AppImage
+
+# Environment variables
 .env
 .env.*
 !.env.example
+
+# Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# IDE
 .idea
 .vscode
 
+# Other
 reference
