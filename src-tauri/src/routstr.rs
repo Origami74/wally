@@ -42,6 +42,9 @@ pub struct RoutstrStoredConfig {
     pub use_onion: bool,
     pub payment_required: bool,
     pub cost_per_request_sats: u64,
+    pub use_manual_url: bool,
+    pub selected_provider_id: Option<String>,
+    pub service_mode: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -152,6 +155,9 @@ pub struct RoutstrService {
     pub use_onion: bool,
     pub payment_required: bool,
     pub cost_per_request_sats: u64,
+    pub use_manual_url: bool,
+    pub selected_provider_id: Option<String>,
+    pub service_mode: String,
     client: reqwest::Client,
     storage: RoutstrStoragePaths,
 }
@@ -168,6 +174,9 @@ impl Clone for RoutstrService {
             use_onion: self.use_onion,
             payment_required: self.payment_required,
             cost_per_request_sats: self.cost_per_request_sats,
+            use_manual_url: self.use_manual_url,
+            selected_provider_id: self.selected_provider_id.clone(),
+            service_mode: self.service_mode.clone(),
             client: self.client.clone(),
             storage: self.storage.clone(),
         }
@@ -202,6 +211,9 @@ impl RoutstrService {
             use_onion: false,
             payment_required: false,
             cost_per_request_sats: 10,
+            use_manual_url: true,
+            selected_provider_id: None,
+            service_mode: "wallet".to_string(),
             client: reqwest::Client::new(),
             storage,
         };
@@ -650,6 +662,9 @@ impl RoutstrService {
             self.use_onion = stored.use_onion;
             self.payment_required = stored.payment_required;
             self.cost_per_request_sats = stored.cost_per_request_sats;
+            self.use_manual_url = stored.use_manual_url;
+            self.selected_provider_id = stored.selected_provider_id;
+            self.service_mode = stored.service_mode;
 
             log::info!("Loaded Routstr configuration from storage");
         }
@@ -666,6 +681,9 @@ impl RoutstrService {
             use_onion: self.use_onion,
             payment_required: self.payment_required,
             cost_per_request_sats: self.cost_per_request_sats,
+            use_manual_url: self.use_manual_url,
+            selected_provider_id: self.selected_provider_id.clone(),
+            service_mode: self.service_mode.clone(),
         };
 
         if let Some(parent) = self.storage.config_file.parent() {
@@ -719,9 +737,24 @@ pub type RoutstrState = Arc<Mutex<RoutstrService>>;
 #[tauri::command]
 pub async fn routstr_connect_service(
     url: String,
+    use_manual_url: Option<bool>,
+    selected_provider_id: Option<String>,
+    service_mode: Option<String>,
     state: tauri::State<'_, RoutstrState>,
 ) -> Result<(), String> {
     let mut service = state.lock().await;
+
+    // Update UI state if provided
+    if let Some(manual_url) = use_manual_url {
+        service.use_manual_url = manual_url;
+    }
+    if let Some(provider_id) = selected_provider_id {
+        service.selected_provider_id = Some(provider_id);
+    }
+    if let Some(mode) = service_mode {
+        service.service_mode = mode;
+    }
+
     service
         .connect_to_service(url)
         .await
@@ -896,72 +929,6 @@ pub async fn routstr_force_reset_all_api_keys(
 }
 
 #[tauri::command]
-pub async fn routstr_enable_proxy_mode(
-    proxy_endpoint: String,
-    target_service_url: String,
-    use_onion: bool,
-    payment_required: bool,
-    cost_per_request_sats: u64,
-    state: tauri::State<'_, RoutstrState>,
-) -> Result<(), String> {
-    let mut service = state.lock().await;
-
-    let formatted_proxy =
-        if proxy_endpoint.starts_with("http://") || proxy_endpoint.starts_with("https://") {
-            proxy_endpoint.trim_end_matches('/').to_string()
-        } else {
-            format!("http://{}", proxy_endpoint.trim_end_matches('/'))
-        };
-
-    let formatted_target = if target_service_url.starts_with("http://")
-        || target_service_url.starts_with("https://")
-    {
-        target_service_url.trim_end_matches('/').to_string()
-    } else {
-        format!("https://{}", target_service_url.trim_end_matches('/'))
-    };
-
-    service.use_proxy = true;
-    service.proxy_endpoint = Some(formatted_proxy.clone());
-    service.target_service_url = Some(formatted_target.clone());
-    service.use_onion = use_onion;
-    service.payment_required = payment_required;
-    service.cost_per_request_sats = cost_per_request_sats;
-
-    service.base_url = Some(formatted_proxy);
-
-    service.save_config().map_err(|e| e.to_string())?;
-
-    log::info!(
-        "Enabled proxy mode: {} -> {}",
-        service.proxy_endpoint.as_ref().unwrap(),
-        service.target_service_url.as_ref().unwrap()
-    );
-
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn routstr_disable_proxy_mode(
-    state: tauri::State<'_, RoutstrState>,
-) -> Result<(), String> {
-    let mut service = state.lock().await;
-
-    service.use_proxy = false;
-    service.proxy_endpoint = None;
-    service.target_service_url = None;
-    service.use_onion = false;
-    service.payment_required = false;
-    service.base_url = None;
-
-    service.save_config().map_err(|e| e.to_string())?;
-
-    log::info!("Disabled proxy mode");
-
-    Ok(())
-}
-
-#[tauri::command]
 pub async fn routstr_get_proxy_status(
     state: tauri::State<'_, RoutstrState>,
 ) -> Result<serde_json::Value, String> {
@@ -973,7 +940,48 @@ pub async fn routstr_get_proxy_status(
         "target_service_url": service.target_service_url,
         "use_onion": service.use_onion,
         "payment_required": service.payment_required,
-        "cost_per_request_sats": service.cost_per_request_sats
+        "cost_per_request_sats": service.cost_per_request_sats,
+        "use_manual_url": service.use_manual_url,
+        "selected_provider_id": service.selected_provider_id,
+        "service_mode": service.service_mode
+    }))
+}
+
+#[tauri::command]
+pub async fn routstr_set_ui_state(
+    use_manual_url: bool,
+    selected_provider_id: Option<String>,
+    service_mode: String,
+    state: tauri::State<'_, RoutstrState>,
+) -> Result<(), String> {
+    let mut service = state.lock().await;
+
+    service.use_manual_url = use_manual_url;
+    service.selected_provider_id = selected_provider_id;
+    service.service_mode = service_mode;
+
+    service.save_config().map_err(|e| e.to_string())?;
+
+    log::info!(
+        "Updated UI state: use_manual_url={}, selected_provider_id={:?}, service_mode={}",
+        use_manual_url,
+        service.selected_provider_id,
+        service.service_mode
+    );
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn routstr_get_ui_state(
+    state: tauri::State<'_, RoutstrState>,
+) -> Result<serde_json::Value, String> {
+    let service = state.lock().await;
+
+    Ok(serde_json::json!({
+        "use_manual_url": service.use_manual_url,
+        "selected_provider_id": service.selected_provider_id,
+        "service_mode": service.service_mode
     }))
 }
 

@@ -10,8 +10,18 @@ import type {
   ProxyStatus,
 } from "./types";
 
-export async function connectToRoutstrService(url: string): Promise<void> {
-  return invoke("routstr_connect_service", { url });
+export async function connectToRoutstrService(
+  url: string,
+  useManualUrl?: boolean,
+  selectedProviderId?: string,
+  serviceMode?: string,
+): Promise<void> {
+  return invoke("routstr_connect_service", {
+    url,
+    useManualUrl,
+    selectedProviderId,
+    serviceMode,
+  });
 }
 
 export async function disconnectFromRoutstrService(): Promise<void> {
@@ -82,26 +92,26 @@ export async function forceResetAllApiKeys(): Promise<void> {
   return invoke("routstr_force_reset_all_api_keys");
 }
 
-export async function enableProxyMode(
-  proxyEndpoint: string,
-  targetServiceUrl: string,
-  useOnion: boolean = false,
-  paymentRequired: boolean = false,
-  costPerRequestSats: number = 10,
+export async function getProxyStatus(): Promise<ProxyStatus> {
+  return invoke("routstr_get_proxy_status");
+}
+
+export async function setUIState(
+  useManualUrl: boolean,
+  selectedProviderId: string | null,
+  serviceMode: string,
 ): Promise<void> {
-  return invoke("routstr_enable_proxy_mode", {
-    proxyEndpoint,
-    targetServiceUrl,
-    useOnion,
-    paymentRequired,
-    costPerRequestSats,
+  return invoke("routstr_set_ui_state", {
+    useManualUrl,
+    selectedProviderId,
+    serviceMode,
   });
 }
 
-export async function disableProxyMode(): Promise<void> {
-  return invoke("routstr_disable_proxy_mode");
-}
-
-export async function getProxyStatus(): Promise<ProxyStatus> {
-  return invoke("routstr_get_proxy_status");
+export async function getUIState(): Promise<{
+  use_manual_url: boolean;
+  selected_provider_id: string | null;
+  service_mode: string;
+}> {
+  return invoke("routstr_get_ui_state");
 }

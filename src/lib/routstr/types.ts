@@ -41,12 +41,12 @@ export interface RoutstrModel {
   name: string;
   created: number;
   description: string;
-  context_length: number;
-  architecture: Architecture;
-  pricing: Pricing;
+  context_length: number | null;
+  architecture: Architecture | null;
+  pricing: Pricing | null;
   sats_pricing: SatsPricing;
-  per_request_limits: any;
-  top_provider: TopProvider;
+  per_request_limits: any | null;
+  top_provider: TopProvider | null;
 }
 
 export interface RoutstrConnectionStatus {
@@ -78,7 +78,6 @@ export interface RoutstrRefundResponse {
   msats?: string;
 }
 
-
 export interface ApiKeyEntry {
   api_key: string;
   creation_cashu_token?: string;
@@ -93,4 +92,7 @@ export interface ProxyStatus {
   use_onion: boolean;
   payment_required: boolean;
   cost_per_request_sats: number;
+  use_manual_url: boolean;
+  selected_provider_id: string | null;
+  service_mode: string;
 }

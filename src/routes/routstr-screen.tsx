@@ -37,9 +37,9 @@ import {
   refundWalletForKey,
   forceResetAllApiKeys,
   topUpWalletForKey,
-  enableProxyMode,
-  disableProxyMode,
   getProxyStatus,
+  setUIState,
+  getUIState,
 } from "@/lib/routstr/api";
 import { discoverNostrProviders } from "@/lib/nostr-providers";
 
@@ -73,12 +73,7 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
   const [serviceMode, setServiceMode] = useState<"wallet" | "proxy">("wallet");
   const queryClient = useQueryClient();
 
-  const [proxyEndpoint, setProxyEndpoint] = useState("http://127.0.0.1:3737");
-  const [targetServiceUrl, setTargetServiceUrl] = useState("");
-  const [useOnion, setUseOnion] = useState(false);
-  const [paymentRequired, setPaymentRequired] = useState(false);
-  const [costPerRequestSats, setCostPerRequestSats] = useState(10);
-  const [configuringProxy, setConfiguringProxy] = useState(false);
+  const proxyEndpoint = "http://127.0.0.1:3737";
 
   const {
     data: providers = [],
@@ -119,9 +114,6 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       use_proxy: false,
       proxy_endpoint: null,
       target_service_url: null,
-      use_onion: false,
-      payment_required: false,
-      cost_per_request_sats: 10,
     },
     refetch: refetchProxyStatus,
   } = useQuery({
@@ -201,47 +193,32 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
   const handleConnect = async () => {
     let urlToConnect = "";
 
-    if (serviceMode === "proxy") {
-      if (!targetServiceUrl.trim()) {
-        setError("Please enter a target service URL");
+    // Determine the service URL to connect to
+    if (useManualUrl) {
+      if (!serviceUrl.trim()) {
+        setError("Please enter a service URL");
         return;
       }
-
-      try {
-        await enableProxyMode(
-          proxyEndpoint,
-          targetServiceUrl,
-          useOnion,
-          paymentRequired,
-          costPerRequestSats,
-        );
-        await refetchProxyStatus();
-        urlToConnect = proxyEndpoint;
-      } catch (error) {
-        setError(`Failed to enable proxy mode: ${error}`);
-        return;
-      }
+      urlToConnect = serviceUrl.trim();
     } else {
-      if (useManualUrl) {
-        if (!serviceUrl.trim()) {
-          setError("Please enter a service URL");
-          return;
-        }
-        urlToConnect = serviceUrl.trim();
-      } else {
-        const provider = providers.find((p) => p.id === selectedProvider);
-        if (!provider || !provider.urls.length) {
-          setError("Please select a valid provider");
-          return;
-        }
-        urlToConnect = provider.urls[0];
+      const provider = providers.find((p) => p.id === selectedProvider);
+      if (!provider || !provider.urls.length) {
+        setError("Please select a valid provider");
+        return;
       }
+      urlToConnect = provider.urls[0];
     }
 
     setConnecting(true);
     setError(null);
     setSuccessMessage(null);
-    connectMutation.mutate(urlToConnect);
+    console.log(urlToConnect, useManualUrl, serviceMode);
+    connectMutation.mutate({
+      url: urlToConnect,
+      useManualUrl,
+      selectedProviderId: selectedProvider,
+      serviceMode,
+    });
   };
 
   const handleDisconnect = async () => {
@@ -249,7 +226,6 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       await disconnectFromRoutstrService();
 
       if (proxyStatus.use_proxy) {
-        await disableProxyMode();
         await refetchProxyStatus();
       }
 
@@ -432,31 +408,63 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
   useEffect(() => {
     loadStoredApiKey();
     refreshLocalWalletBalance();
+    loadUIState();
   }, []);
+
+  const loadUIState = async () => {
+    try {
+      const uiState = await getUIState();
+      console.log(uiState);
+      setUseManualUrl(uiState.use_manual_url);
+      if (uiState.selected_provider_id) {
+        setSelectedProvider(uiState.selected_provider_id);
+      }
+      setServiceMode(uiState.service_mode as "wallet" | "proxy");
+    } catch (error) {
+      console.error("Failed to load UI state:", error);
+    }
+  };
+
+  const saveUIState = async () => {
+    try {
+      await setUIState(useManualUrl, selectedProvider || null, serviceMode);
+    } catch (error) {
+      console.error("Failed to save UI state:", error);
+    }
+  };
+
+  useEffect(() => {
+    saveUIState();
+  }, [useManualUrl, selectedProvider, serviceMode]);
 
   useEffect(() => {
     if (proxyStatus) {
-      if (proxyStatus.proxy_endpoint) {
-        setProxyEndpoint(proxyStatus.proxy_endpoint);
-      }
       if (proxyStatus.target_service_url) {
-        setTargetServiceUrl(proxyStatus.target_service_url);
+        setServiceUrl(proxyStatus.target_service_url);
       }
-      setUseOnion(proxyStatus.use_onion);
-      setPaymentRequired(proxyStatus.payment_required);
-      setCostPerRequestSats(proxyStatus.cost_per_request_sats);
 
-      if (proxyStatus.use_proxy && !connectionStatus.connected) {
-        setConnectionMode("proxy");
-      }
+      setUseManualUrl(!proxyStatus.use_proxy);
+      setServiceMode(proxyStatus.use_proxy ? "wallet" : "proxy");
     }
   }, [proxyStatus, connectionStatus.connected]);
 
   const connectMutation = useMutation({
-    mutationFn: connectToRoutstrService,
+    mutationFn: (params: {
+      url: string;
+      useManualUrl: boolean;
+      selectedProviderId: string | null;
+      serviceMode: string;
+    }) =>
+      connectToRoutstrService(
+        params.url,
+        params.useManualUrl,
+        params.selectedProviderId || undefined,
+        params.serviceMode,
+      ),
     onSuccess: () => {
       refetchConnectionStatus();
       queryClient.invalidateQueries({ queryKey: ["routstr-models"] });
+      saveUIState();
     },
     onError: (error) => {
       console.error("Failed to connect to Routstr service:", error);
@@ -683,7 +691,7 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
                       <p className="text-sm text-blue-700">
                         Proxy mode will connect to {proxyEndpoint} and forward
                         requests to{" "}
-                        {targetServiceUrl || "your configured target service"}.
+                        {serviceUrl || "your configured target service"}.
                       </p>
                     </div>
                   )}
@@ -808,7 +816,7 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
           </Card>
         )}
 
-        {connectionStatus.connected && (
+        {connectionStatus.connected && serviceMode !== "proxy" && (
           <Card>
             <CardHeader>
               <CardTitle>Add New API Key</CardTitle>
@@ -1150,7 +1158,7 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
               {selectedModelData && (
                 <div className="space-y-4 rounded-lg border p-4">
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col items-center gap-2">
                       <Label className="font-semibold">Model ID:</Label>
                       <code className="text-sm bg-muted px-2 py-1 rounded">
                         {selectedModelData.id}
@@ -1171,14 +1179,14 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
                       <div>
                         <Label className="font-semibold">Context Length:</Label>
                         <p className="text-sm">
-                          {selectedModelData.context_length.toLocaleString()}{" "}
+                          {selectedModelData.context_length?.toLocaleString()}{" "}
                           tokens
                         </p>
                       </div>
                       <div>
                         <Label className="font-semibold">Modality:</Label>
                         <p className="text-sm">
-                          {selectedModelData.architecture.modality}
+                          {selectedModelData.architecture?.modality}
                         </p>
                       </div>
                     </div>
@@ -1197,7 +1205,7 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
                         </div>
                         <div>
                           Request:{" "}
-                          {selectedModelData.sats_pricing.request.toFixed(3)}{" "}
+                          {selectedModelData.sats_pricing.max_cost.toFixed(3)}{" "}
                           sats
                         </div>
                       </div>
