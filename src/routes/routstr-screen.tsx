@@ -38,7 +38,6 @@ import {
   forceResetAllApiKeys,
   topUpWalletForKey,
   getProxyStatus,
-  setUIState,
   getUIState,
 } from "@/lib/routstr/api";
 import { discoverNostrProviders } from "@/lib/nostr-providers";
@@ -414,7 +413,6 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
   const loadUIState = async () => {
     try {
       const uiState = await getUIState();
-      console.log(uiState);
       setUseManualUrl(uiState.use_manual_url);
       if (uiState.selected_provider_id) {
         setSelectedProvider(uiState.selected_provider_id);
@@ -424,18 +422,6 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       console.error("Failed to load UI state:", error);
     }
   };
-
-  const saveUIState = async () => {
-    try {
-      await setUIState(useManualUrl, selectedProvider || null, serviceMode);
-    } catch (error) {
-      console.error("Failed to save UI state:", error);
-    }
-  };
-
-  useEffect(() => {
-    saveUIState();
-  }, [useManualUrl, selectedProvider, serviceMode]);
 
   useEffect(() => {
     if (proxyStatus) {
@@ -464,7 +450,6 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     onSuccess: () => {
       refetchConnectionStatus();
       queryClient.invalidateQueries({ queryKey: ["routstr-models"] });
-      saveUIState();
     },
     onError: (error) => {
       console.error("Failed to connect to Routstr service:", error);
@@ -1158,24 +1143,27 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
               {selectedModelData && (
                 <div className="space-y-4 rounded-lg border p-4">
                   <div className="space-y-2">
-                    <div className="flex flex-col items-center gap-2">
-                      <Label className="font-semibold">Model ID:</Label>
+                    <Label className="font-semibold">Model ID:</Label>
+                    <div className="flex items-center justify-between gap-2">
                       <code className="text-sm bg-muted px-2 py-1 rounded">
                         {selectedModelData.id}
                       </code>
                       <CopyButton
+                        className="h-8"
                         copiedLabel="Copied!"
                         onCopy={() => copyToClipboard(selectedModelData.id)}
-                        label={selectedModelData.id}
+                        label={""}
                       />
                     </div>
-                    <div>
-                      <Label className="font-semibold">Description:</Label>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {selectedModelData.description}
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    {selectedModelData.description && (
+                      <div>
+                        <Label className="font-semibold">Description:</Label>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          {selectedModelData.description}
+                        </p>
+                      </div>
+                    )}
+                    {selectedModelData.context_length && (
                       <div>
                         <Label className="font-semibold">Context Length:</Label>
                         <p className="text-sm">
@@ -1183,25 +1171,31 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
                           tokens
                         </p>
                       </div>
+                    )}
+                    {selectedModelData.architecture?.modality && (
                       <div>
                         <Label className="font-semibold">Modality:</Label>
                         <p className="text-sm">
                           {selectedModelData.architecture?.modality}
                         </p>
                       </div>
-                    </div>
+                    )}
                     <div>
                       <Label className="font-semibold">Pricing (sats):</Label>
                       <div className="text-sm space-y-1 mt-1">
                         <div>
                           Prompt:{" "}
-                          {selectedModelData.sats_pricing.prompt.toFixed(8)}{" "}
-                          sats/token
+                          {(
+                            selectedModelData.sats_pricing.prompt * 1000000
+                          ).toFixed(0)}{" "}
+                          sats/1M tokens
                         </div>
                         <div>
                           Completion:{" "}
-                          {selectedModelData.sats_pricing.completion.toFixed(8)}{" "}
-                          sats/token
+                          {(
+                            selectedModelData.sats_pricing.completion * 1000000
+                          ).toFixed(0)}{" "}
+                          sats/1M tokens
                         </div>
                         <div>
                           Request:{" "}

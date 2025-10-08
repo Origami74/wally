@@ -96,18 +96,6 @@ export async function getProxyStatus(): Promise<ProxyStatus> {
   return invoke("routstr_get_proxy_status");
 }
 
-export async function setUIState(
-  useManualUrl: boolean,
-  selectedProviderId: string | null,
-  serviceMode: string,
-): Promise<void> {
-  return invoke("routstr_set_ui_state", {
-    useManualUrl,
-    selectedProviderId,
-    serviceMode,
-  });
-}
-
 export async function getUIState(): Promise<{
   use_manual_url: boolean;
   selected_provider_id: string | null;

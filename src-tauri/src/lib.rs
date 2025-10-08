@@ -578,7 +578,6 @@ pub fn run() {
             routstr::routstr_clear_config,
             routstr::routstr_force_reset_all_api_keys,
             routstr::routstr_get_proxy_status,
-            routstr::routstr_set_ui_state,
             routstr::routstr_get_ui_state,
             discover_nostr_providers,
         ]);

@@ -948,31 +948,6 @@ pub async fn routstr_get_proxy_status(
 }
 
 #[tauri::command]
-pub async fn routstr_set_ui_state(
-    use_manual_url: bool,
-    selected_provider_id: Option<String>,
-    service_mode: String,
-    state: tauri::State<'_, RoutstrState>,
-) -> Result<(), String> {
-    let mut service = state.lock().await;
-
-    service.use_manual_url = use_manual_url;
-    service.selected_provider_id = selected_provider_id;
-    service.service_mode = service_mode;
-
-    service.save_config().map_err(|e| e.to_string())?;
-
-    log::info!(
-        "Updated UI state: use_manual_url={}, selected_provider_id={:?}, service_mode={}",
-        use_manual_url,
-        service.selected_provider_id,
-        service.service_mode
-    );
-
-    Ok(())
-}
-
-#[tauri::command]
 pub async fn routstr_get_ui_state(
     state: tauri::State<'_, RoutstrState>,
 ) -> Result<serde_json::Value, String> {
