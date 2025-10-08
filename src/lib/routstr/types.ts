@@ -85,3 +85,12 @@ export interface ApiKeyEntry {
   created_at: number;
   alias?: string;
 }
+
+export interface ProxyStatus {
+  use_proxy: boolean;
+  proxy_endpoint: string | null;
+  target_service_url: string | null;
+  use_onion: boolean;
+  payment_required: boolean;
+  cost_per_request_sats: number;
+}

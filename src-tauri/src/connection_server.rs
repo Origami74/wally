@@ -107,6 +107,14 @@ pub async fn start_connection_server(
         .route("/poll/:request_id", get(poll_connection_status))
         .route("/proxy/*path", get(crate::proxy::forward_request_get))
         .route("/proxy/*path", post(crate::proxy::forward_request_post))
+        .route(
+            "/routstr-proxy/*path",
+            get(crate::proxy::forward_routstr_proxy_request_get),
+        )
+        .route(
+            "/routstr-proxy/*path",
+            post(crate::proxy::forward_routstr_proxy_request_post),
+        )
         .layer(cors)
         .with_state(server_state);
 

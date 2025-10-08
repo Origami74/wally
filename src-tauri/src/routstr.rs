@@ -36,14 +36,20 @@ pub struct ApiKeyEntry {
 pub struct RoutstrStoredConfig {
     pub base_url: Option<String>,
     pub api_keys: Vec<ApiKeyEntry>,
+    pub use_proxy: bool,
+    pub proxy_endpoint: Option<String>,
+    pub target_service_url: Option<String>,
+    pub use_onion: bool,
+    pub payment_required: bool,
+    pub cost_per_request_sats: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Architecture {
-    pub modality: String,
+    pub modality: Option<String>,
     pub input_modalities: Vec<String>,
     pub output_modalities: Vec<String>,
-    pub tokenizer: String,
+    pub tokenizer: Option<String>,
     pub instruct_type: Option<String>,
 }
 
@@ -68,8 +74,8 @@ pub struct SatsPricing {
     pub image: f64,
     pub web_search: f64,
     pub internal_reasoning: f64,
-    pub max_prompt_cost: f64,
-    pub max_completion_cost: f64,
+    pub max_prompt_cost: Option<f64>,
+    pub max_completion_cost: Option<f64>,
     pub max_cost: f64,
 }
 
@@ -85,13 +91,13 @@ pub struct RoutstrModel {
     pub id: String,
     pub name: String,
     pub created: u64,
-    pub description: String,
-    pub context_length: u32,
-    pub architecture: Architecture,
-    pub pricing: Pricing,
-    pub sats_pricing: SatsPricing,
+    pub description: Option<String>,
+    pub context_length: Option<u32>,
+    pub architecture: Option<Architecture>,
+    pub pricing: Option<Pricing>,
+    pub sats_pricing: Option<SatsPricing>,
     pub per_request_limits: Option<serde_json::Value>,
-    pub top_provider: TopProvider,
+    pub top_provider: Option<TopProvider>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -140,6 +146,12 @@ pub struct RoutstrService {
     pub base_url: Option<String>,
     pub models: Vec<RoutstrModel>,
     pub api_keys: Vec<ApiKeyEntry>,
+    pub use_proxy: bool,
+    pub proxy_endpoint: Option<String>,
+    pub target_service_url: Option<String>,
+    pub use_onion: bool,
+    pub payment_required: bool,
+    pub cost_per_request_sats: u64,
     client: reqwest::Client,
     storage: RoutstrStoragePaths,
 }
@@ -150,6 +162,12 @@ impl Clone for RoutstrService {
             base_url: self.base_url.clone(),
             models: self.models.clone(),
             api_keys: self.api_keys.clone(),
+            use_proxy: self.use_proxy,
+            proxy_endpoint: self.proxy_endpoint.clone(),
+            target_service_url: self.target_service_url.clone(),
+            use_onion: self.use_onion,
+            payment_required: self.payment_required,
+            cost_per_request_sats: self.cost_per_request_sats,
             client: self.client.clone(),
             storage: self.storage.clone(),
         }
@@ -178,6 +196,12 @@ impl RoutstrService {
             base_url: None,
             models: Vec::new(),
             api_keys: Vec::new(),
+            use_proxy: false,
+            proxy_endpoint: None,
+            target_service_url: None,
+            use_onion: false,
+            payment_required: false,
+            cost_per_request_sats: 10,
             client: reqwest::Client::new(),
             storage,
         };
@@ -620,6 +644,12 @@ impl RoutstrService {
 
             self.base_url = stored.base_url;
             self.api_keys = stored.api_keys;
+            self.use_proxy = stored.use_proxy;
+            self.proxy_endpoint = stored.proxy_endpoint;
+            self.target_service_url = stored.target_service_url;
+            self.use_onion = stored.use_onion;
+            self.payment_required = stored.payment_required;
+            self.cost_per_request_sats = stored.cost_per_request_sats;
 
             log::info!("Loaded Routstr configuration from storage");
         }
@@ -630,6 +660,12 @@ impl RoutstrService {
         let config = RoutstrStoredConfig {
             base_url: self.base_url.clone(),
             api_keys: self.api_keys.clone(),
+            use_proxy: self.use_proxy,
+            proxy_endpoint: self.proxy_endpoint.clone(),
+            target_service_url: self.target_service_url.clone(),
+            use_onion: self.use_onion,
+            payment_required: self.payment_required,
+            cost_per_request_sats: self.cost_per_request_sats,
         };
 
         if let Some(parent) = self.storage.config_file.parent() {
@@ -857,6 +893,88 @@ pub async fn routstr_force_reset_all_api_keys(
         .force_reset_all_api_keys()
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn routstr_enable_proxy_mode(
+    proxy_endpoint: String,
+    target_service_url: String,
+    use_onion: bool,
+    payment_required: bool,
+    cost_per_request_sats: u64,
+    state: tauri::State<'_, RoutstrState>,
+) -> Result<(), String> {
+    let mut service = state.lock().await;
+
+    let formatted_proxy =
+        if proxy_endpoint.starts_with("http://") || proxy_endpoint.starts_with("https://") {
+            proxy_endpoint.trim_end_matches('/').to_string()
+        } else {
+            format!("http://{}", proxy_endpoint.trim_end_matches('/'))
+        };
+
+    let formatted_target = if target_service_url.starts_with("http://")
+        || target_service_url.starts_with("https://")
+    {
+        target_service_url.trim_end_matches('/').to_string()
+    } else {
+        format!("https://{}", target_service_url.trim_end_matches('/'))
+    };
+
+    service.use_proxy = true;
+    service.proxy_endpoint = Some(formatted_proxy.clone());
+    service.target_service_url = Some(formatted_target.clone());
+    service.use_onion = use_onion;
+    service.payment_required = payment_required;
+    service.cost_per_request_sats = cost_per_request_sats;
+
+    service.base_url = Some(formatted_proxy);
+
+    service.save_config().map_err(|e| e.to_string())?;
+
+    log::info!(
+        "Enabled proxy mode: {} -> {}",
+        service.proxy_endpoint.as_ref().unwrap(),
+        service.target_service_url.as_ref().unwrap()
+    );
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn routstr_disable_proxy_mode(
+    state: tauri::State<'_, RoutstrState>,
+) -> Result<(), String> {
+    let mut service = state.lock().await;
+
+    service.use_proxy = false;
+    service.proxy_endpoint = None;
+    service.target_service_url = None;
+    service.use_onion = false;
+    service.payment_required = false;
+    service.base_url = None;
+
+    service.save_config().map_err(|e| e.to_string())?;
+
+    log::info!("Disabled proxy mode");
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn routstr_get_proxy_status(
+    state: tauri::State<'_, RoutstrState>,
+) -> Result<serde_json::Value, String> {
+    let service = state.lock().await;
+
+    Ok(serde_json::json!({
+        "use_proxy": service.use_proxy,
+        "proxy_endpoint": service.proxy_endpoint,
+        "target_service_url": service.target_service_url,
+        "use_onion": service.use_onion,
+        "payment_required": service.payment_required,
+        "cost_per_request_sats": service.cost_per_request_sats
+    }))
 }
 
 #[cfg(test)]

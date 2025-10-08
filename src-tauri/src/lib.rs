@@ -577,6 +577,9 @@ pub fn run() {
             routstr::routstr_remove_api_key,
             routstr::routstr_clear_config,
             routstr::routstr_force_reset_all_api_keys,
+            routstr::routstr_enable_proxy_mode,
+            routstr::routstr_disable_proxy_mode,
+            routstr::routstr_get_proxy_status,
             discover_nostr_providers,
         ]);
 

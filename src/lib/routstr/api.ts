@@ -7,6 +7,7 @@ import type {
   RoutstrRefundResponse,
   RoutstrCreateResponse,
   ApiKeyEntry,
+  ProxyStatus,
 } from "./types";
 
 export async function connectToRoutstrService(url: string): Promise<void> {
@@ -41,7 +42,6 @@ export async function createBalanceWithToken(
 ): Promise<RoutstrCreateResponse> {
   return invoke("routstr_create_balance_with_token", { cashuToken });
 }
-
 
 export async function clearRoutstrConfig(): Promise<void> {
   return invoke("routstr_clear_config");
@@ -80,4 +80,28 @@ export async function removeApiKey(apiKey: string): Promise<boolean> {
 
 export async function forceResetAllApiKeys(): Promise<void> {
   return invoke("routstr_force_reset_all_api_keys");
+}
+
+export async function enableProxyMode(
+  proxyEndpoint: string,
+  targetServiceUrl: string,
+  useOnion: boolean = false,
+  paymentRequired: boolean = false,
+  costPerRequestSats: number = 10,
+): Promise<void> {
+  return invoke("routstr_enable_proxy_mode", {
+    proxyEndpoint,
+    targetServiceUrl,
+    useOnion,
+    paymentRequired,
+    costPerRequestSats,
+  });
+}
+
+export async function disableProxyMode(): Promise<void> {
+  return invoke("routstr_disable_proxy_mode");
+}
+
+export async function getProxyStatus(): Promise<ProxyStatus> {
+  return invoke("routstr_get_proxy_status");
 }

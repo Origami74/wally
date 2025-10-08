@@ -37,6 +37,9 @@ import {
   refundWalletForKey,
   forceResetAllApiKeys,
   topUpWalletForKey,
+  enableProxyMode,
+  disableProxyMode,
+  getProxyStatus,
 } from "@/lib/routstr/api";
 import { discoverNostrProviders } from "@/lib/nostr-providers";
 
@@ -67,7 +70,15 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
 
   const [selectedProvider, setSelectedProvider] = useState<string>("");
   const [useManualUrl, setUseManualUrl] = useState(true);
+  const [serviceMode, setServiceMode] = useState<"wallet" | "proxy">("wallet");
   const queryClient = useQueryClient();
+
+  const [proxyEndpoint, setProxyEndpoint] = useState("http://127.0.0.1:3737");
+  const [targetServiceUrl, setTargetServiceUrl] = useState("");
+  const [useOnion, setUseOnion] = useState(false);
+  const [paymentRequired, setPaymentRequired] = useState(false);
+  const [costPerRequestSats, setCostPerRequestSats] = useState(10);
+  const [configuringProxy, setConfiguringProxy] = useState(false);
 
   const {
     data: providers = [],
@@ -99,6 +110,23 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
   } = useQuery({
     queryKey: ["routstr-connection-status"],
     queryFn: getRoutstrConnectionStatus,
+    refetchInterval: 30000,
+    staleTime: 10000,
+  });
+
+  const {
+    data: proxyStatus = {
+      use_proxy: false,
+      proxy_endpoint: null,
+      target_service_url: null,
+      use_onion: false,
+      payment_required: false,
+      cost_per_request_sats: 10,
+    },
+    refetch: refetchProxyStatus,
+  } = useQuery({
+    queryKey: ["routstr-proxy-status"],
+    queryFn: getProxyStatus,
     refetchInterval: 30000,
     staleTime: 10000,
   });
@@ -170,22 +198,44 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     }
   };
 
-  const handleConnect = () => {
+  const handleConnect = async () => {
     let urlToConnect = "";
 
-    if (useManualUrl) {
-      if (!serviceUrl.trim()) {
-        setError("Please enter a service URL");
+    if (serviceMode === "proxy") {
+      if (!targetServiceUrl.trim()) {
+        setError("Please enter a target service URL");
         return;
       }
-      urlToConnect = serviceUrl.trim();
+
+      try {
+        await enableProxyMode(
+          proxyEndpoint,
+          targetServiceUrl,
+          useOnion,
+          paymentRequired,
+          costPerRequestSats,
+        );
+        await refetchProxyStatus();
+        urlToConnect = proxyEndpoint;
+      } catch (error) {
+        setError(`Failed to enable proxy mode: ${error}`);
+        return;
+      }
     } else {
-      const provider = providers.find((p) => p.id === selectedProvider);
-      if (!provider || !provider.urls.length) {
-        setError("Please select a valid provider");
-        return;
+      if (useManualUrl) {
+        if (!serviceUrl.trim()) {
+          setError("Please enter a service URL");
+          return;
+        }
+        urlToConnect = serviceUrl.trim();
+      } else {
+        const provider = providers.find((p) => p.id === selectedProvider);
+        if (!provider || !provider.urls.length) {
+          setError("Please select a valid provider");
+          return;
+        }
+        urlToConnect = provider.urls[0];
       }
-      urlToConnect = provider.urls[0];
     }
 
     setConnecting(true);
@@ -197,6 +247,12 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
   const handleDisconnect = async () => {
     try {
       await disconnectFromRoutstrService();
+
+      if (proxyStatus.use_proxy) {
+        await disableProxyMode();
+        await refetchProxyStatus();
+      }
+
       setSelectedModel("");
       await refetchConnectionStatus();
       queryClient.invalidateQueries({ queryKey: ["routstr-models"] });
@@ -378,6 +434,24 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     refreshLocalWalletBalance();
   }, []);
 
+  useEffect(() => {
+    if (proxyStatus) {
+      if (proxyStatus.proxy_endpoint) {
+        setProxyEndpoint(proxyStatus.proxy_endpoint);
+      }
+      if (proxyStatus.target_service_url) {
+        setTargetServiceUrl(proxyStatus.target_service_url);
+      }
+      setUseOnion(proxyStatus.use_onion);
+      setPaymentRequired(proxyStatus.payment_required);
+      setCostPerRequestSats(proxyStatus.cost_per_request_sats);
+
+      if (proxyStatus.use_proxy && !connectionStatus.connected) {
+        setConnectionMode("proxy");
+      }
+    }
+  }, [proxyStatus, connectionStatus.connected]);
+
   const connectMutation = useMutation({
     mutationFn: connectToRoutstrService,
     onSuccess: () => {
@@ -466,109 +540,155 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
             <CardDescription>Connect to a Routstr Provider</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <input
-                  type="radio"
-                  id="manual-url"
-                  checked={useManualUrl}
-                  onChange={() => setUseManualUrl(true)}
-                  className="w-4 h-4"
-                  disabled={connecting || connectionStatus.connected}
-                />
-                <Label htmlFor="manual-url">Enter URL manually</Label>
-              </div>
+            <div className="space-y-6">
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium">Connection Method</h4>
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="manual-url"
+                      checked={useManualUrl}
+                      onChange={() => setUseManualUrl(true)}
+                      className="w-4 h-4"
+                      disabled={connecting || connectionStatus.connected}
+                    />
+                    <Label htmlFor="manual-url">Enter URL manually</Label>
+                  </div>
 
-              {useManualUrl && (
-                <div className="space-y-2 ml-6">
-                  <Label htmlFor="service-url">Service URL</Label>
-                  <Input
-                    id="service-url"
-                    placeholder="https://api.routstr.com"
-                    value={serviceUrl}
-                    onChange={(e) => setServiceUrl(e.target.value)}
-                    disabled={connecting || connectionStatus.connected}
-                  />
-                </div>
-              )}
-
-              <div className="flex items-center space-x-2">
-                <input
-                  type="radio"
-                  id="select-provider"
-                  checked={!useManualUrl}
-                  onChange={() => setUseManualUrl(false)}
-                  className="w-4 h-4"
-                  disabled={connecting || connectionStatus.connected}
-                />
-                <Label htmlFor="select-provider">
-                  Select from discovered providers
-                </Label>
-                <Button
-                  onClick={() => refetchProviders()}
-                  disabled={
-                    loadingProviders || connecting || connectionStatus.connected
-                  }
-                  variant="outline"
-                  size="sm"
-                >
-                  {loadingProviders ? "Loading..." : "Refresh"}
-                </Button>
-              </div>
-
-              {!useManualUrl && (
-                <div className="space-y-2 ml-6">
-                  <Label>Available Providers</Label>
-                  {providers.length > 0 ? (
-                    <Select
-                      value={selectedProvider}
-                      onValueChange={setSelectedProvider}
-                    >
-                      <SelectTrigger
-                        className="w-full"
+                  {useManualUrl && (
+                    <div className="space-y-2 ml-6">
+                      <Label htmlFor="service-url">Service URL</Label>
+                      <Input
+                        id="service-url"
+                        placeholder="https://api.routstr.com"
+                        value={serviceUrl}
+                        onChange={(e) => setServiceUrl(e.target.value)}
                         disabled={connecting || connectionStatus.connected}
-                      >
-                        <SelectValue placeholder="Choose a provider..." />
-                      </SelectTrigger>
-                      <SelectContent
-                        className="max-h-[200px] w-[var(--radix-select-trigger-width)] overflow-y-auto"
-                        position="popper"
-                        side="bottom"
-                        align="center"
-                        sideOffset={0}
-                        avoidCollisions={true}
-                        collisionPadding={20}
-                      >
-                        {providers.map((provider) => (
-                          <SelectItem key={provider.id} value={provider.id}>
-                            <div className="flex flex-col justify-start">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">
-                                  {provider.name}
-                                </span>
-                                {provider.is_official && (
-                                  <Badge tone="success" className="py-0">
-                                    Official
-                                  </Badge>
-                                )}
-                              </div>
-                              <span className="text-xs text-muted-foreground self-start">
-                                {provider.urls[0]}
-                              </span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      {loadingProviders
-                        ? "Discovering providers..."
-                        : "No providers found"}
-                    </p>
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="select-provider"
+                      checked={!useManualUrl}
+                      onChange={() => setUseManualUrl(false)}
+                      className="w-4 h-4"
+                      disabled={connecting || connectionStatus.connected}
+                    />
+                    <Label htmlFor="select-provider">
+                      Select from discovered providers
+                    </Label>
+                    <Button
+                      onClick={() => refetchProviders()}
+                      disabled={
+                        loadingProviders ||
+                        connecting ||
+                        connectionStatus.connected
+                      }
+                      variant="outline"
+                      size="sm"
+                    >
+                      {loadingProviders ? "Loading..." : "Refresh"}
+                    </Button>
+                  </div>
+
+                  {!useManualUrl && (
+                    <div className="space-y-2 ml-6">
+                      <Label>Available Providers</Label>
+                      {providers.length > 0 ? (
+                        <Select
+                          value={selectedProvider}
+                          onValueChange={setSelectedProvider}
+                        >
+                          <SelectTrigger
+                            className="w-full"
+                            disabled={connecting || connectionStatus.connected}
+                          >
+                            <SelectValue placeholder="Choose a provider..." />
+                          </SelectTrigger>
+                          <SelectContent
+                            className="max-h-[200px] w-[var(--radix-select-trigger-width)] overflow-y-auto"
+                            position="popper"
+                            side="bottom"
+                            align="center"
+                            sideOffset={0}
+                            avoidCollisions={true}
+                            collisionPadding={20}
+                          >
+                            {providers.map((provider) => (
+                              <SelectItem key={provider.id} value={provider.id}>
+                                <div className="flex flex-col justify-start">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium">
+                                      {provider.name}
+                                    </span>
+                                    {provider.is_official && (
+                                      <Badge tone="success" className="py-0">
+                                        Official
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <span className="text-xs text-muted-foreground self-start">
+                                    {provider.urls[0]}
+                                  </span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          {loadingProviders
+                            ? "Discovering providers..."
+                            : "No providers found"}
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium">Service Mode</h4>
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="wallet-mode"
+                      checked={serviceMode === "wallet"}
+                      onChange={() => setServiceMode("wallet")}
+                      className="w-4 h-4"
+                      disabled={connecting || connectionStatus.connected}
+                    />
+                    <Label htmlFor="wallet-mode">Wallet/Balance Mode</Label>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="proxy-mode"
+                      checked={serviceMode === "proxy"}
+                      onChange={() => setServiceMode("proxy")}
+                      className="w-4 h-4"
+                      disabled={connecting || connectionStatus.connected}
+                    />
+                    <Label htmlFor="proxy-mode">Proxy Mode (OTRTA)</Label>
+                  </div>
+
+                  {serviceMode === "proxy" && (
+                    <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
+                      <p className="text-sm text-blue-700">
+                        Proxy mode will connect to {proxyEndpoint} and forward
+                        requests to{" "}
+                        {targetServiceUrl || "your configured target service"}.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             {error && (
@@ -581,17 +701,24 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
               <div className="text-sm text-green-600">{successMessage}</div>
             )}
 
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-col gap-2">
               {connectionStatus.connected ? (
                 <>
-                  <Badge tone="default">Connected</Badge>
-                  <Button
-                    onClick={handleDisconnect}
-                    variant="outline"
-                    size="sm"
-                  >
-                    Disconnect
-                  </Button>
+                  {proxyStatus.use_proxy && (
+                    <Badge tone="default" className="ml-2">
+                      Proxy: {proxyStatus.target_service_url}
+                    </Badge>
+                  )}
+                  <div className="flex justify-between">
+                    <Badge tone="default">Connected</Badge>
+                    <Button
+                      onClick={handleDisconnect}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Disconnect
+                    </Button>
+                  </div>
                 </>
               ) : (
                 <Button onClick={handleConnect} disabled={connecting} size="sm">
