@@ -495,9 +495,9 @@ function AppContent() {
               }}
               handleFeatureUpdate={handleFeatureUpdate}
               periodMeta={periodMeta}
-              copyToClipboard={function (_: string): Promise<void> | void {
-                throw new Error("Function not implemented.");
-              }}
+              copyToClipboard={copyToClipboard}
+              walletSummary={walletSummary}
+              onRefresh={refreshStatus}
             />
           </Route>
 

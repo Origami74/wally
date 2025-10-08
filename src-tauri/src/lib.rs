@@ -538,6 +538,7 @@ pub fn run() {
             force_session_renewal,
             add_mint,
             set_default_mint,
+            remove_mint,
             get_wallet_balance,
             handle_network_connected,
             handle_network_disconnected,

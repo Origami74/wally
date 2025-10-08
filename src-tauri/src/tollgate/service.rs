@@ -517,6 +517,12 @@ impl TollGateService {
         wallet.set_default_mint(mint_url).await
     }
 
+    /// Remove a mint from the wallet
+    pub async fn remove_mint(&self, mint_url: &str) -> TollGateResult<()> {
+        let mut wallet = self.wallet.lock().await;
+        wallet.remove_mint(mint_url).await
+    }
+
     /// Get wallet balance
     pub async fn get_wallet_balance(&self) -> TollGateResult<u64> {
         let wallet = self.wallet.lock().await;

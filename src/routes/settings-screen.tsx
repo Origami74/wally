@@ -4,9 +4,18 @@ import { SectionHeader } from "@/components/layout/section-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ServiceStatus } from "@/lib/tollgate/types";
+import type { WalletSummary } from "@/lib/wallet/api";
+import { addMint, removeMint } from "@/lib/wallet/api";
+import { ChevronDown, ChevronRight, Trash2, Plus } from "lucide-react";
+import { useCallback, useState } from "react";
 import { useLocation } from "wouter";
 
 import type { FeatureState, Period, PeriodMetaFn } from "./types";
@@ -28,12 +37,13 @@ type SettingsScreenProps = {
   ) => void;
   copyToClipboard: (value: string) => Promise<void> | void;
   periodMeta: PeriodMetaFn;
+  walletSummary: WalletSummary | null;
+  onRefresh: () => Promise<void>;
 };
 
 export function SettingsScreen({
   status: _status,
   features,
-  mintInput,
   npubInput,
   setMintInput,
   setNpubInput,
@@ -43,28 +53,185 @@ export function SettingsScreen({
   handleFeatureUpdate,
   copyToClipboard: _copyToClipboard,
   periodMeta,
+  walletSummary,
+  onRefresh,
 }: SettingsScreenProps) {
   const [, setLocation] = useLocation();
+  const [newMintUrl, setNewMintUrl] = useState("");
+  const [addingMint, setAddingMint] = useState(false);
+  const [removingMints, setRemovingMints] = useState<Set<string>>(new Set());
+  const [mintsExpanded, setMintsExpanded] = useState(false);
   void _status;
   void _copyToClipboard;
 
+  const handleAddMint = useCallback(async () => {
+    if (!newMintUrl.trim()) return;
+
+    setAddingMint(true);
+    try {
+      await addMint(newMintUrl.trim());
+      setNewMintUrl("");
+      await onRefresh();
+    } catch (error) {
+      console.error("Failed to add mint:", error);
+      alert(`Failed to add mint: ${error}`);
+    } finally {
+      setAddingMint(false);
+    }
+  }, [newMintUrl, onRefresh]);
+
+  const handleRemoveMint = useCallback(
+    async (mintUrl: string) => {
+      setRemovingMints((prev) => new Set([...prev, mintUrl]));
+      try {
+        await removeMint(mintUrl);
+        await onRefresh();
+      } catch (error) {
+        console.error("Failed to remove mint:", error);
+        alert(`Failed to remove mint: ${error}`);
+      } finally {
+        setRemovingMints((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(mintUrl);
+          return newSet;
+        });
+      }
+    },
+    [onRefresh],
+  );
+
   return (
-    <Screen className="min-h-screen gap-8 overflow-y-auto">
+    <Screen className="min-h-screen gap-4 overflow-y-auto pb-8">
       <div className="grid gap-4">
         <SectionHeader title="Wallet Settings" />
+        {/* Mint Management */}
+        <Card className="mt-2 space-y-4 border border-dashed border-primary/20 bg-background/90 p-4">
+          <Collapsible open={mintsExpanded} onOpenChange={setMintsExpanded}>
+            <CollapsibleTrigger className="flex w-full items-center justify-between text-left">
+              <div>
+                <h3 className="text-base font-semibold">Mint Management</h3>
+                <p className="text-sm text-muted-foreground">
+                  Manage your Cashu mints (
+                  {walletSummary?.balances?.length || 0} configured)
+                </p>
+              </div>
+              {mintsExpanded ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )}
+            </CollapsibleTrigger>
+
+            <CollapsibleContent className="space-y-4 overflow-hidden">
+              <div className="space-y-3 border-t pt-4">
+                <Label htmlFor="new-mint-url">Add New Mint</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="new-mint-url"
+                    value={newMintUrl}
+                    onChange={(event) => setNewMintUrl(event.target.value)}
+                    placeholder="https://mint.example.com"
+                    disabled={addingMint}
+                  />
+                  <Button
+                    onClick={handleAddMint}
+                    disabled={!newMintUrl.trim() || addingMint}
+                    size="sm"
+                  >
+                    <Plus className="h-4 w-4" />
+                    {addingMint ? "Adding..." : "Add"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Existing Mints */}
+              <div className="space-y-2">
+                <Label>Configured Mints</Label>
+                {walletSummary?.balances &&
+                walletSummary.balances.length > 0 ? (
+                  <div className="space-y-2 max-h-64 overflow-hidden">
+                    {walletSummary.balances.map((balance) => (
+                      <Card key={balance.mint_url} className="border-0">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-medium truncate">
+                                {balance.mint_url}
+                              </p>
+                              {walletSummary.default_mint ===
+                                balance.mint_url && (
+                                <span className="text-xs bg-primary/10 text-primary py-1 rounded">
+                                  Default
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Balance: {balance.balance} {balance.unit}
+                              {balance.pending > 0 && (
+                                <span className="ml-2">
+                                  (Pending: {balance.pending} {balance.unit})
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          <div className="flex sm:flex-row gap-2 shrink-0">
+                            {walletSummary.default_mint !==
+                              balance.mint_url && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={onSaveMint}
+                                onMouseDown={() =>
+                                  setMintInput(balance.mint_url)
+                                }
+                                disabled={savingMint}
+                                className="text-xs"
+                              >
+                                {savingMint ? "Setting..." : "Set Default"}
+                              </Button>
+                            )}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRemoveMint(balance.mint_url)}
+                              disabled={
+                                removingMints.has(balance.mint_url) ||
+                                balance.balance > 0
+                              }
+                              title={
+                                balance.balance > 0
+                                  ? "Cannot remove mint with remaining balance"
+                                  : "Remove mint"
+                              }
+                              className="flex items-center gap-1"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span className="hidden sm:inline">
+                                {removingMints.has(balance.mint_url)
+                                  ? "Removing..."
+                                  : "Remove"}
+                              </span>
+                            </Button>
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground py-4 text-center">
+                    No mints configured. Add a mint above to get started.
+                  </p>
+                )}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        </Card>
+
+        {/* Legacy Settings */}
         <Card className="mt-2 space-y-4 border border-dashed border-primary/20 bg-background/90 p-4">
           <div className="grid gap-3">
             <div className="grid gap-2">
-              <Label htmlFor="mint-url">Mint URL</Label>
-              <Input
-                id="mint-url"
-                value={mintInput}
-                onChange={(event) => setMintInput(event.target.value)}
-                placeholder="https://mint.example.com"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="wallet-npub">npub</Label>
+              <Label htmlFor="wallet-npub">Wallet npub</Label>
               <Input
                 id="wallet-npub"
                 value={npubInput}
@@ -73,21 +240,15 @@ export function SettingsScreen({
               />
             </div>
             <div className="flex gap-2">
-              <Button
-                onClick={onSaveMint}
-                disabled={!mintInput.trim() || savingMint}
-              >
-                {savingMint ? "Setting…" : "Set Default Mint"}
-              </Button>
               <Button variant="outline" onClick={onReset}>
-                Reset
+                Reset Settings
               </Button>
             </div>
           </div>
         </Card>
       </div>
 
-      <div className="grid gap-4 pb-2">
+      <div className="grid gap-3 pb-2">
         <h2 className="text-lg font-semibold uppercase tracking-[0.2em] text-muted-foreground">
           Features
         </h2>
@@ -107,7 +268,7 @@ export function SettingsScreen({
             return (
               <Card
                 key={feature.id}
-                className="space-y-4 border border-dashed border-primary/20 bg-background/90 p-4"
+                className="space-y-3 border border-dashed border-primary/20 bg-background/90 p-3"
               >
                 <div className="flex items-start gap-3">
                   <Checkbox
@@ -152,36 +313,38 @@ export function SettingsScreen({
                   </Button>
                 </div>
 
-            {!isComingSoon ? (
-              <div className="grid gap-4">
-                <BudgetUsage
-                  used={feature.spent ?? 0}
-                  total={Number(feature.budget) || 0}
-                  periodLabel={periodMeta(feature.period).label.toUpperCase()}
-                />
-                <BudgetControls
-                  idPrefix={feature.id}
-                  budgetValue={feature.budget}
-                  onBudgetChange={(value) =>
-                    handleFeatureUpdate(feature.id, (current) => ({
-                      ...current,
-                      budget: value,
-                    }))
-                  }
-                  periodValue={feature.period}
-                  onPeriodChange={(value) =>
-                    handleFeatureUpdate(feature.id, (current) => ({
-                      ...current,
-                      period: value as Period,
-                    }))
-                  }
-                  periodOptions={periods.map((option) => ({
-                    value: option.value,
-                    label: option.label,
-                  }))}
-                />
-              </div>
-            ) : null}
+                {!isComingSoon ? (
+                  <div className="grid gap-4">
+                    <BudgetUsage
+                      used={feature.spent ?? 0}
+                      total={Number(feature.budget) || 0}
+                      periodLabel={periodMeta(
+                        feature.period,
+                      ).label.toUpperCase()}
+                    />
+                    <BudgetControls
+                      idPrefix={feature.id}
+                      budgetValue={feature.budget}
+                      onBudgetChange={(value) =>
+                        handleFeatureUpdate(feature.id, (current) => ({
+                          ...current,
+                          budget: value,
+                        }))
+                      }
+                      periodValue={feature.period}
+                      onPeriodChange={(value) =>
+                        handleFeatureUpdate(feature.id, (current) => ({
+                          ...current,
+                          period: value as Period,
+                        }))
+                      }
+                      periodOptions={periods.map((option) => ({
+                        value: option.value,
+                        label: option.label,
+                      }))}
+                    />
+                  </div>
+                ) : null}
 
                 <div className="flex justify-end">
                   {feature.id === "tollgate" ? (

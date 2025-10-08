@@ -415,6 +415,44 @@ impl TollGateWallet {
         Ok(())
     }
 
+    /// Remove a mint from the wallet
+    pub async fn remove_mint(&mut self, mint_url: &str) -> TollGateResult<()> {
+        // Check if mint exists
+        if !self.wallets.contains_key(mint_url) {
+            return Err(TollGateError::wallet(format!("Mint not found: {}", mint_url)));
+        }
+
+        // Check if there's a balance remaining
+        let balance = self.get_balance(mint_url).await?;
+        if balance > 0 {
+            return Err(TollGateError::wallet(format!(
+                "Cannot remove mint with remaining balance: {} sats. Please spend or transfer tokens first.",
+                balance
+            )));
+        }
+
+        // Remove from wallets map
+        self.wallets.remove(mint_url);
+
+        // If this was the default mint, clear it or set a new one
+        if let Some(ref default) = self.default_mint {
+            if default == mint_url {
+                self.default_mint = if self.wallets.is_empty() {
+                    None
+                } else {
+                    // Set the first available mint as default
+                    self.wallets.keys().next().cloned()
+                };
+            }
+        }
+
+        // Persist changes
+        self.save_mints_config()?;
+
+        log::info!("Removed mint from wallet: {}", mint_url);
+        Ok(())
+    }
+
     /// Return the wallet's npub, if derivable
     pub fn nostr_npub(&self) -> Option<String> {
         self.secrets.nostr_npub().ok()

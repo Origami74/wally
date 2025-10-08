@@ -106,3 +106,15 @@ export async function receiveCashuToken(token: string): Promise<{ amount: number
     token,
   });
 }
+
+export async function addMint(mintUrl: string): Promise<void> {
+  await invoke("add_mint", {
+    mintUrl,
+  });
+}
+
+export async function removeMint(mintUrl: string): Promise<void> {
+  await invoke("remove_mint", {
+    mintUrl,
+  });
+}
