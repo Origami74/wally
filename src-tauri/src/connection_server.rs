@@ -105,8 +105,8 @@ pub async fn start_connection_server(
     let app = Router::new()
         .route("/", get(get_wallet_info).post(post_wallet_connect))
         .route("/poll/:request_id", get(poll_connection_status))
-        .route("/proxy/*path", get(crate::proxy::forward_request_get))
-        .route("/proxy/*path", post(crate::proxy::forward_request_post))
+        .route("/*path", get(crate::proxy::forward_request_get))
+        .route("/*path", post(crate::proxy::forward_request_post))
         .route(
             "/routstr-proxy/*path",
             get(crate::proxy::forward_routstr_proxy_request_get),

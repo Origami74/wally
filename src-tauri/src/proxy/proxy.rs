@@ -35,8 +35,8 @@ impl Default for ProxyConfig {
         Self {
             target_url: "https://api.openai.com".to_string(),
             use_onion: false,
-            payment_required: false,
-            cost_sats: 0,
+            payment_required: true,
+            cost_sats: 65548,
         }
     }
 }
@@ -44,15 +44,15 @@ impl Default for ProxyConfig {
 pub async fn forward_request_get(
     Path(path): Path<String>,
     headers: HeaderMap,
-    _server_state: State<ConnectionServerState>,
+    server_state: State<ConnectionServerState>,
 ) -> Response<Body> {
-    forward_request_impl(path, None, headers, _server_state, false).await
+    forward_request_impl(path, None, headers, server_state, false).await
 }
 
 pub async fn forward_request_post(
     Path(path): Path<String>,
     headers: HeaderMap,
-    _server_state: State<ConnectionServerState>,
+    server_state: State<ConnectionServerState>,
     request: Request,
 ) -> Response<Body> {
     let (_, body) = request.into_parts();
@@ -83,17 +83,59 @@ pub async fn forward_request_post(
         }
     };
 
-    forward_request_impl(path, body_data, headers, _server_state, false).await
+    forward_request_impl(path, body_data, headers, server_state, false).await
 }
 
 async fn forward_request_impl(
     path: String,
     body: Option<serde_json::Value>,
     original_headers: HeaderMap,
-    _server_state: State<ConnectionServerState>,
+    server_state: State<ConnectionServerState>,
     is_streaming: bool,
 ) -> Response<Body> {
-    let config = ProxyConfig::default();
+    // Get routstr config from the app state
+    let routstr_state = server_state
+        .app_handle
+        .state::<std::sync::Arc<tokio::sync::Mutex<RoutstrService>>>();
+
+    let (config, max_cost_sats) = {
+        let service = routstr_state.lock().await;
+
+        // Determine the target URL
+        let target_url = if let Some(url) = &service.target_service_url {
+            url.clone()
+        } else if let Some(url) = &service.base_url {
+            url.clone()
+        } else {
+            "https://api.openai.com".to_string() // fallback
+        };
+
+        // Get max cost from models for the requested model (if applicable)
+        let max_cost_sats = if let Some(body_data) = &body {
+            if let Some(model_name) = body_data.get("model").and_then(|m| m.as_str()) {
+                service
+                    .models
+                    .iter()
+                    .find(|m| m.id == model_name)
+                    .and_then(|m| m.sats_pricing.as_ref())
+                    .map(|p| p.max_cost as u64)
+                    .unwrap_or(service.cost_per_request_sats)
+            } else {
+                service.cost_per_request_sats
+            }
+        } else {
+            service.cost_per_request_sats
+        };
+
+        let config = ProxyConfig {
+            target_url,
+            use_onion: service.use_onion,
+            payment_required: service.payment_required,
+            cost_sats: max_cost_sats,
+        };
+
+        (config, max_cost_sats)
+    };
 
     let endpoint_url = construct_url_with_protocol(&config.target_url, &path);
     log::info!("Forwarding request to: {}", endpoint_url);
@@ -141,8 +183,8 @@ async fn forward_request_impl(
         }
     }
 
-    if config.payment_required && config.cost_sats > 0 {
-        if let Ok(payment_token) = create_payment_token(config.cost_sats).await {
+    if config.payment_required && max_cost_sats > 0 {
+        if let Ok(payment_token) = create_payment_token(max_cost_sats).await {
             req_builder = req_builder.header("X-Cashu", &payment_token);
         }
     }
