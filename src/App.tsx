@@ -441,6 +441,7 @@ function AppContent() {
             <HomeScreen
               statusBadges={statusBadges}
               walletBalance={walletBalance}
+              walletSummary={walletSummary}
               currentSession={currentSession}
               currentNetwork={currentNetwork}
               onReceive={goReceive}
