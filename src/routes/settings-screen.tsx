@@ -152,67 +152,69 @@ export function SettingsScreen({
                   <div className="max-h-64 overflow-hidden">
                     {walletSummary.balances.map((balance, index) => (
                       <div key={balance.mint_url}>
-                        <div className="flex items-start justify-between py-3">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-medium truncate">
-                                {balance.mint_url}
+                        <div className="relative py-3">
+                          <div className="flex items-start justify-between pr-8">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium truncate">
+                                  {balance.mint_url}
+                                </p>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                Balance: {balance.balance} {balance.unit}
+                                {balance.pending > 0 && (
+                                  <span className="ml-2">
+                                    (Pending: {balance.pending} {balance.unit})
+                                  </span>
+                                )}
                               </p>
                             </div>
-                            <p className="text-xs text-muted-foreground">
-                              Balance: {balance.balance} {balance.unit}
-                              {balance.pending > 0 && (
-                                <span className="ml-2">
-                                  (Pending: {balance.pending} {balance.unit})
+                            <div className="flex flex-col gap-2 shrink-0">
+                              {walletSummary.default_mint !==
+                                balance.mint_url && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={onSaveMint}
+                                  onMouseDown={() =>
+                                    setMintInput(balance.mint_url)
+                                  }
+                                  disabled={savingMint}
+                                  className="text-xs"
+                                >
+                                  {savingMint ? "Setting..." : "Set Default"}
+                                </Button>
+                              )}
+                              {walletSummary.default_mint ===
+                                balance.mint_url && (
+                                <span className="text-xs bg-primary/10 text-primary p-1 rounded">
+                                  Default
                                 </span>
                               )}
-                            </p>
+                            </div>
                           </div>
-                          <div className="flex flex-col gap-2 shrink-0">
-                            {walletSummary.default_mint !==
-                              balance.mint_url && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={onSaveMint}
-                                onMouseDown={() =>
-                                  setMintInput(balance.mint_url)
-                                }
-                                disabled={savingMint}
-                                className="text-xs"
-                              >
-                                {savingMint ? "Setting..." : "Set Default"}
-                              </Button>
-                            )}
-                            {walletSummary.default_mint ===
-                              balance.mint_url && (
-                              <span className="text-xs bg-primary/10 text-primary p-1 rounded">
-                                Default
-                              </span>
-                            )}
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleRemoveMint(balance.mint_url)}
-                              disabled={
-                                removingMints.has(balance.mint_url) ||
-                                balance.balance > 0
-                              }
-                              title={
-                                balance.balance > 0
-                                  ? "Cannot remove mint with remaining balance"
-                                  : "Remove mint"
-                              }
-                              className="flex items-center gap-1"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              <span className="hidden sm:inline">
-                                {removingMints.has(balance.mint_url)
-                                  ? "Removing..."
-                                  : "Remove"}
-                              </span>
-                            </Button>
-                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveMint(balance.mint_url)}
+                            disabled={
+                              removingMints.has(balance.mint_url) ||
+                              balance.balance > 0
+                            }
+                            title={
+                              balance.balance > 0
+                                ? "Cannot remove mint with remaining balance"
+                                : "Remove mint"
+                            }
+                            className={`absolute top-3 right-0 h-auto p-1 ${
+                              removingMints.has(balance.mint_url) ||
+                              balance.balance > 0
+                                ? "text-gray-400 cursor-not-allowed"
+                                : "text-red-500 hover:text-red-600 hover:bg-red-50"
+                            }`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                         {index < walletSummary.balances.length - 1 && (
                           <div className="border-b border-dashed border-border/50" />
