@@ -151,19 +151,13 @@ export function SettingsScreen({
                 walletSummary.balances.length > 0 ? (
                   <div className="space-y-2 max-h-64 overflow-hidden">
                     {walletSummary.balances.map((balance) => (
-                      <Card key={balance.mint_url} className="border-0">
+                      <div key={balance.mint_url}>
                         <div className="flex items-start justify-between">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <p className="text-sm font-medium truncate">
                                 {balance.mint_url}
                               </p>
-                              {walletSummary.default_mint ===
-                                balance.mint_url && (
-                                <span className="text-xs bg-primary/10 text-primary py-1 rounded">
-                                  Default
-                                </span>
-                              )}
                             </div>
                             <p className="text-xs text-muted-foreground">
                               Balance: {balance.balance} {balance.unit}
@@ -174,7 +168,7 @@ export function SettingsScreen({
                               )}
                             </p>
                           </div>
-                          <div className="flex sm:flex-row gap-2 shrink-0">
+                          <div className="flex flex-col gap-2 shrink-0">
                             {walletSummary.default_mint !==
                               balance.mint_url && (
                               <Button
@@ -189,6 +183,12 @@ export function SettingsScreen({
                               >
                                 {savingMint ? "Setting..." : "Set Default"}
                               </Button>
+                            )}
+                            {walletSummary.default_mint ===
+                              balance.mint_url && (
+                              <span className="text-xs bg-primary/10 text-primary p-1 rounded">
+                                Default
+                              </span>
                             )}
                             <Button
                               variant="outline"
@@ -214,7 +214,7 @@ export function SettingsScreen({
                             </Button>
                           </div>
                         </div>
-                      </Card>
+                      </div>
                     ))}
                   </div>
                 ) : (
