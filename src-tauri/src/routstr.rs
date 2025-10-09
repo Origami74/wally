@@ -45,6 +45,7 @@ pub struct RoutstrStoredConfig {
     pub use_manual_url: bool,
     pub selected_provider_id: Option<String>,
     pub service_mode: String,
+    pub selected_mint_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -158,8 +159,10 @@ pub struct RoutstrService {
     pub use_manual_url: bool,
     pub selected_provider_id: Option<String>,
     pub service_mode: String,
+    pub selected_mint_url: Option<String>,
     client: reqwest::Client,
     storage: RoutstrStoragePaths,
+    auto_update_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Clone for RoutstrService {
@@ -177,8 +180,10 @@ impl Clone for RoutstrService {
             use_manual_url: self.use_manual_url,
             selected_provider_id: self.selected_provider_id.clone(),
             service_mode: self.service_mode.clone(),
+            selected_mint_url: self.selected_mint_url.clone(),
             client: self.client.clone(),
             storage: self.storage.clone(),
+            auto_update_handle: None, // Don't clone the handle
         }
     }
 }
@@ -214,8 +219,10 @@ impl RoutstrService {
             use_manual_url: true,
             selected_provider_id: None,
             service_mode: "wallet".to_string(),
+            selected_mint_url: None,
             client: reqwest::Client::new(),
             storage,
+            auto_update_handle: None,
         };
 
         // Load existing configuration
@@ -270,6 +277,56 @@ impl RoutstrService {
         Ok(())
     }
 
+    pub fn start_auto_update(&mut self, state: RoutstrState) {
+        // Cancel any existing auto-update task
+        self.stop_auto_update();
+
+        let handle = tokio::spawn(async move {
+            let mut interval = interval(Duration::from_secs(60)); // Update every minute
+
+            loop {
+                interval.tick().await;
+
+                let mut service = state.lock().await;
+                if service.base_url.is_some() {
+                    if let Err(e) = service.refresh_models().await {
+                        log::warn!("Auto-refresh models failed: {}", e);
+                    } else {
+                        log::debug!("Auto-refreshed models successfully");
+                    }
+                } else {
+                    // If no longer connected, stop the auto-update task
+                    log::debug!("No longer connected, stopping auto-update task");
+                    break;
+                }
+                drop(service); // Release the lock
+            }
+        });
+
+        self.auto_update_handle = Some(handle);
+        log::info!("Started automatic model price updates (every 60 seconds)");
+    }
+
+    pub fn stop_auto_update(&mut self) {
+        if let Some(handle) = self.auto_update_handle.take() {
+            handle.abort();
+            log::info!("Stopped automatic model price updates");
+        }
+    }
+
+    pub fn set_selected_mint(&mut self, mint_url: Option<String>) {
+        self.selected_mint_url = mint_url;
+
+        // Persist updated configuration
+        if let Err(e) = self.save_config() {
+            log::error!("Failed to save mint selection: {}", e);
+        }
+    }
+
+    pub fn get_selected_mint(&self) -> Option<&String> {
+        self.selected_mint_url.as_ref()
+    }
+
     pub async fn refresh_models(&mut self) -> Result<()> {
         let base_url = self
             .base_url
@@ -316,6 +373,9 @@ impl RoutstrService {
     }
 
     pub fn disconnect(&mut self) {
+        // Stop auto-update task first
+        self.stop_auto_update();
+
         self.base_url = None;
         self.models.clear();
 
@@ -665,6 +725,7 @@ impl RoutstrService {
             self.use_manual_url = stored.use_manual_url;
             self.selected_provider_id = stored.selected_provider_id;
             self.service_mode = stored.service_mode;
+            self.selected_mint_url = stored.selected_mint_url;
 
             log::info!("Loaded Routstr configuration from storage");
         }
@@ -684,6 +745,7 @@ impl RoutstrService {
             use_manual_url: self.use_manual_url,
             selected_provider_id: self.selected_provider_id.clone(),
             service_mode: self.service_mode.clone(),
+            selected_mint_url: self.selected_mint_url.clone(),
         };
 
         if let Some(parent) = self.storage.config_file.parent() {
@@ -717,6 +779,9 @@ impl RoutstrService {
             }
         }
 
+        // Stop auto-update task
+        self.stop_auto_update();
+
         self.api_keys.clear();
         self.models.clear();
 
@@ -731,8 +796,17 @@ impl RoutstrService {
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tokio::time::{interval, Duration};
 
 pub type RoutstrState = Arc<Mutex<RoutstrService>>;
+
+pub async fn initialize_routstr_auto_update(state: RoutstrState) {
+    let mut service = state.lock().await;
+    if service.is_connected() {
+        service.start_auto_update(state.clone());
+        log::info!("Initialized automatic model updates for existing Routstr connection");
+    }
+}
 
 #[tauri::command]
 pub async fn routstr_connect_service(
@@ -755,10 +829,16 @@ pub async fn routstr_connect_service(
         service.service_mode = mode;
     }
 
+    // Connect to the service
     service
         .connect_to_service(url)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Start automatic model updates
+    service.start_auto_update(state.inner().clone());
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -804,10 +884,15 @@ pub async fn routstr_create_wallet(
     state: tauri::State<'_, RoutstrState>,
 ) -> Result<RoutstrCreateResponse, String> {
     let mut service = state.lock().await;
-    service
+    let result = service
         .create_wallet(url, cashu_token)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Start automatic model updates since we're now connected
+    service.start_auto_update(state.inner().clone());
+
+    Ok(result)
 }
 
 #[tauri::command]
@@ -956,8 +1041,27 @@ pub async fn routstr_get_ui_state(
     Ok(serde_json::json!({
         "use_manual_url": service.use_manual_url,
         "selected_provider_id": service.selected_provider_id,
-        "service_mode": service.service_mode
+        "service_mode": service.service_mode,
+        "selected_mint_url": service.selected_mint_url
     }))
+}
+
+#[tauri::command]
+pub async fn routstr_set_selected_mint(
+    mint_url: Option<String>,
+    state: tauri::State<'_, RoutstrState>,
+) -> Result<(), String> {
+    let mut service = state.lock().await;
+    service.set_selected_mint(mint_url);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn routstr_get_selected_mint(
+    state: tauri::State<'_, RoutstrState>,
+) -> Result<Option<String>, String> {
+    let service = state.lock().await;
+    Ok(service.get_selected_mint().cloned())
 }
 
 #[cfg(test)]
@@ -979,10 +1083,21 @@ mod tests {
             base_url: None,
             models: Vec::new(),
             api_keys: Vec::new(),
+            use_proxy: false,
+            proxy_endpoint: None,
+            target_service_url: None,
+            use_onion: false,
+            payment_required: false,
+            cost_per_request_sats: 10,
+            use_manual_url: true,
+            selected_provider_id: None,
+            service_mode: "wallet".to_string(),
+            selected_mint_url: None,
             client: reqwest::Client::new(),
             storage: RoutstrStoragePaths {
                 config_file: config_file.clone(),
             },
+            auto_update_handle: None,
         };
 
         // Load configuration (should succeed with defaults)

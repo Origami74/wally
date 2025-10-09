@@ -8,6 +8,7 @@ import type {
   RoutstrCreateResponse,
   ApiKeyEntry,
   ProxyStatus,
+  WalletSummary,
 } from "./types";
 
 export async function connectToRoutstrService(
@@ -100,6 +101,19 @@ export async function getUIState(): Promise<{
   use_manual_url: boolean;
   selected_provider_id: string | null;
   service_mode: string;
+  selected_mint_url: string | null;
 }> {
   return invoke("routstr_get_ui_state");
+}
+
+export async function setSelectedMint(mintUrl: string | null): Promise<void> {
+  return invoke("routstr_set_selected_mint", { mintUrl });
+}
+
+export async function getSelectedMint(): Promise<string | null> {
+  return invoke("routstr_get_selected_mint");
+}
+
+export async function getWalletSummary(): Promise<WalletSummary> {
+  return invoke("get_wallet_summary");
 }

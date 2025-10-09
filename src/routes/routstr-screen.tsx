@@ -39,6 +39,9 @@ import {
   topUpWalletForKey,
   getProxyStatus,
   getUIState,
+  setSelectedMint,
+  getSelectedMint,
+  getWalletSummary,
 } from "@/lib/routstr/api";
 import { discoverNostrProviders } from "@/lib/nostr-providers";
 
@@ -70,6 +73,7 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
   const [selectedProvider, setSelectedProvider] = useState<string>("");
   const [useManualUrl, setUseManualUrl] = useState(true);
   const [serviceMode, setServiceMode] = useState<"wallet" | "proxy">("wallet");
+  const [selectedMint, setSelectedMintState] = useState<string>("");
   const queryClient = useQueryClient();
 
   const proxyEndpoint = "http://127.0.0.1:3737";
@@ -145,6 +149,12 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       staleTime: 10000,
     });
 
+  const { data: walletSummary, refetch: refetchWalletSummary } = useQuery({
+    queryKey: ["wallet-summary"],
+    queryFn: getWalletSummary,
+    staleTime: 30000,
+  });
+
   useEffect(() => {
     if (providers.length > 0 && !selectedProvider) {
       const defaultProvider =
@@ -166,6 +176,21 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       setServiceUrl("");
     }
   }, [connectionStatus.base_url, connectionStatus.connected]);
+
+  // Set default mint if none selected (first mint with msat unit)
+  useEffect(() => {
+    if (walletSummary && !selectedMint) {
+      const defaultMint = walletSummary.balances.find(
+        (balance) =>
+          balance.unit.toLowerCase() === "msat" ||
+          balance.unit.toLowerCase() === "msats",
+      );
+      if (defaultMint) {
+        setSelectedMintState(defaultMint.mint_url);
+        setSelectedMint(defaultMint.mint_url);
+      }
+    }
+  }, [walletSummary, selectedMint]);
 
   const createTokenFromLocalWallet = async (
     amount_sats: number,
@@ -418,8 +443,22 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
         setSelectedProvider(uiState.selected_provider_id);
       }
       setServiceMode(uiState.service_mode as "wallet" | "proxy");
+      if (uiState.selected_mint_url) {
+        setSelectedMintState(uiState.selected_mint_url);
+      }
     } catch (error) {
       console.error("Failed to load UI state:", error);
+    }
+  };
+
+  const handleMintChange = async (mintUrl: string) => {
+    try {
+      setSelectedMintState(mintUrl);
+      await setSelectedMint(mintUrl || null);
+      setSuccessMessage("Mint selection updated successfully");
+    } catch (error) {
+      console.error("Failed to update mint selection:", error);
+      setError(`Failed to update mint selection: ${error}`);
     }
   };
 
@@ -554,7 +593,7 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
                       <Label htmlFor="service-url">Service URL</Label>
                       <Input
                         id="service-url"
-                        placeholder="https://api.routstr.com"
+                        placeholder="https://ecash.otrta.me"
                         value={serviceUrl}
                         onChange={(e) => setServiceUrl(e.target.value)}
                         disabled={connecting || connectionStatus.connected}
@@ -682,6 +721,77 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
                   )}
                 </div>
               </div>
+
+              {serviceMode === "proxy" && (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-medium">
+                    Payment Mint Selection
+                  </h4>
+                  <div className="space-y-2 ml-6">
+                    <Label>Available Mints</Label>
+                    {walletSummary?.balances &&
+                    walletSummary.balances.length > 0 ? (
+                      <Select
+                        value={selectedMint}
+                        onValueChange={handleMintChange}
+                      >
+                        <SelectTrigger
+                          className="w-full"
+                          disabled={connecting || connectionStatus.connected}
+                        >
+                          <SelectValue placeholder="Choose a mint..." />
+                        </SelectTrigger>
+                        <SelectContent
+                          className="max-h-[200px] w-[var(--radix-select-trigger-width)] overflow-y-auto"
+                          position="popper"
+                          side="bottom"
+                          align="center"
+                          sideOffset={0}
+                          avoidCollisions={true}
+                          collisionPadding={20}
+                        >
+                          {walletSummary.balances
+                            .filter((balance) => balance.balance > 0) // Only show mints with balance
+                            .map((balance) => (
+                              <SelectItem
+                                key={balance.mint_url}
+                                value={balance.mint_url}
+                              >
+                                <div className="flex flex-col justify-start">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium">
+                                      {balance.mint_url.replace(
+                                        /^https?:\/\//,
+                                        "",
+                                      )}
+                                    </span>
+                                    {balance.unit
+                                      .toLowerCase()
+                                      .includes("msat") && (
+                                      <Badge tone="success" className="py-0">
+                                        Default
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <span className="text-xs text-muted-foreground self-start">
+                                    Balance: {balance.balance.toLocaleString()}{" "}
+                                    {balance.unit}
+                                  </span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        {walletSummary
+                          ? "No mints with balance available"
+                          : "Loading mints..."}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {error && (
@@ -736,7 +846,7 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
                 <Label htmlFor="create-service-url">Service URL</Label>
                 <Input
                   id="create-service-url"
-                  placeholder="https://api.routstr.com"
+                  placeholder="https://ecash.otrta.me"
                   value={createServiceUrl}
                   onChange={(e) => setCreateServiceUrl(e.target.value)}
                   disabled={creating}

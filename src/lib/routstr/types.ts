@@ -96,3 +96,17 @@ export interface ProxyStatus {
   selected_provider_id: string | null;
   service_mode: string;
 }
+
+export interface WalletBalance {
+  mint_url: string;
+  balance: number;
+  unit: string;
+  pending: number;
+}
+
+export interface WalletSummary {
+  total: number;
+  default_mint: string | null;
+  balances: WalletBalance[];
+  npub: string | null;
+}

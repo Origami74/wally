@@ -27,7 +27,7 @@ pub struct ProxyConfig {
     pub target_url: String,
     pub use_onion: bool,
     pub payment_required: bool,
-    pub cost_sats: u64,
+    pub cost_msats: u64,
 }
 
 impl Default for ProxyConfig {
@@ -36,7 +36,7 @@ impl Default for ProxyConfig {
             target_url: "https://api.openai.com".to_string(),
             use_onion: false,
             payment_required: true,
-            cost_sats: 65548,
+            cost_msats: 65548,
         }
     }
 }
@@ -98,10 +98,9 @@ async fn forward_request_impl(
         .app_handle
         .state::<std::sync::Arc<tokio::sync::Mutex<RoutstrService>>>();
 
-    let (config, max_cost_sats) = {
+    let (config, max_cost_msats, selected_mint) = {
         let service = routstr_state.lock().await;
 
-        // Determine the target URL
         let target_url = if let Some(url) = &service.target_service_url {
             url.clone()
         } else if let Some(url) = &service.base_url {
@@ -110,31 +109,33 @@ async fn forward_request_impl(
             "https://api.openai.com".to_string() // fallback
         };
 
-        // Get max cost from models for the requested model (if applicable)
-        let max_cost_sats = if let Some(body_data) = &body {
+        let max_cost_msats = if let Some(body_data) = &body {
             if let Some(model_name) = body_data.get("model").and_then(|m| m.as_str()) {
                 service
                     .models
                     .iter()
                     .find(|m| m.id == model_name)
                     .and_then(|m| m.sats_pricing.as_ref())
-                    .map(|p| p.max_cost as u64)
-                    .unwrap_or(service.cost_per_request_sats)
+                    .map(|p| (p.max_cost * 1000.0) as u64)
+                    .unwrap_or(service.cost_per_request_sats * 1000)
             } else {
-                service.cost_per_request_sats
+                service.cost_per_request_sats * 1000 // Convert sats to msats
             }
         } else {
-            service.cost_per_request_sats
+            service.cost_per_request_sats * 1000 // Convert sats to msats
         };
 
         let config = ProxyConfig {
             target_url,
             use_onion: service.use_onion,
             payment_required: service.payment_required,
-            cost_sats: max_cost_sats,
+            cost_msats: max_cost_msats,
         };
 
-        (config, max_cost_sats)
+        let selected_mint = service.selected_mint_url.clone();
+        println!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaAaaaaaaaaaaa {:?}", selected_mint);
+
+        (config, max_cost_msats, selected_mint)
     };
 
     let endpoint_url = construct_url_with_protocol(&config.target_url, &path);
@@ -183,8 +184,10 @@ async fn forward_request_impl(
         }
     }
 
-    if config.payment_required && max_cost_sats > 0 {
-        if let Ok(payment_token) = create_payment_token(max_cost_sats).await {
+    if max_cost_msats > 0 {
+        if let Ok(payment_token) =
+            create_payment_token(max_cost_msats, selected_mint, &server_state.app_handle).await
+        {
             req_builder = req_builder.header("X-Cashu", &payment_token);
         }
     }
@@ -197,9 +200,14 @@ async fn forward_request_impl(
             let status = resp.status();
             let headers = resp.headers().clone();
 
+            println!("{:?}", headers);
             if let Some(change_token) = headers.get("X-Cashu") {
                 if let Ok(token_str) = change_token.to_str() {
-                    log::info!("Received change token: {}", token_str);
+                    let app_handle_clone = server_state.app_handle.clone();
+                    let token_str_owned = token_str.to_string();
+                    if let Err(e) = redeem_change_token(&token_str_owned, &app_handle_clone).await {
+                        log::error!("Failed to redeem change token in background: {}", e);
+                    }
                 }
             }
 
@@ -272,10 +280,62 @@ async fn forward_request_impl(
     }
 }
 
-async fn create_payment_token(amount_sats: u64) -> Result<String, String> {
-    log::info!("Creating payment token for {} sats", amount_sats);
+async fn create_payment_token(
+    amount_msats: u64,
+    selected_mint_url: Option<String>,
+    app_handle: &tauri::AppHandle,
+) -> Result<String, String> {
+    log::info!(
+        "Creating payment token for {} sats using mint: {:?}",
+        amount_msats,
+        selected_mint_url
+    );
 
-    Ok(format!("dummy_token_{}", amount_sats))
+    let tollgate_state = app_handle.state::<crate::TollGateState>();
+    let service = tollgate_state.lock().await;
+
+    println!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb {:?} {:?}", amount_msats, selected_mint_url);
+    match service
+        .create_external_token(amount_msats, selected_mint_url)
+        .await
+    {
+        Ok(token) => {
+            log::info!(
+                "Successfully created payment token for {} sats",
+                amount_msats
+            );
+            Ok(token)
+        }
+        Err(e) => {
+            log::error!("Failed to create payment token: {}", e);
+            Err(e.to_string())
+        }
+    }
+}
+
+async fn redeem_change_token(
+    change_token: &str,
+    app_handle: &tauri::AppHandle,
+) -> Result<(), String> {
+    log::info!("Redeeming change token: {}", change_token);
+
+    let tollgate_state = app_handle.state::<crate::TollGateState>();
+    let service = tollgate_state.lock().await;
+
+    match service.receive_cashu_token(change_token).await {
+        Ok(result) => {
+            log::info!(
+                "Successfully redeemed change token: {} sats from mint {}",
+                result.amount,
+                result.mint_url
+            );
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("Failed to redeem change token: {}", e);
+            Err(e.to_string())
+        }
+    }
 }
 
 pub async fn forward_routstr_proxy_request_get(
@@ -286,7 +346,15 @@ pub async fn forward_routstr_proxy_request_get(
     let routstr_state = server_state
         .app_handle
         .state::<std::sync::Arc<tokio::sync::Mutex<RoutstrService>>>();
-    forward_routstr_proxy_request_impl(path, None, headers, &routstr_state, false).await
+    forward_routstr_proxy_request_impl(
+        path,
+        None,
+        headers,
+        &routstr_state,
+        &server_state.app_handle,
+        false,
+    )
+    .await
 }
 
 pub async fn forward_routstr_proxy_request_post(
@@ -326,7 +394,15 @@ pub async fn forward_routstr_proxy_request_post(
     let routstr_state = server_state
         .app_handle
         .state::<std::sync::Arc<tokio::sync::Mutex<RoutstrService>>>();
-    forward_routstr_proxy_request_impl(path, body_data, headers, &routstr_state, false).await
+    forward_routstr_proxy_request_impl(
+        path,
+        body_data,
+        headers,
+        &routstr_state,
+        &server_state.app_handle,
+        false,
+    )
+    .await
 }
 
 async fn forward_routstr_proxy_request_impl(
@@ -334,6 +410,7 @@ async fn forward_routstr_proxy_request_impl(
     body: Option<serde_json::Value>,
     original_headers: HeaderMap,
     routstr_state: &std::sync::Arc<tokio::sync::Mutex<RoutstrService>>,
+    app_handle: &tauri::AppHandle,
     is_streaming: bool,
 ) -> Response<Body> {
     let service = routstr_state.lock().await;
@@ -372,6 +449,7 @@ async fn forward_routstr_proxy_request_impl(
     let use_onion = service.use_onion;
     let payment_required = service.payment_required;
     let cost_sats = service.cost_per_request_sats;
+    let selected_mint = service.selected_mint_url.clone();
 
     drop(service);
 
@@ -422,7 +500,8 @@ async fn forward_routstr_proxy_request_impl(
     }
 
     if payment_required && cost_sats > 0 {
-        if let Ok(payment_token) = create_payment_token(cost_sats).await {
+        if let Ok(payment_token) = create_payment_token(cost_sats, selected_mint, app_handle).await
+        {
             req_builder = req_builder.header("X-Cashu", &payment_token);
         }
     }
@@ -438,6 +517,17 @@ async fn forward_routstr_proxy_request_impl(
             if let Some(change_token) = headers.get("X-Cashu") {
                 if let Ok(token_str) = change_token.to_str() {
                     log::info!("Received change token from Routstr proxy: {}", token_str);
+
+                    // Redeem the change token asynchronously
+                    let app_handle_clone = app_handle.clone();
+                    let token_str_owned = token_str.to_string();
+                    tokio::spawn(async move {
+                        if let Err(e) =
+                            redeem_change_token(&token_str_owned, &app_handle_clone).await
+                        {
+                            log::error!("Failed to redeem change token from Routstr proxy in background: {}", e);
+                        }
+                    });
                 }
             }
 
