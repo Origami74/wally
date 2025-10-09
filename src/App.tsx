@@ -239,10 +239,10 @@ function AppContent() {
     if (!mintInput.trim()) return;
     setSavingMint(true);
     try {
-      await invoke("add_mint", { mintUrl: mintInput.trim() });
+      await invoke("set_default_mint", { mintUrl: mintInput.trim() });
       await refreshStatus();
     } catch (error) {
-      console.error("Failed to add mint", error);
+      console.error("Failed to set default mint", error);
     } finally {
       setSavingMint(false);
     }
@@ -441,6 +441,7 @@ function AppContent() {
             <HomeScreen
               statusBadges={statusBadges}
               walletBalance={walletBalance}
+              walletSummary={walletSummary}
               currentSession={currentSession}
               currentNetwork={currentNetwork}
               onReceive={goReceive}
@@ -495,6 +496,9 @@ function AppContent() {
               }}
               handleFeatureUpdate={handleFeatureUpdate}
               periodMeta={periodMeta}
+              copyToClipboard={copyToClipboard}
+              walletSummary={walletSummary}
+              onRefresh={refreshStatus}
             />
           </Route>
 

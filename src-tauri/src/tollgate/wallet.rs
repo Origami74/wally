@@ -27,6 +27,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Cashu wallet for TollGate payments
 pub struct TollGateWallet {
@@ -118,6 +119,14 @@ pub struct WalletBalance {
     pub balance: u64,
     pub unit: String,
     pub pending: u64,
+}
+
+/// Keyset information from mint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct KeysetInfo {
+    pub id: String,
+    pub unit: String,
+    pub active: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -260,6 +269,87 @@ fn derive_nostr_keys_from_seed(seed: &[u8; 64]) -> TollGateResult<Keys> {
     Ok(Keys::new(secret_key))
 }
 
+/// Discover available keysets from a mint
+async fn discover_mint_keysets(mint_url: &str) -> TollGateResult<Vec<KeysetInfo>> {
+    let client = reqwest::Client::new();
+    let keys_url = format!("{}/v1/keys", mint_url.trim_end_matches('/'));
+
+    let response = client
+        .get(&keys_url)
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| {
+            TollGateError::wallet(format!("Failed to fetch keysets from {}: {}", keys_url, e))
+        })?;
+
+    if !response.status().is_success() {
+        return Err(TollGateError::wallet(format!(
+            "Failed to fetch keysets from {}: {}",
+            keys_url,
+            response.status()
+        )));
+    }
+
+    let keys_data: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| TollGateError::wallet(format!("Failed to parse keysets response: {}", e)))?;
+
+    let mut keysets = Vec::new();
+
+    if let Some(keysets_obj) = keys_data.get("keysets") {
+        if let Some(keysets_array) = keysets_obj.as_array() {
+            for keyset in keysets_array {
+                if let (Some(id), Some(unit)) = (keyset.get("id"), keyset.get("unit")) {
+                    if let (Some(id_str), Some(unit_str)) = (id.as_str(), unit.as_str()) {
+                        keysets.push(KeysetInfo {
+                            id: id_str.to_string(),
+                            unit: unit_str.to_string(),
+                            active: keyset
+                                .get("active")
+                                .and_then(|a| a.as_bool())
+                                .unwrap_or(true),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // If no keysets found, default to msat
+    if keysets.is_empty() {
+        keysets.push(KeysetInfo {
+            id: "default".to_string(),
+            unit: "msat".to_string(),
+            active: true,
+        });
+    }
+
+    Ok(keysets)
+}
+
+/// Select the best currency unit from available keysets
+fn select_currency_unit(keysets: &[KeysetInfo]) -> CurrencyUnit {
+    // FIXME: This is a simple implementation that prefers 'msat' over 'sat'.
+    // In the future, we should allow users to choose their preferred unit,
+    // or handle multiple units per mint with separate wallets.
+    for keyset in keysets {
+        if keyset.active && keyset.unit == "msat" {
+            return CurrencyUnit::Msat;
+        }
+    }
+
+    // If no 'msat' unit found, look for 'sat' unit
+    for keyset in keysets {
+        if keyset.active && keyset.unit == "ssat" {
+            return CurrencyUnit::Sat;
+        }
+    }
+
+    CurrencyUnit::Sat
+}
+
 impl TollGateWallet {
     pub fn clone_wallet_for_mint(&self, mint_url: &str) -> Option<Wallet> {
         self.wallets.get(mint_url).cloned()
@@ -364,6 +454,17 @@ impl TollGateWallet {
             return Ok(()); // Already added
         }
 
+        // Discover available keysets from the mint
+        let keysets = discover_mint_keysets(mint_url).await?;
+        let currency_unit = select_currency_unit(&keysets);
+
+        log::info!(
+            "Discovered {} keysets for mint {}, selected unit: {}",
+            keysets.len(),
+            mint_url,
+            currency_unit
+        );
+
         let db_path = self.storage.mint_db_path(mint_url)?;
         let localstore = WalletSqliteDatabase::new(db_path).await.map_err(|e| {
             TollGateError::wallet(format!(
@@ -374,7 +475,7 @@ impl TollGateWallet {
 
         let wallet = Wallet::new(
             mint_url,
-            CurrencyUnit::Sat,
+            currency_unit,
             Arc::new(localstore),
             self.secrets.wallet_seed(),
             None,
@@ -401,6 +502,58 @@ impl TollGateWallet {
     pub async fn add_mint(&mut self, mint_url: &str) -> TollGateResult<()> {
         self.add_mint_internal(mint_url).await?;
         self.save_mints_config()?;
+        Ok(())
+    }
+
+    /// Set the default mint
+    pub async fn set_default_mint(&mut self, mint_url: &str) -> TollGateResult<()> {
+        if !self.wallets.contains_key(mint_url) {
+            self.add_mint_internal(mint_url).await?;
+        }
+
+        self.default_mint = Some(mint_url.to_string());
+        self.save_mints_config()?;
+        Ok(())
+    }
+
+    /// Remove a mint from the wallet
+    pub async fn remove_mint(&mut self, mint_url: &str) -> TollGateResult<()> {
+        // Check if mint exists
+        if !self.wallets.contains_key(mint_url) {
+            return Err(TollGateError::wallet(format!(
+                "Mint not found: {}",
+                mint_url
+            )));
+        }
+
+        // Check if there's a balance remaining
+        let balance = self.get_balance(mint_url).await?;
+        if balance > 0 {
+            return Err(TollGateError::wallet(format!(
+                "Cannot remove mint with remaining balance: {} sats. Please spend or transfer tokens first.",
+                balance
+            )));
+        }
+
+        // Remove from wallets map
+        self.wallets.remove(mint_url);
+
+        // If this was the default mint, clear it or set a new one
+        if let Some(ref default) = self.default_mint {
+            if default == mint_url {
+                self.default_mint = if self.wallets.is_empty() {
+                    None
+                } else {
+                    // Set the first available mint as default
+                    self.wallets.keys().next().cloned()
+                };
+            }
+        }
+
+        // Persist changes
+        self.save_mints_config()?;
+
+        log::info!("Removed mint from wallet: {}", mint_url);
         Ok(())
     }
 
@@ -441,8 +594,8 @@ impl TollGateWallet {
             balances.push(WalletBalance {
                 mint_url: mint_url.clone(),
                 balance: balance.into(),
-                unit: "sat".to_string(), // TODO: Get actual unit from wallet
-                pending: 0,              // TODO: Get pending balance
+                unit: wallet.unit.to_string(),
+                pending: 0, // TODO: Get pending balance
             });
         }
 
@@ -484,8 +637,13 @@ impl TollGateWallet {
             })
             .collect::<Result<_, _>>()?;
 
+        // FIXME: This uses the default mint's unit for multi-mint payment requests.
+        // In the future, we should either support per-mint units or ensure all mints use the same unit.
+        let default_wallet = self.default_wallet()?;
+        let payment_unit = default_wallet.unit.clone();
+
         let mut builder = PaymentRequest::builder()
-            .unit(CurrencyUnit::Sat)
+            .unit(payment_unit.clone())
             .single_use(true)
             .mints(mint_urls.clone());
 
@@ -501,7 +659,7 @@ impl TollGateWallet {
         let response = Nut18PaymentRequestInfo {
             request: request_string,
             amount,
-            unit: CurrencyUnit::Sat.to_string(),
+            unit: payment_unit.to_string(),
             description,
             mints: mint_urls.into_iter().map(|m| m.to_string()).collect(),
         };
@@ -642,7 +800,6 @@ impl TollGateWallet {
             .melt(&quote.id)
             .await
             .map_err(|e| TollGateError::wallet(format!("Failed to pay invoice: {}", e)))?;
-
         let amount: u64 = melted.amount.into();
         let fee_paid: u64 = melted.fee_paid.into();
 

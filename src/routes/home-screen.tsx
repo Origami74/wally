@@ -2,13 +2,16 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Screen } from "@/components/layout/screen";
 import { formatBytes, formatDuration } from "@/lib/tollgate/utils";
+import { calculateTotalMsat, formatBalanceDisplay } from "@/lib/wallet/utils";
 import type { NetworkInfo, SessionInfo } from "@/lib/tollgate/types";
+import type { WalletSummary } from "@/lib/wallet/api";
 import type { StatusBadge } from "./types";
 import { cn } from "@/lib/utils";
 
 type HomeScreenProps = {
   statusBadges: StatusBadge[];
   walletBalance: number;
+  walletSummary?: WalletSummary | null;
   currentSession: SessionInfo | null;
   currentNetwork: NetworkInfo | null;
   onReceive: () => void;
@@ -18,6 +21,7 @@ type HomeScreenProps = {
 export function HomeScreen({
   statusBadges,
   walletBalance,
+  walletSummary,
   currentSession,
   currentNetwork,
   onReceive,
@@ -42,11 +46,13 @@ export function HomeScreen({
                   : "border-primary/70 bg-background text-primary",
                 clickable
                   ? "cursor-pointer hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  : "cursor-default"
+                  : "cursor-default",
               )}
             >
               <span>{badge.label}</span>
-              <span className="ml-2 text-[11px] capitalize">{badge.value.toLowerCase()}</span>
+              <span className="ml-2 text-[11px] capitalize">
+                {badge.value.toLowerCase()}
+              </span>
             </button>
           );
         })}
@@ -56,34 +62,66 @@ export function HomeScreen({
       <div className="h-12"></div>
 
       <div className="flex-1 flex flex-col justify-center items-center gap-3">
-        <div className="text-[72px] font-semibold leading-none text-primary">
-          {walletBalance.toLocaleString()}
-        </div>
-        <span className="text-sm font-medium uppercase tracking-[0.35em] text-muted-foreground">
-          sats
-        </span>
+        {(() => {
+          const totalMsat = walletSummary?.balances
+            ? calculateTotalMsat(walletSummary.balances)
+            : walletBalance * 1000;
+
+          const balanceDisplay = formatBalanceDisplay(totalMsat);
+
+          return (
+            <>
+              <div className="text-[72px] font-semibold leading-none text-primary">
+                {balanceDisplay.primary}
+              </div>
+              <span className="text-sm font-medium uppercase tracking-[0.35em] text-muted-foreground">
+                {balanceDisplay.unit}
+              </span>
+
+              {balanceDisplay.secondary && (
+                <div className="text-center">
+                  <div className="text-lg text-muted-foreground">
+                    {balanceDisplay.secondary}
+                  </div>
+                </div>
+              )}
+            </>
+          );
+        })()}
       </div>
 
       {currentSession ? (
         <Card className="space-y-4 border border-dashed border-primary/30 bg-background/80 p-4">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span className="uppercase tracking-wide">Session usage</span>
-            <span className="font-semibold text-primary">{Math.round(currentSession.usage_percentage)}%</span>
+            <span className="font-semibold text-primary">
+              {Math.round(currentSession.usage_percentage)}%
+            </span>
           </div>
           <div className="h-2 rounded-full bg-muted">
             <div
               className="h-full rounded-full bg-primary"
-              style={{ width: `${Math.min(100, Math.round(currentSession.usage_percentage))}%` }}
+              style={{
+                width: `${Math.min(100, Math.round(currentSession.usage_percentage))}%`,
+              }}
             />
           </div>
           <div className="grid grid-cols-2 gap-3 text-xs text-muted-foreground">
             <div>
-              <span className="block text-[10px] uppercase tracking-wide">Time left</span>
-              <span className="text-sm font-medium text-foreground">{formatDuration(currentSession.remaining_time_seconds)}</span>
+              <span className="block text-[10px] uppercase tracking-wide">
+                Time left
+              </span>
+              <span className="text-sm font-medium text-foreground">
+                {formatDuration(currentSession.remaining_time_seconds)}
+              </span>
             </div>
             <div className="text-right">
-              <span className="block text-[10px] uppercase tracking-wide">Data remaining</span>
-              <span className="text-sm font-medium text-foreground">{formatBytes(currentSession.remaining_data_bytes)}</span>
+              <span className="block text-[10px] uppercase tracking-wide">
+                Data remaining
+              </span>
+              <span className="text-sm font-medium text-foreground">
+                {formatBytes(currentSession.remaining_data_bytes)}
+              </span>
             </div>
           </div>
         </Card>
@@ -93,9 +131,16 @@ export function HomeScreen({
         <Card className="space-y-3 border border-dashed border-primary/20 bg-background/90 p-4 text-xs text-muted-foreground">
           <div className="flex items-center justify-between text-foreground">
             <span className="uppercase tracking-wide">Network</span>
-            <Badge tone={currentNetwork.is_tollgate ? "success" : "default"}>
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-2 py-1 text-xs font-medium",
+                currentNetwork.is_tollgate
+                  ? "bg-green-100 text-green-800"
+                  : "bg-gray-100 text-gray-800",
+              )}
+            >
               {currentNetwork.is_tollgate ? "Tollgate" : "Standard"}
-            </Badge>
+            </span>
           </div>
           <div className="grid gap-1">
             <span>Gateway: {currentNetwork.gateway_ip}</span>
@@ -105,10 +150,18 @@ export function HomeScreen({
       ) : null}
 
       <div className="mt-auto flex gap-3 pb-2">
-        <Button onClick={onReceive} variant="outline" className="flex-1 py-5 text-base font-semibold">
+        <Button
+          onClick={onReceive}
+          variant="outline"
+          className="flex-1 py-5 text-base font-semibold"
+        >
           Receive
         </Button>
-        <Button onClick={onSend} variant="outline" className="flex-1 py-5 text-base font-semibold">
+        <Button
+          onClick={onSend}
+          variant="outline"
+          className="flex-1 py-5 text-base font-semibold"
+        >
           Send
         </Button>
       </div>
