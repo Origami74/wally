@@ -149,10 +149,10 @@ export function SettingsScreen({
                 <Label>Configured Mints</Label>
                 {walletSummary?.balances &&
                 walletSummary.balances.length > 0 ? (
-                  <div className="space-y-2 max-h-64 overflow-hidden">
-                    {walletSummary.balances.map((balance) => (
+                  <div className="max-h-64 overflow-hidden">
+                    {walletSummary.balances.map((balance, index) => (
                       <div key={balance.mint_url}>
-                        <div className="flex items-start justify-between">
+                        <div className="flex items-start justify-between py-3">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <p className="text-sm font-medium truncate">
@@ -214,6 +214,9 @@ export function SettingsScreen({
                             </Button>
                           </div>
                         </div>
+                        {index < walletSummary.balances.length - 1 && (
+                          <div className="border-b border-dashed border-border/50" />
+                        )}
                       </div>
                     ))}
                   </div>
