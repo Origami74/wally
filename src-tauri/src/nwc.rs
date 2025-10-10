@@ -25,7 +25,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Mutex, RwLock};
 
-const REMOTE_RELAY_URL: &str = "wss://nostrue.com";
+const REMOTE_RELAY_URL: &str = "wss://nostr.chaima.info";
 const LOCAL_RELAY_URL: &str = "ws://localhost:4869";
 const NWC_BUDGET_MSATS: u64 = 1_000_000_000; // 1,000 sats budget
 

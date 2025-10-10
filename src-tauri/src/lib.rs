@@ -34,6 +34,7 @@ mod connection_server;
 mod nostr_providers;
 mod nwc;
 mod nwc_storage;
+mod proxy;
 mod relay;
 mod routstr;
 mod wallet;
@@ -443,6 +444,13 @@ pub fn run() {
         // Initialize Routstr service
         let routstr_arc = Arc::new(Mutex::new(routstr::RoutstrService::new()));
 
+        // Initialize auto-update for Routstr if already connected
+        let routstr_clone = routstr_arc.clone();
+        let rt_clone = rt.clone();
+        rt_clone.spawn(async move {
+            routstr::initialize_routstr_auto_update(routstr_clone).await;
+        });
+
         app.manage(service_arc);
         app.manage(nwc_arc);
         app.manage(routstr_arc);
@@ -578,6 +586,10 @@ pub fn run() {
             routstr::routstr_remove_api_key,
             routstr::routstr_clear_config,
             routstr::routstr_force_reset_all_api_keys,
+            routstr::routstr_get_proxy_status,
+            routstr::routstr_get_ui_state,
+            routstr::routstr_set_selected_mint,
+            routstr::routstr_get_selected_mint,
             discover_nostr_providers,
         ]);
 

@@ -7,10 +7,22 @@ import type {
   RoutstrRefundResponse,
   RoutstrCreateResponse,
   ApiKeyEntry,
+  ProxyStatus,
+  WalletSummary,
 } from "./types";
 
-export async function connectToRoutstrService(url: string): Promise<void> {
-  return invoke("routstr_connect_service", { url });
+export async function connectToRoutstrService(
+  url: string,
+  useManualUrl?: boolean,
+  selectedProviderId?: string,
+  serviceMode?: string,
+): Promise<void> {
+  return invoke("routstr_connect_service", {
+    url,
+    useManualUrl,
+    selectedProviderId,
+    serviceMode,
+  });
 }
 
 export async function disconnectFromRoutstrService(): Promise<void> {
@@ -41,7 +53,6 @@ export async function createBalanceWithToken(
 ): Promise<RoutstrCreateResponse> {
   return invoke("routstr_create_balance_with_token", { cashuToken });
 }
-
 
 export async function clearRoutstrConfig(): Promise<void> {
   return invoke("routstr_clear_config");
@@ -80,4 +91,29 @@ export async function removeApiKey(apiKey: string): Promise<boolean> {
 
 export async function forceResetAllApiKeys(): Promise<void> {
   return invoke("routstr_force_reset_all_api_keys");
+}
+
+export async function getProxyStatus(): Promise<ProxyStatus> {
+  return invoke("routstr_get_proxy_status");
+}
+
+export async function getUIState(): Promise<{
+  use_manual_url: boolean;
+  selected_provider_id: string | null;
+  service_mode: string;
+  selected_mint_url: string | null;
+}> {
+  return invoke("routstr_get_ui_state");
+}
+
+export async function setSelectedMint(mintUrl: string | null): Promise<void> {
+  return invoke("routstr_set_selected_mint", { mintUrl });
+}
+
+export async function getSelectedMint(): Promise<string | null> {
+  return invoke("routstr_get_selected_mint");
+}
+
+export async function getWalletSummary(): Promise<WalletSummary> {
+  return invoke("get_wallet_summary");
 }

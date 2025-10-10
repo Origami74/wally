@@ -41,12 +41,12 @@ export interface RoutstrModel {
   name: string;
   created: number;
   description: string;
-  context_length: number;
-  architecture: Architecture;
-  pricing: Pricing;
+  context_length: number | null;
+  architecture: Architecture | null;
+  pricing: Pricing | null;
   sats_pricing: SatsPricing;
-  per_request_limits: any;
-  top_provider: TopProvider;
+  per_request_limits: any | null;
+  top_provider: TopProvider | null;
 }
 
 export interface RoutstrConnectionStatus {
@@ -78,10 +78,35 @@ export interface RoutstrRefundResponse {
   msats?: string;
 }
 
-
 export interface ApiKeyEntry {
   api_key: string;
   creation_cashu_token?: string;
   created_at: number;
   alias?: string;
+}
+
+export interface ProxyStatus {
+  use_proxy: boolean;
+  proxy_endpoint: string | null;
+  target_service_url: string | null;
+  use_onion: boolean;
+  payment_required: boolean;
+  cost_per_request_sats: number;
+  use_manual_url: boolean;
+  selected_provider_id: string | null;
+  service_mode: string;
+}
+
+export interface WalletBalance {
+  mint_url: string;
+  balance: number;
+  unit: string;
+  pending: number;
+}
+
+export interface WalletSummary {
+  total: number;
+  default_mint: string | null;
+  balances: WalletBalance[];
+  npub: string | null;
 }
