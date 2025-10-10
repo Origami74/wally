@@ -282,7 +282,7 @@ impl RoutstrService {
         self.stop_auto_update();
 
         let handle = tokio::spawn(async move {
-            let mut interval = interval(Duration::from_secs(60)); // Update every minute
+            let mut interval = interval(Duration::from_secs(300));
 
             loop {
                 interval.tick().await;
