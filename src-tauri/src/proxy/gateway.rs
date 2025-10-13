@@ -106,23 +106,31 @@ async fn forward_request_impl(
         } else if let Some(url) = &service.base_url {
             url.clone()
         } else {
-            "https://api.openai.com".to_string() // fallback
+            "https://api.openai.com".to_string()
         };
 
         let max_cost_msats = if let Some(body_data) = &body {
-            if let Some(model_name) = body_data.get("model").and_then(|m| m.as_str()) {
+            let model = if let Ok(openai_request) = serde_json::from_value::<OpenAIRequest>(
+                serde_json::to_value(body_data).unwrap_or_default(),
+            ) {
+                openai_request.model
+            } else {
+                None
+            };
+
+            if let Some(model) = model {
                 service
                     .models
                     .iter()
-                    .find(|m| m.id == model_name)
+                    .find(|m| m.id == model)
                     .and_then(|m| m.sats_pricing.as_ref())
                     .map(|p| (p.max_cost * 1000.0) as u64)
                     .unwrap_or(service.cost_per_request_sats * 1000)
             } else {
-                service.cost_per_request_sats * 1000 // Convert sats to msats
+                service.cost_per_request_sats * 1000
             }
         } else {
-            service.cost_per_request_sats * 1000 // Convert sats to msats
+            service.cost_per_request_sats * 1000
         };
 
         let config = ProxyConfig {
