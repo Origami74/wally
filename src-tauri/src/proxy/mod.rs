@@ -1,4 +1,4 @@
+pub mod gateway;
 pub mod onion;
-pub mod proxy;
 
-pub use proxy::*;
+pub use gateway::*;
