@@ -191,12 +191,14 @@ async fn forward_request_impl(
         }
     }
 
-    if max_cost_msats > 0 {
-        if let Ok(payment_token) =
-            create_payment_token(max_cost_msats, selected_mint, &server_state.app_handle).await
-        {
-            req_builder = req_builder.header("X-Cashu", &payment_token);
-        }
+    let payment_token = if max_cost_msats > 0 {
+        (create_payment_token(max_cost_msats, selected_mint, &server_state.app_handle).await).ok()
+    } else {
+        None
+    };
+
+    if let Some(payment_token) = payment_token.clone() {
+        req_builder = req_builder.header("X-Cashu", &payment_token);
     }
 
     let start_time = start_onion_timing(&endpoint_url);
@@ -206,6 +208,15 @@ async fn forward_request_impl(
             log_onion_timing(start_time, &endpoint_url, "proxy");
             let status = resp.status();
             let headers = resp.headers().clone();
+
+            if status != reqwest::StatusCode::OK {
+                if let Some(payment_token) = payment_token.clone() {
+                    let app_handle_clone = server_state.app_handle.clone();
+                    if let Err(e) = redeem_change_token(&payment_token, &app_handle_clone).await {
+                        log::error!("Failed to redeem change token in background: {}", e);
+                    }
+                }
+            }
 
             println!("{:?}", headers);
             if let Some(change_token) = headers.get("X-Cashu") {
@@ -250,6 +261,13 @@ async fn forward_request_impl(
                         .unwrap()
                 }),
                 Err(e) => {
+                    if let Some(payment_token) = payment_token {
+                        let app_handle_clone = server_state.app_handle.clone();
+                        if let Err(e) = redeem_change_token(&payment_token, &app_handle_clone).await
+                        {
+                            log::error!("Failed to redeem change token in background: {}", e);
+                        }
+                    }
                     log::error!("Error reading response body: {}", e);
                     Response::builder()
                         .status(StatusCode::BAD_GATEWAY)
@@ -269,6 +287,12 @@ async fn forward_request_impl(
         }
         Err(error) => {
             log::error!("Error forwarding request: {}", error);
+            if let Some(payment_token) = payment_token {
+                let app_handle_clone = server_state.app_handle.clone();
+                if let Err(e) = redeem_change_token(&payment_token, &app_handle_clone).await {
+                    log::error!("Failed to redeem change token in background: {}", e);
+                }
+            }
 
             let error_msg = get_onion_error_message(&error, &endpoint_url, "proxy");
 
