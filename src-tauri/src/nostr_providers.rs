@@ -14,7 +14,6 @@ const DEFAULT_RELAYS: &[&str] = &[
     "wss://relay.nostr.band",
     "wss://nostr.wine",
     "wss://relay.primal.net",
-    "wss://relay.routstr.com",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -7,7 +7,7 @@ use axum::{
     extract::{Path, State},
     http::{Method, StatusCode},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -105,6 +105,8 @@ pub async fn start_connection_server(
     let app = Router::new()
         .route("/", get(get_wallet_info).post(post_wallet_connect))
         .route("/poll/:request_id", get(poll_connection_status))
+        .route("/*path", get(crate::proxy::forward_request_get))
+        .route("/*path", post(crate::proxy::forward_request_post))
         .layer(cors)
         .with_state(server_state);
 

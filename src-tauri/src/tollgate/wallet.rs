@@ -985,10 +985,7 @@ impl TollGateWallet {
         let prepared_send = wallet
             .prepare_send(
                 cdk::Amount::from(amount_sats),
-                cdk::wallet::SendOptions {
-                    include_fee: true,
-                    ..Default::default()
-                },
+                cdk::wallet::SendOptions::default(),
             )
             .await
             .map_err(|e| TollGateError::wallet(format!("Failed to prepare token: {}", e)))?;

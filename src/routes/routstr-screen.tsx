@@ -37,6 +37,11 @@ import {
   refundWalletForKey,
   forceResetAllApiKeys,
   topUpWalletForKey,
+  getProxyStatus,
+  getUIState,
+  setSelectedMint,
+  getSelectedMint,
+  getWalletSummary,
 } from "@/lib/routstr/api";
 import { discoverNostrProviders } from "@/lib/nostr-providers";
 
@@ -67,7 +72,11 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
 
   const [selectedProvider, setSelectedProvider] = useState<string>("");
   const [useManualUrl, setUseManualUrl] = useState(true);
+  const [serviceMode, setServiceMode] = useState<"wallet" | "proxy">("wallet");
+  const [selectedMint, setSelectedMintState] = useState<string>("");
   const queryClient = useQueryClient();
+
+  const proxyEndpoint = "http://127.0.0.1:3737";
 
   const {
     data: providers = [],
@@ -103,6 +112,20 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     staleTime: 10000,
   });
 
+  const {
+    data: proxyStatus = {
+      use_proxy: false,
+      proxy_endpoint: null,
+      target_service_url: null,
+    },
+    refetch: refetchProxyStatus,
+  } = useQuery({
+    queryKey: ["routstr-proxy-status"],
+    queryFn: getProxyStatus,
+    refetchInterval: 30000,
+    staleTime: 10000,
+  });
+
   const { data: models = [], refetch: refetchModels } = useQuery({
     queryKey: ["routstr-models"],
     queryFn: getRoutstrModels,
@@ -126,6 +149,12 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       staleTime: 10000,
     });
 
+  const { data: walletSummary, refetch: refetchWalletSummary } = useQuery({
+    queryKey: ["wallet-summary"],
+    queryFn: getWalletSummary,
+    staleTime: 30000,
+  });
+
   useEffect(() => {
     if (providers.length > 0 && !selectedProvider) {
       const defaultProvider =
@@ -147,6 +176,21 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       setServiceUrl("");
     }
   }, [connectionStatus.base_url, connectionStatus.connected]);
+
+  // Set default mint if none selected (first mint with msat unit)
+  useEffect(() => {
+    if (walletSummary && !selectedMint) {
+      const defaultMint = walletSummary.balances.find(
+        (balance) =>
+          balance.unit.toLowerCase() === "msat" ||
+          balance.unit.toLowerCase() === "msats",
+      );
+      if (defaultMint) {
+        setSelectedMintState(defaultMint.mint_url);
+        setSelectedMint(defaultMint.mint_url);
+      }
+    }
+  }, [walletSummary, selectedMint]);
 
   const createTokenFromLocalWallet = async (
     amount_sats: number,
@@ -170,9 +214,10 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     }
   };
 
-  const handleConnect = () => {
+  const handleConnect = async () => {
     let urlToConnect = "";
 
+    // Determine the service URL to connect to
     if (useManualUrl) {
       if (!serviceUrl.trim()) {
         setError("Please enter a service URL");
@@ -191,12 +236,23 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
     setConnecting(true);
     setError(null);
     setSuccessMessage(null);
-    connectMutation.mutate(urlToConnect);
+    console.log(urlToConnect, useManualUrl, serviceMode);
+    connectMutation.mutate({
+      url: urlToConnect,
+      useManualUrl,
+      selectedProviderId: selectedProvider,
+      serviceMode,
+    });
   };
 
   const handleDisconnect = async () => {
     try {
       await disconnectFromRoutstrService();
+
+      if (proxyStatus.use_proxy) {
+        await refetchProxyStatus();
+      }
+
       setSelectedModel("");
       await refetchConnectionStatus();
       queryClient.invalidateQueries({ queryKey: ["routstr-models"] });
@@ -376,10 +432,60 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
   useEffect(() => {
     loadStoredApiKey();
     refreshLocalWalletBalance();
+    loadUIState();
   }, []);
 
+  const loadUIState = async () => {
+    try {
+      const uiState = await getUIState();
+      setUseManualUrl(uiState.use_manual_url);
+      if (uiState.selected_provider_id) {
+        setSelectedProvider(uiState.selected_provider_id);
+      }
+      setServiceMode(uiState.service_mode as "wallet" | "proxy");
+      if (uiState.selected_mint_url) {
+        setSelectedMintState(uiState.selected_mint_url);
+      }
+    } catch (error) {
+      console.error("Failed to load UI state:", error);
+    }
+  };
+
+  const handleMintChange = async (mintUrl: string) => {
+    try {
+      setSelectedMintState(mintUrl);
+      await setSelectedMint(mintUrl || null);
+      setSuccessMessage("Mint selection updated successfully");
+    } catch (error) {
+      console.error("Failed to update mint selection:", error);
+      setError(`Failed to update mint selection: ${error}`);
+    }
+  };
+
+  useEffect(() => {
+    if (proxyStatus) {
+      if (proxyStatus.target_service_url) {
+        setServiceUrl(proxyStatus.target_service_url);
+      }
+
+      setUseManualUrl(!proxyStatus.use_proxy);
+      setServiceMode(proxyStatus.use_proxy ? "wallet" : "proxy");
+    }
+  }, [proxyStatus, connectionStatus.connected]);
+
   const connectMutation = useMutation({
-    mutationFn: connectToRoutstrService,
+    mutationFn: (params: {
+      url: string;
+      useManualUrl: boolean;
+      selectedProviderId: string | null;
+      serviceMode: string;
+    }) =>
+      connectToRoutstrService(
+        params.url,
+        params.useManualUrl,
+        params.selectedProviderId || undefined,
+        params.serviceMode,
+      ),
     onSuccess: () => {
       refetchConnectionStatus();
       queryClient.invalidateQueries({ queryKey: ["routstr-models"] });
@@ -466,107 +572,224 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
             <CardDescription>Connect to a Routstr Provider</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <input
-                  type="radio"
-                  id="manual-url"
-                  checked={useManualUrl}
-                  onChange={() => setUseManualUrl(true)}
-                  className="w-4 h-4"
-                  disabled={connecting || connectionStatus.connected}
-                />
-                <Label htmlFor="manual-url">Enter URL manually</Label>
-              </div>
+            <div className="space-y-6">
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium">Connection Method</h4>
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="manual-url"
+                      checked={useManualUrl}
+                      onChange={() => setUseManualUrl(true)}
+                      className="w-4 h-4"
+                      disabled={connecting || connectionStatus.connected}
+                    />
+                    <Label htmlFor="manual-url">Enter URL manually</Label>
+                  </div>
 
-              {useManualUrl && (
-                <div className="space-y-2 ml-6">
-                  <Label htmlFor="service-url">Service URL</Label>
-                  <Input
-                    id="service-url"
-                    placeholder="https://api.routstr.com"
-                    value={serviceUrl}
-                    onChange={(e) => setServiceUrl(e.target.value)}
-                    disabled={connecting || connectionStatus.connected}
-                  />
-                </div>
-              )}
-
-              <div className="flex items-center space-x-2">
-                <input
-                  type="radio"
-                  id="select-provider"
-                  checked={!useManualUrl}
-                  onChange={() => setUseManualUrl(false)}
-                  className="w-4 h-4"
-                  disabled={connecting || connectionStatus.connected}
-                />
-                <Label htmlFor="select-provider">
-                  Select from discovered providers
-                </Label>
-                <Button
-                  onClick={() => refetchProviders()}
-                  disabled={
-                    loadingProviders || connecting || connectionStatus.connected
-                  }
-                  variant="outline"
-                  size="sm"
-                >
-                  {loadingProviders ? "Loading..." : "Refresh"}
-                </Button>
-              </div>
-
-              {!useManualUrl && (
-                <div className="space-y-2 ml-6">
-                  <Label>Available Providers</Label>
-                  {providers.length > 0 ? (
-                    <Select
-                      value={selectedProvider}
-                      onValueChange={setSelectedProvider}
-                    >
-                      <SelectTrigger
-                        className="w-full"
+                  {useManualUrl && (
+                    <div className="space-y-2 ml-6">
+                      <Label htmlFor="service-url">Service URL</Label>
+                      <Input
+                        id="service-url"
+                        placeholder="https://ecash.otrta.me"
+                        value={serviceUrl}
+                        onChange={(e) => setServiceUrl(e.target.value)}
                         disabled={connecting || connectionStatus.connected}
-                      >
-                        <SelectValue placeholder="Choose a provider..." />
-                      </SelectTrigger>
-                      <SelectContent
-                        className="max-h-[200px] w-[var(--radix-select-trigger-width)] overflow-y-auto"
-                        position="popper"
-                        side="bottom"
-                        align="center"
-                        sideOffset={0}
-                        avoidCollisions={true}
-                        collisionPadding={20}
-                      >
-                        {providers.map((provider) => (
-                          <SelectItem key={provider.id} value={provider.id}>
-                            <div className="flex flex-col justify-start">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">
-                                  {provider.name}
-                                </span>
-                                {provider.is_official && (
-                                  <Badge tone="success" className="py-0">
-                                    Official
-                                  </Badge>
-                                )}
-                              </div>
-                              <span className="text-xs text-muted-foreground self-start">
-                                {provider.urls[0]}
-                              </span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      {loadingProviders
-                        ? "Discovering providers..."
-                        : "No providers found"}
-                    </p>
+                      />
+                    </div>
                   )}
+
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="select-provider"
+                      checked={!useManualUrl}
+                      onChange={() => setUseManualUrl(false)}
+                      className="w-4 h-4"
+                      disabled={connecting || connectionStatus.connected}
+                    />
+                    <Label htmlFor="select-provider">
+                      Select from discovered providers
+                    </Label>
+                    <Button
+                      onClick={() => refetchProviders()}
+                      disabled={
+                        loadingProviders ||
+                        connecting ||
+                        connectionStatus.connected
+                      }
+                      variant="outline"
+                      size="sm"
+                    >
+                      {loadingProviders ? "Loading..." : "Refresh"}
+                    </Button>
+                  </div>
+
+                  {!useManualUrl && (
+                    <div className="space-y-2 ml-6">
+                      <Label>Available Providers</Label>
+                      {providers.length > 0 ? (
+                        <Select
+                          value={selectedProvider}
+                          onValueChange={setSelectedProvider}
+                        >
+                          <SelectTrigger
+                            className="w-full"
+                            disabled={connecting || connectionStatus.connected}
+                          >
+                            <SelectValue placeholder="Choose a provider..." />
+                          </SelectTrigger>
+                          <SelectContent
+                            className="max-h-[200px] w-[var(--radix-select-trigger-width)] overflow-y-auto"
+                            position="popper"
+                            side="bottom"
+                            align="center"
+                            sideOffset={0}
+                            avoidCollisions={true}
+                            collisionPadding={20}
+                          >
+                            {providers.map((provider) => (
+                              <SelectItem key={provider.id} value={provider.id}>
+                                <div className="flex flex-col justify-start">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium">
+                                      {provider.name}
+                                    </span>
+                                    {provider.is_official && (
+                                      <Badge tone="success" className="py-0">
+                                        Official
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <span className="text-xs text-muted-foreground self-start">
+                                    {provider.urls[0]}
+                                  </span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          {loadingProviders
+                            ? "Discovering providers..."
+                            : "No providers found"}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium">Service Mode</h4>
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="wallet-mode"
+                      checked={serviceMode === "wallet"}
+                      onChange={() => setServiceMode("wallet")}
+                      className="w-4 h-4"
+                      disabled={connecting || connectionStatus.connected}
+                    />
+                    <Label htmlFor="wallet-mode">Wallet/Balance Mode</Label>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="proxy-mode"
+                      checked={serviceMode === "proxy"}
+                      onChange={() => setServiceMode("proxy")}
+                      className="w-4 h-4"
+                      disabled={connecting || connectionStatus.connected}
+                    />
+                    <Label htmlFor="proxy-mode">Proxy Mode (OTRTA)</Label>
+                  </div>
+
+                  {serviceMode === "proxy" && (
+                    <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
+                      <p className="text-sm text-blue-700">
+                        Proxy mode will connect to {proxyEndpoint} and forward
+                        requests to{" "}
+                        {serviceUrl || "your configured target service"}.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {serviceMode === "proxy" && (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-medium">
+                    Payment Mint Selection
+                  </h4>
+                  <div className="space-y-2 ml-6">
+                    <Label>Available Mints</Label>
+                    {walletSummary?.balances &&
+                    walletSummary.balances.length > 0 ? (
+                      <Select
+                        value={selectedMint}
+                        onValueChange={handleMintChange}
+                      >
+                        <SelectTrigger
+                          className="w-full"
+                          disabled={connecting || connectionStatus.connected}
+                        >
+                          <SelectValue placeholder="Choose a mint..." />
+                        </SelectTrigger>
+                        <SelectContent
+                          className="max-h-[200px] w-[var(--radix-select-trigger-width)] overflow-y-auto"
+                          position="popper"
+                          side="bottom"
+                          align="center"
+                          sideOffset={0}
+                          avoidCollisions={true}
+                          collisionPadding={20}
+                        >
+                          {walletSummary.balances
+                            .filter((balance) => balance.balance > 0) // Only show mints with balance
+                            .map((balance) => (
+                              <SelectItem
+                                key={balance.mint_url}
+                                value={balance.mint_url}
+                              >
+                                <div className="flex flex-col justify-start">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium">
+                                      {balance.mint_url.replace(
+                                        /^https?:\/\//,
+                                        "",
+                                      )}
+                                    </span>
+                                    {balance.unit
+                                      .toLowerCase()
+                                      .includes("msat") && (
+                                      <Badge tone="success" className="py-0">
+                                        Default
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <span className="text-xs text-muted-foreground self-start">
+                                    Balance: {balance.balance.toLocaleString()}{" "}
+                                    {balance.unit}
+                                  </span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        {walletSummary
+                          ? "No mints with balance available"
+                          : "Loading mints..."}
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -581,17 +804,24 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
               <div className="text-sm text-green-600">{successMessage}</div>
             )}
 
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-col gap-2">
               {connectionStatus.connected ? (
                 <>
-                  <Badge tone="default">Connected</Badge>
-                  <Button
-                    onClick={handleDisconnect}
-                    variant="outline"
-                    size="sm"
-                  >
-                    Disconnect
-                  </Button>
+                  {proxyStatus.use_proxy && (
+                    <Badge tone="default" className="ml-2">
+                      Proxy: {proxyStatus.target_service_url}
+                    </Badge>
+                  )}
+                  <div className="flex justify-between">
+                    <Badge tone="default">Connected</Badge>
+                    <Button
+                      onClick={handleDisconnect}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Disconnect
+                    </Button>
+                  </div>
                 </>
               ) : (
                 <Button onClick={handleConnect} disabled={connecting} size="sm">
@@ -616,7 +846,7 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
                 <Label htmlFor="create-service-url">Service URL</Label>
                 <Input
                   id="create-service-url"
-                  placeholder="https://api.routstr.com"
+                  placeholder="https://ecash.otrta.me"
                   value={createServiceUrl}
                   onChange={(e) => setCreateServiceUrl(e.target.value)}
                   disabled={creating}
@@ -681,7 +911,7 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
           </Card>
         )}
 
-        {connectionStatus.connected && (
+        {connectionStatus.connected && serviceMode !== "proxy" && (
           <Card>
             <CardHeader>
               <CardTitle>Add New API Key</CardTitle>
@@ -1023,54 +1253,63 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
               {selectedModelData && (
                 <div className="space-y-4 rounded-lg border p-4">
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Label className="font-semibold">Model ID:</Label>
+                    <Label className="font-semibold">Model ID:</Label>
+                    <div className="flex items-center justify-between gap-2">
                       <code className="text-sm bg-muted px-2 py-1 rounded">
                         {selectedModelData.id}
                       </code>
                       <CopyButton
+                        className="h-8"
                         copiedLabel="Copied!"
                         onCopy={() => copyToClipboard(selectedModelData.id)}
-                        label={selectedModelData.id}
+                        label={""}
                       />
                     </div>
-                    <div>
-                      <Label className="font-semibold">Description:</Label>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {selectedModelData.description}
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    {selectedModelData.description && (
+                      <div>
+                        <Label className="font-semibold">Description:</Label>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          {selectedModelData.description}
+                        </p>
+                      </div>
+                    )}
+                    {selectedModelData.context_length && (
                       <div>
                         <Label className="font-semibold">Context Length:</Label>
                         <p className="text-sm">
-                          {selectedModelData.context_length.toLocaleString()}{" "}
+                          {selectedModelData.context_length?.toLocaleString()}{" "}
                           tokens
                         </p>
                       </div>
+                    )}
+                    {selectedModelData.architecture?.modality && (
                       <div>
                         <Label className="font-semibold">Modality:</Label>
                         <p className="text-sm">
-                          {selectedModelData.architecture.modality}
+                          {selectedModelData.architecture?.modality}
                         </p>
                       </div>
-                    </div>
+                    )}
                     <div>
                       <Label className="font-semibold">Pricing (sats):</Label>
                       <div className="text-sm space-y-1 mt-1">
                         <div>
                           Prompt:{" "}
-                          {selectedModelData.sats_pricing.prompt.toFixed(8)}{" "}
-                          sats/token
+                          {(
+                            selectedModelData.sats_pricing.prompt * 1000000
+                          ).toFixed(0)}{" "}
+                          sats/1M tokens
                         </div>
                         <div>
                           Completion:{" "}
-                          {selectedModelData.sats_pricing.completion.toFixed(8)}{" "}
-                          sats/token
+                          {(
+                            selectedModelData.sats_pricing.completion * 1000000
+                          ).toFixed(0)}{" "}
+                          sats/1M tokens
                         </div>
                         <div>
                           Request:{" "}
-                          {selectedModelData.sats_pricing.request.toFixed(3)}{" "}
+                          {selectedModelData.sats_pricing.max_cost.toFixed(3)}{" "}
                           sats
                         </div>
                       </div>
