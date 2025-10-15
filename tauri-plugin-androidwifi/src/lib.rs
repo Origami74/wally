@@ -13,6 +13,7 @@ mod mobile;
 mod commands;
 mod error;
 mod models;
+#[cfg(desktop)]
 mod tollgate;
 
 use commands::*;

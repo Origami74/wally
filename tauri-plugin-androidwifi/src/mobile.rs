@@ -66,4 +66,24 @@ impl<R: Runtime> Androidwifi<R> {
             .run_mobile_plugin("markCaptivePortalDismissed", payload)
             .map_err(Into::into)
     }
+
+    pub fn detect_tollgate(&self, _payload: Empty) -> crate::Result<TollgateDetectionResponse> {
+        Ok(TollgateDetectionResponse {
+            is_tollgate: false,
+            advertisement: None,
+        })
+    }
+
+    pub async fn get_network_status(
+        &self,
+        _payload: Empty,
+    ) -> crate::Result<NetworkStatusResponse> {
+        Ok(NetworkStatusResponse {
+            gateway_ip: None,
+            mac_address: None,
+            current_wifi: None,
+            is_tollgate: false,
+            tollgate_advertisement: None,
+        })
+    }
 }

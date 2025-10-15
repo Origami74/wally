@@ -28,7 +28,7 @@ impl TollgateDetector {
                     response.status()
                 );
                 if response.status().is_success() {
-                    let text = response.text().await?;
+                    let text: String = response.text().await?;
                     println!("[Tollgate Debug] HTTP response body: {}", text);
 
                     if let Ok(advertisement_json) = serde_json::from_str::<serde_json::Value>(&text)

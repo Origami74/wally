@@ -186,7 +186,10 @@ async fn get_wallet_info(State(state): State<ConnectionServerState>) -> Response
             });
         }
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(all(
+            not(any(target_os = "android", target_os = "ios")),
+            not(target_os = "macos")
+        ))]
         {
             if let Some(window) = state.app_handle.get_webview_window("main") {
                 let _ = window.show();
@@ -288,7 +291,10 @@ async fn post_wallet_connect(
                     });
                 }
 
-                #[cfg(not(target_os = "macos"))]
+                #[cfg(all(
+                    not(any(target_os = "android", target_os = "ios")),
+                    not(target_os = "macos")
+                ))]
                 {
                     if let Some(window) = state.app_handle.get_webview_window("main") {
                         let _ = window.show();

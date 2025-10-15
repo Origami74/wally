@@ -1,14 +1,13 @@
-use serde::de::DeserializeOwned;
-use tauri::{plugin::PluginApi, AppHandle, Emitter, Runtime};
-use wifi_rs::{prelude::*, WiFi};
-// Removed wifiscanner due to macOS BSSID detection issues
 use crate::models::*;
 use crate::tollgate::TollgateDetector;
 use default_net;
 use mac_address::mac_address_by_name;
+use serde::de::DeserializeOwned;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tauri::{plugin::PluginApi, AppHandle, Emitter, Runtime};
 use tokio::time::sleep;
+use wifi_rs::{prelude::*, WiFi};
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
     app: &AppHandle<R>,
