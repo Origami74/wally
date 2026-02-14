@@ -1106,7 +1106,8 @@ mod tests {
 
     #[test]
     fn test_api_key_management() {
-        let mut service = RoutstrService::new();
+        let temp_dir = std::env::temp_dir().join(format!("routstr_test_{}", uuid::Uuid::new_v4()));
+        let mut service = RoutstrService::new(temp_dir.clone());
 
         // Test adding API keys
         service.add_api_key(
@@ -1129,5 +1130,8 @@ mod tests {
         // Test removing non-existent key
         assert!(!service.remove_api_key("non_existent"));
         assert_eq!(service.api_keys.len(), 1);
+
+        // Clean up
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

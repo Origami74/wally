@@ -513,8 +513,8 @@ impl NostrWalletConnect {
         // Decrypt request
         // For NWA: decrypt with connection's secret key and app's pubkey
         // For standard NWC: decrypt with connection's secret key and service pubkey
-        let decrypt_pubkey = if connection.app_pubkey.is_some() {
-            connection.app_pubkey.as_ref().unwrap()
+        let decrypt_pubkey = if let Some(app_pubkey) = &connection.app_pubkey {
+            app_pubkey
         } else {
             &self.keys.public_key()
         };
@@ -628,8 +628,8 @@ impl NostrWalletConnect {
         // Encrypt response
         // For NWA: encrypt with connection's secret key and app's pubkey
         // For standard NWC: encrypt with connection's secret key and service pubkey
-        let encrypt_pubkey = if connection.app_pubkey.is_some() {
-            connection.app_pubkey.as_ref().unwrap()
+        let encrypt_pubkey = if let Some(app_pubkey) = &connection.app_pubkey {
+            app_pubkey
         } else {
             &self.keys.public_key()
         };
@@ -742,8 +742,8 @@ impl NostrWalletConnect {
         };
 
         // Encrypt response
-        let encrypt_pubkey = if connection.app_pubkey.is_some() {
-            connection.app_pubkey.as_ref().unwrap()
+        let encrypt_pubkey = if let Some(app_pubkey) = &connection.app_pubkey {
+            app_pubkey
         } else {
             &self.keys.public_key()
         };
@@ -835,8 +835,8 @@ impl NostrWalletConnect {
         };
 
         // Encrypt response
-        let encrypt_pubkey = if connection.app_pubkey.is_some() {
-            connection.app_pubkey.as_ref().unwrap()
+        let encrypt_pubkey = if let Some(app_pubkey) = &connection.app_pubkey {
+            app_pubkey
         } else {
             &self.keys.public_key()
         };
