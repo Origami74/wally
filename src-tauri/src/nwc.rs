@@ -1870,7 +1870,7 @@ mod tests {
         // Step 2: Add the mint and some balance
         // ... (rest of the code seems already correct enough)
         // Wait, I need to update Step 3 too.
-        
+
         // Step 3: Create NWC service
         println!("Step 3: Creating NWC service...");
         let service_key = SecretKey::generate();

@@ -717,7 +717,7 @@ impl WalletHub {
 
             Ok(PayNut18Result {
                 amount: amount_u64,
-            token: None,
+                token: None,
             })
         } else {
             let prepared_send = wallet
@@ -910,7 +910,6 @@ impl From<Transaction> for WalletTransactionEntry {
         }
     }
 }
-
 
 /// Main Wallet service
 pub struct WalletService {
