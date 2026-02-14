@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -10,15 +9,12 @@ pub struct RoutstrStoragePaths {
 }
 
 impl RoutstrStoragePaths {
-    fn new() -> Result<Self> {
-        let project_dirs = ProjectDirs::from("com", "Tollgate", "TollgateApp")
-            .ok_or_else(|| anyhow!("Unable to determine Routstr storage directory"))?;
-
-        let base_dir = project_dirs.data_dir().join("routstr");
-        let config_file = base_dir.join("config.json");
+    fn new(base_dir: PathBuf) -> Result<Self> {
+        let routstr_dir = base_dir.join("routstr");
+        let config_file = routstr_dir.join("config.json");
 
         // Ensure directories exist
-        fs::create_dir_all(&base_dir)?;
+        fs::create_dir_all(&routstr_dir)?;
 
         Ok(Self { config_file })
     }
@@ -188,15 +184,12 @@ impl Clone for RoutstrService {
     }
 }
 
-impl Default for RoutstrService {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// RoutstrService needs base_dir now, removing Default impl or use a placeholder if appropriate.
+// But it's better to just pass the path from lib.rs.
 
 impl RoutstrService {
-    pub fn new() -> Self {
-        let storage = RoutstrStoragePaths::new().unwrap_or_else(|e| {
+    pub fn new(base_dir: PathBuf) -> Self {
+        let storage = RoutstrStoragePaths::new(base_dir).unwrap_or_else(|e| {
             log::error!("Failed to initialize Routstr storage: {}", e);
             // Fallback to defaults if storage init fails
             RoutstrStoragePaths {
@@ -952,7 +945,7 @@ pub async fn routstr_top_up_wallet_for_key(
 pub async fn routstr_refund_wallet_for_key(
     api_key: String,
     routstr_state: tauri::State<'_, RoutstrState>,
-    tollgate_state: tauri::State<'_, crate::TollGateState>,
+    wallet_state: tauri::State<'_, crate::WalletState>,
 ) -> Result<RoutstrRefundResponse, String> {
     let refund_response = {
         let service = routstr_state.lock().await;
@@ -963,8 +956,8 @@ pub async fn routstr_refund_wallet_for_key(
     };
 
     if let Some(ref token) = refund_response.token {
-        let tollgate_service = tollgate_state.lock().await;
-        match tollgate_service.receive_cashu_token(token).await {
+        let wallet_service = wallet_state.lock().await;
+        match wallet_service.receive_cashu_token(token).await {
             Ok(result) => {
                 log::info!(
                     "Successfully received refunded token into local wallet: {} sats from {}",

@@ -1,8 +1,13 @@
 {
   "$schema": "../gen/schemas/android-schema.json",
   "identifier": "anrdoid-capability",
-  "windows": ["main"],
-  "platforms": ["android"],
+  "windows": [
+    "main"
+  ],
+  "platforms": [
+    "android"
+  ],
   "permissions": [
+    "barcode-scanner:default"
   ]
 }

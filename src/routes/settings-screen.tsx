@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { ServiceStatus } from "@/lib/tollgate/types";
 import type { WalletSummary } from "@/lib/wallet/api";
 import { addMint, removeMint } from "@/lib/wallet/api";
 import { ChevronDown, ChevronRight, Trash2, Plus } from "lucide-react";
@@ -22,12 +21,10 @@ import type { FeatureState, Period, PeriodMetaFn } from "./types";
 import { periods } from "./types";
 
 type SettingsScreenProps = {
-  status: ServiceStatus | null;
+  status: null;
   features: FeatureState[];
   mintInput: string;
-  npubInput: string;
   setMintInput: (value: string) => void;
-  setNpubInput: (value: string) => void;
   savingMint: boolean;
   onSaveMint: () => void;
   onReset: () => void;
@@ -44,9 +41,7 @@ type SettingsScreenProps = {
 export function SettingsScreen({
   status: _status,
   features,
-  npubInput,
   setMintInput,
-  setNpubInput,
   savingMint,
   onSaveMint,
   onReset,
@@ -232,23 +227,12 @@ export function SettingsScreen({
           </Collapsible>
         </Card>
 
-        {/* Legacy Settings */}
+        {/* Action Buttons */}
         <Card className="mt-2 space-y-4 border border-dashed border-primary/20 bg-background/90 p-4">
-          <div className="grid gap-3">
-            <div className="grid gap-2">
-              <Label htmlFor="wallet-npub">Wallet npub</Label>
-              <Input
-                id="wallet-npub"
-                value={npubInput}
-                onChange={(event) => setNpubInput(event.target.value)}
-                placeholder="npub..."
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={onReset}>
-                Reset Settings
-              </Button>
-            </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onReset} className="flex-1">
+              Reset Wallet View
+            </Button>
           </div>
         </Card>
       </div>
@@ -258,14 +242,11 @@ export function SettingsScreen({
           Features
         </h2>
 
-        {["tollgate", "nwc", "402", "routstr"]
+        {["nwc", "routstr"]
           .map((id) => features.find((feature) => feature.id === id))
           .filter((feature): feature is FeatureState => Boolean(feature))
           .map((feature) => {
-            const isComingSoon = feature.id === "402";
-            const isToggleDisabled = isComingSoon;
-            const navigateToDebug = () => {
-              if (feature.id === "tollgate") setLocation("/debug");
+            const navigateToSettings = () => {
               if (feature.id === "nwc") setLocation("/connections");
               if (feature.id === "routstr") setLocation("/routstr");
             };
@@ -280,14 +261,12 @@ export function SettingsScreen({
                     id={`${feature.id}-checkbox`}
                     checked={feature.enabled}
                     onCheckedChange={() => {
-                      if (isToggleDisabled) return;
                       handleFeatureUpdate(feature.id, (current) => ({
                         ...current,
                         enabled: !current.enabled,
                       }));
                     }}
                     className="h-5 w-5 rounded-md border-border"
-                    disabled={isToggleDisabled}
                   />
                   <div className="space-y-1">
                     <Label
@@ -298,7 +277,6 @@ export function SettingsScreen({
                     </Label>
                     <p className="text-sm text-muted-foreground">
                       {feature.description}
-                      {isComingSoon ? " (Coming soon)" : null}
                     </p>
                   </div>
                   <Button
@@ -306,81 +284,65 @@ export function SettingsScreen({
                     size="sm"
                     className="ml-auto h-auto rounded-full px-3 py-1 text-xs"
                     onClick={() => {
-                      if (isToggleDisabled) return;
                       handleFeatureUpdate(feature.id, (current) => ({
                         ...current,
                         enabled: !current.enabled,
                       }));
                     }}
-                    disabled={isToggleDisabled}
                   >
                     {feature.enabled ? "Disable" : "Enable"}
                   </Button>
                 </div>
 
-                {!isComingSoon ? (
-                  <div className="grid gap-4">
-                    <BudgetUsage
-                      used={feature.spent ?? 0}
-                      total={Number(feature.budget) || 0}
-                      periodLabel={periodMeta(
-                        feature.period,
-                      ).label.toUpperCase()}
-                    />
-                    <BudgetControls
-                      idPrefix={feature.id}
-                      budgetValue={feature.budget}
-                      onBudgetChange={(value) =>
-                        handleFeatureUpdate(feature.id, (current) => ({
-                          ...current,
-                          budget: value,
-                        }))
-                      }
-                      periodValue={feature.period}
-                      onPeriodChange={(value) =>
-                        handleFeatureUpdate(feature.id, (current) => ({
-                          ...current,
-                          period: value as Period,
-                        }))
-                      }
-                      periodOptions={periods.map((option) => ({
-                        value: option.value,
-                        label: option.label,
-                      }))}
-                    />
-                  </div>
-                ) : null}
+                <div className="grid gap-4">
+                  <BudgetUsage
+                    used={feature.spent ?? 0}
+                    total={Number(feature.budget) || 0}
+                    periodLabel={periodMeta(
+                      feature.period,
+                    ).label.toUpperCase()}
+                  />
+                  <BudgetControls
+                    idPrefix={feature.id}
+                    budgetValue={feature.budget}
+                    onBudgetChange={(value) =>
+                      handleFeatureUpdate(feature.id, (current) => ({
+                        ...current,
+                        budget: value,
+                      }))
+                    }
+                    periodValue={feature.period}
+                    onPeriodChange={(value) =>
+                      handleFeatureUpdate(feature.id, (current) => ({
+                        ...current,
+                        period: value as Period,
+                      }))
+                    }
+                    periodOptions={periods.map((option) => ({
+                      value: option.value,
+                      label: option.label,
+                    }))}
+                  />
+                </div>
 
                 <div className="flex justify-end">
-                  {feature.id === "tollgate" ? (
+                  {feature.id === "nwc" ? (
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={navigateToDebug}
+                      onClick={navigateToSettings}
                     >
-                      Tollgate Settings
-                    </Button>
-                  ) : feature.id === "nwc" ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={navigateToDebug}
-                    >
-                      NWC Settings
+                      NWC Connections
                     </Button>
                   ) : feature.id === "routstr" ? (
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={navigateToDebug}
+                      onClick={navigateToSettings}
                     >
-                      Routstr Settings
+                      Proxy Settings
                     </Button>
-                  ) : (
-                    <Button variant="outline" size="sm" disabled>
-                      Coming Soon
-                    </Button>
-                  )}
+                  ) : null}
                 </div>
               </Card>
             );

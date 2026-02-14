@@ -1,17 +1,12 @@
 [package]
 name = "wally"
 version = "0.1.0"
-description = "A Tauri App"
+description = "Wally Wallet and Proxy"
 authors = ["you"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "tollgate_ui_lib"
+name = "wally_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -19,18 +14,19 @@ tauri-build = { version = "2.0.5", features = [] }
 
 [dependencies]
 tauri = { version = "2.2.3", features = ["devtools", "tray-icon", "image-png"] }
-tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri-plugin-androidwifi = { path = "../tauri-plugin-androidwifi" }
-tauri-plugin-log = "2.2.0"
 tauri-plugin-http = "2"
-tauri-plugin-os = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-barcode-scanner = "2"
 log = "0.4.22"
 tokio = { version = "1.0", features = ["full"] }
 tokio-tungstenite = "0.21"
 futures-util = "0.3"
-reqwest = { version = "0.11", features = ["json", "rustls-tls", "socks"], default-features = false }
+reqwest = { version = "0.12", features = ["json", "rustls-tls-webpki-roots", "socks"], default-features = false }
 axum = "0.7"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors"] }
@@ -49,13 +45,7 @@ sha2 = "0.10"
 rusqlite = { version = "0.31", features = ["bundled"] }
 cdk = { git = "https://github.com/gudnuf/cdk", branch = "nut18-no-transport", default-features = false, features = ["wallet", "mint"] }
 cdk-sqlite = { git = "https://github.com/gudnuf/cdk", branch = "nut18-no-transport", default-features = false, features = ["wallet"] }
-# Force std-enabled error types required by cdk's new thiserror usage
 bitcoin_hashes = { version = "0.13", features = ["std"], default-features = false }
 
-[target.'cfg(target_os = "android")'.dependencies]
-tauri-plugin-sharetarget = "0.1.6"
-
-[target.'cfg(target_os = "macos")'.dependencies]
-tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2" }
-cocoa = "0.26.0"
-objc = "0.2.7"
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-barcode-scanner = "2"

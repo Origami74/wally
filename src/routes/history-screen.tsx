@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { TransactionDetailDialog } from "@/components/dialog/transaction-detail-dialog";
 import { Screen } from "@/components/layout/screen";
 import { SectionHeader } from "@/components/layout/section-header";
 import { Badge } from "@/components/ui/badge";
@@ -15,13 +17,18 @@ type HistoryScreenProps = {
 };
 
 export function HistoryScreen({ transactions }: HistoryScreenProps) {
+  const [selectedTx, setSelectedTx] = useState<WalletTransactionEntry | null>(
+    null,
+  );
+
   return (
     <Screen className="min-h-screen gap-6 overflow-y-auto pb-4 pt-6">
       <SectionHeader title="History" />
 
       {transactions.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No transactions yet. Generate a receive request or pay an invoice to populate your history.
+          No transactions yet. Generate a receive request or pay an invoice to
+          populate your history.
         </p>
       ) : (
         <div className="space-y-3">
@@ -33,14 +40,18 @@ export function HistoryScreen({ transactions }: HistoryScreenProps) {
             return (
               <Card
                 key={tx.id}
-                className="space-y-3 border border-dashed border-primary/20 bg-background/90 p-4"
+                className="cursor-pointer space-y-3 border border-dashed border-primary/20 bg-background/90 p-4 transition-colors hover:bg-accent/10"
+                onClick={() => setSelectedTx(tx)}
               >
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-2">
                     <Badge tone={directionTone} className="uppercase">
                       {isIncoming ? "Incoming" : "Outgoing"}
                     </Badge>
-                    <span className="truncate text-xs text-muted-foreground" title={formatTimestamp(tx.timestamp)}>
+                    <span
+                      className="truncate text-xs text-muted-foreground"
+                      title={formatTimestamp(tx.timestamp)}
+                    >
                       {formatTimestamp(tx.timestamp)}
                     </span>
                   </div>
@@ -54,30 +65,28 @@ export function HistoryScreen({ transactions }: HistoryScreenProps) {
                     Mint: {tx.mint_url}
                   </p>
                   {tx.fee > 0 ? (
-                    <p>Fee: {tx.fee.toLocaleString()} {tx.unit}</p>
+                    <p>
+                      Fee: {tx.fee.toLocaleString()} {tx.unit}
+                    </p>
                   ) : null}
                   {tx.memo ? (
                     <p className="truncate" title={tx.memo}>
                       Memo: {tx.memo}
                     </p>
                   ) : null}
-                  {tx.quote_id ? (
-                    <p className="truncate" title={tx.quote_id}>
-                      Quote ID: {tx.quote_id}
-                    </p>
-                  ) : null}
-                  <p
-                    className="truncate text-[11px] uppercase tracking-wide text-muted-foreground/80"
-                    title={tx.id}
-                  >
-                    Tx ID: {tx.id}
-                  </p>
                 </div>
               </Card>
             );
           })}
         </div>
       )}
+
+      <TransactionDetailDialog
+        transaction={selectedTx}
+        open={!!selectedTx}
+        onOpenChange={(open) => !open && setSelectedTx(null)}
+      />
     </Screen>
   );
 }
+

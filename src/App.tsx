@@ -5,24 +5,25 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import { History, Settings2, Wallet } from "lucide-react";
 import { Route, Switch, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ServiceStatus } from "@/lib/tollgate/types";
-import { statusTone } from "@/lib/tollgate/utils";
 import { Button } from "@/components/ui/button";
 import { HomeScreen } from "@/routes/home-screen";
 import { ReceiveScreen } from "@/routes/receive-screen";
 import { SendScreen } from "@/routes/send-screen";
 import { SettingsScreen } from "@/routes/settings-screen";
-import { DebugScreen } from "@/routes/debug-screen";
 import { ConnectionsScreen } from "@/routes/connections-screen";
+import { ScannerPage } from "@/routes/scanner-screen";
 import type { FeatureState, Period, StatusBadge } from "@/routes/types";
 import { periods } from "@/routes/types";
 import { HistoryScreen } from "@/routes/history-screen";
+import { cn } from "@/lib/utils";
 import {
   fetchWalletSummary,
   fetchWalletTransactions,
+  receiveCashuToken,
   type WalletSummary,
   type WalletTransactionEntry,
 } from "@/lib/wallet/api";
+import { identifyRequest } from "@/lib/wallet/utils";
 import {
   Dialog,
   DialogContent,
@@ -52,29 +53,9 @@ type PendingConnectionRequest = {
 
 const initialFeatures: FeatureState[] = [
   {
-    id: "tollgate",
-    title: "Tollgate",
-    description: "Automatically maintain Tollgate connectivity when available.",
-    enabled: true,
-    budget: "5000",
-    period: "day",
-    spent: 0,
-    infoOpen: false,
-  },
-  {
-    id: "402",
-    title: "402",
-    description: "Handle 402 payment required requests.",
-    enabled: false,
-    budget: "1000",
-    period: "day",
-    spent: 0,
-    infoOpen: false,
-  },
-  {
     id: "routstr",
-    title: "Routstr",
-    description: "Enable Routstr proxy.",
+    title: "Proxy",
+    description: "Enable Routstr proxy for privacy and payments.",
     enabled: true,
     budget: "2000",
     period: "week",
@@ -105,7 +86,6 @@ const queryClient = new QueryClient({
 
 function AppContent() {
   const [location, setLocation] = useLocation();
-  const [status, setStatus] = useState<ServiceStatus | null>(null);
   const [walletSummary, setWalletSummary] = useState<WalletSummary | null>(
     null,
   );
@@ -113,7 +93,6 @@ function AppContent() {
     [],
   );
   const [mintInput, setMintInput] = useState("");
-  const [npubInput, setNpubInput] = useState("");
   const [savingMint, setSavingMint] = useState(false);
   const [sendRequest, setSendRequest] = useState("");
   const [features, setFeatures] = useState<FeatureState[]>(initialFeatures);
@@ -128,49 +107,21 @@ function AppContent() {
 
   const refreshStatus = useCallback(async () => {
     try {
-      const [statusResult, summaryResult, transactionsResult] =
-        await Promise.all([
-          invoke<ServiceStatus>("get_tollgate_status"),
-          fetchWalletSummary(),
-          fetchWalletTransactions(),
-        ]);
+      const [summaryResult, transactionsResult] = await Promise.all([
+        fetchWalletSummary(),
+        fetchWalletTransactions(),
+      ]);
 
-      setStatus(statusResult);
       setWalletSummary(summaryResult);
       setTransactions(transactionsResult);
 
-      if (!mintInput) {
-        if (summaryResult.default_mint) {
-          setMintInput(summaryResult.default_mint);
-        } else {
-          const fallbackMint =
-            statusResult.current_network?.advertisement?.pricing_options?.[0]
-              ?.mint_url ?? "";
-          if (fallbackMint) setMintInput(fallbackMint);
-        }
+      if (!mintInput && summaryResult.default_mint) {
+        setMintInput(summaryResult.default_mint);
       }
-
-      if (!npubInput) {
-        if (summaryResult.npub) {
-          setNpubInput(summaryResult.npub);
-        } else {
-          const fallbackNpub =
-            statusResult.current_network?.advertisement?.tollgate_pubkey ?? "";
-          if (fallbackNpub) setNpubInput(fallbackNpub);
-        }
-      }
-
-      setFeatures((prev) =>
-        prev.map((feature) =>
-          feature.id === "tollgate" && statusResult.active_sessions?.[0]
-            ? { ...feature, spent: statusResult.active_sessions[0].total_spent }
-            : feature,
-        ),
-      );
     } catch (error) {
-      console.error("Failed to refresh tollgate status", error);
+      console.error("Failed to refresh wallet status", error);
     }
-  }, [mintInput, npubInput]);
+  }, [mintInput]);
 
   useEffect(() => {
     let mounted = true;
@@ -179,38 +130,6 @@ function AppContent() {
     const initialise = async () => {
       await refreshStatus();
       try {
-        const connected = await listen("network-connected", async () => {
-          if (!mounted) return;
-          await refreshStatus();
-        });
-        listeners.push(connected);
-
-        const disconnected = await listen("network-disconnected", async () => {
-          if (!mounted) return;
-          await refreshStatus();
-        });
-        listeners.push(disconnected);
-
-        const networkStatusChanged = await listen(
-          "network-status-changed",
-          async (event: any) => {
-            if (!mounted) return;
-            console.log("App: Network status changed:", event.payload);
-            await refreshStatus();
-          },
-        );
-        listeners.push(networkStatusChanged);
-
-        const tollgateDetected = await listen(
-          "tollgate-detected",
-          async (event: any) => {
-            if (!mounted) return;
-            console.log("App: Tollgate detected:", event.payload);
-            await refreshStatus();
-          },
-        );
-        listeners.push(tollgateDetected);
-
         const nwcConnectionRequest = await listen(
           "nwc-connection-request",
           async (event: any) => {
@@ -226,7 +145,7 @@ function AppContent() {
     };
 
     initialise();
-    const interval = setInterval(refreshStatus, 5_000);
+    const interval = setInterval(refreshStatus, 10_000);
 
     return () => {
       mounted = false;
@@ -243,6 +162,7 @@ function AppContent() {
       await refreshStatus();
     } catch (error) {
       console.error("Failed to set default mint", error);
+      alert(`Failed to set default mint: ${error}`);
     } finally {
       setSavingMint(false);
     }
@@ -268,9 +188,7 @@ function AppContent() {
     }
   }, []);
 
-  const walletBalance = walletSummary?.total ?? status?.wallet_balance ?? 0;
-  const currentSession = status?.active_sessions?.[0] ?? null;
-  const currentNetwork = status?.current_network ?? null;
+  const walletBalance = walletSummary?.total ?? 0;
 
   const handlePaymentComplete = useCallback(async () => {
     setSendRequest("");
@@ -311,39 +229,39 @@ function AppContent() {
       setLocation("/");
     }
   }, [pendingConnection, setLocation]);
+
+  const handleScanResult = useCallback(
+    async (content: string) => {
+      let trimmed = content.trim();
+      const type = identifyRequest(trimmed);
+
+      if (type === "cashu-token") {
+        try {
+          const result = await receiveCashuToken(trimmed);
+          alert(`Successfully received ${result.amount} sats!`);
+          await refreshStatus();
+        } catch (err) {
+          console.error("Failed to receive token", err);
+          alert("Failed to receive token. It might be already redeemed.");
+        }
+      } else if (type === "cashu-request" || type === "lightning-invoice") {
+        if (trimmed.toLowerCase().startsWith("lightning:")) {
+          trimmed = trimmed.substring(10);
+        }
+        setSendRequest(trimmed);
+        setLocation("/send");
+      } else {
+        alert("Unknown QR code format.");
+      }
+    },
+    [refreshStatus, setLocation],
+  );
+
   const statusBadges: StatusBadge[] = useMemo(() => {
     const badges: StatusBadge[] = [];
 
-    const tollgateFeatureEnabled = features.find(
-      (feature) => feature.id === "tollgate",
-    )?.enabled;
-    if (tollgateFeatureEnabled) {
-      const tollgateState = currentSession
-        ? String(currentSession.status)
-        : currentNetwork?.is_tollgate
-          ? "Available"
-          : "Idle";
-
-      badges.push({
-        id: "tollgate",
-        label: "Tollgate",
-        value: tollgateState,
-        tone: statusTone(tollgateState),
-        onClick: () => setLocation("/debug"),
-      });
-    }
-
     const featureEnabled = (featureId: FeatureState["id"]) =>
       features.find((feature) => feature.id === featureId)?.enabled ?? false;
-
-    if (featureEnabled("402")) {
-      badges.push({
-        id: "402",
-        label: "402",
-        value: "Enabled",
-        tone: "info",
-      });
-    }
 
     const nwcEnabled = featureEnabled("nwc");
     badges.push({
@@ -357,7 +275,7 @@ function AppContent() {
     if (featureEnabled("routstr")) {
       badges.push({
         id: "routstr",
-        label: "Routstr",
+        label: "Proxy",
         value: "Enabled",
         tone: "info",
         onClick: () => setLocation("/routstr"),
@@ -365,29 +283,47 @@ function AppContent() {
     }
 
     return badges;
-  }, [currentSession, currentNetwork, features, setLocation]);
+  }, [features, setLocation]);
 
   const goHome = () => setLocation("/");
   const goReceive = () => setLocation("/receive");
   const goSend = () => setLocation("/send");
   const goSettings = () => setLocation("/settings");
   const goHistory = () => setLocation("/history");
+  const goScanner = () => setLocation("/scanner");
 
   const sharedMainClasses =
-    "relative mx-auto flex w-full max-w-md flex-col overflow-hidden bg-background";
+    "relative mx-auto flex w-full max-w-md flex-col overflow-hidden";
 
-  const mainClasses =
+  const mainClasses = cn(
+    sharedMainClasses,
     location === "/settings" ||
-    location === "/history" ||
-    location === "/debug" ||
-    location === "/connections"
-      ? `${sharedMainClasses} min-h-screen`
-      : `${sharedMainClasses} h-screen`;
+      location === "/history" ||
+      location === "/connections"
+      ? "min-h-screen"
+      : "h-[100dvh]",
+  );
+
+  // Apply transparent background for scanner route
+  useEffect(() => {
+    if (location === "/scanner") {
+      document.body.style.backgroundColor = "transparent";
+      document.documentElement.style.backgroundColor = "transparent";
+    } else {
+      document.body.style.backgroundColor = "";
+      document.documentElement.style.backgroundColor = "";
+    }
+
+    return () => {
+      document.body.style.backgroundColor = "";
+      document.documentElement.style.backgroundColor = "";
+    };
+  }, [location]);
 
   const isHome = location === "/";
 
   const navButtons =
-    location === "/receive"
+    location === "/receive" || location === "/send"
       ? []
       : isHome
         ? [
@@ -415,12 +351,18 @@ function AppContent() {
 
   return (
     <div
-      className="bg-background text-foreground"
+      className={cn(
+        "text-foreground",
+        location === "/scanner" ? "bg-transparent" : "bg-background",
+      )}
       style={{ overscrollBehavior: "none" }}
     >
       <main className={mainClasses}>
         {navButtons.length ? (
-          <div className="absolute right-4 top-4 z-20 flex flex-col items-end gap-2">
+          <div
+            className="absolute right-4 z-20 flex flex-col items-end gap-2"
+            style={{ top: "calc(env(safe-area-inset-top) + 1rem)" }}
+          >
             {navButtons.map((button) => (
               <Button
                 key={button.id}
@@ -442,10 +384,9 @@ function AppContent() {
               statusBadges={statusBadges}
               walletBalance={walletBalance}
               walletSummary={walletSummary}
-              currentSession={currentSession}
-              currentNetwork={currentNetwork}
               onReceive={goReceive}
               onSend={goSend}
+              onScan={goScanner}
             />
           </Route>
 
@@ -454,6 +395,11 @@ function AppContent() {
               onBack={goHome}
               copyToClipboard={copyToClipboard}
               defaultMint={walletSummary?.default_mint ?? ""}
+              onNavigateToSend={(req) => {
+                setSendRequest(req);
+                setLocation("/send");
+              }}
+              onScan={goScanner}
             />
           </Route>
 
@@ -463,35 +409,22 @@ function AppContent() {
               request={sendRequest}
               onChangeRequest={setSendRequest}
               onPaymentComplete={handlePaymentComplete}
+              onScan={goScanner}
+              walletSummary={walletSummary}
             />
           </Route>
 
           <Route path="/settings">
             <SettingsScreen
-              status={status}
+              status={null}
               features={features}
               mintInput={mintInput}
-              npubInput={npubInput}
               setMintInput={setMintInput}
-              setNpubInput={setNpubInput}
               savingMint={savingMint}
               onSaveMint={saveMintUrl}
               onReset={() => {
                 if (walletSummary?.default_mint) {
                   setMintInput(walletSummary.default_mint);
-                } else {
-                  setMintInput(
-                    status?.current_network?.advertisement?.pricing_options?.[0]
-                      ?.mint_url ?? "",
-                  );
-                }
-                if (walletSummary?.npub) {
-                  setNpubInput(walletSummary.npub);
-                } else {
-                  setNpubInput(
-                    status?.current_network?.advertisement?.tollgate_pubkey ??
-                      "",
-                  );
                 }
               }}
               handleFeatureUpdate={handleFeatureUpdate}
@@ -506,16 +439,24 @@ function AppContent() {
             <HistoryScreen transactions={transactions} />
           </Route>
 
-          <Route path="/debug">
-            <DebugScreen status={status} copyToClipboard={copyToClipboard} />
-          </Route>
-
           <Route path="/connections">
             <ConnectionsScreen copyToClipboard={copyToClipboard} />
           </Route>
 
           <Route path="/routstr">
             <RoutstrScreen copyToClipboard={copyToClipboard} />
+          </Route>
+
+          <Route path="/scanner">
+            <ScannerPage
+              onResult={(content) => {
+                handleScanResult(content);
+              }}
+              onCancel={() => {
+                // If we came from Home, go Home, else try to go back
+                setLocation("/");
+              }}
+            />
           </Route>
         </Switch>
       </main>

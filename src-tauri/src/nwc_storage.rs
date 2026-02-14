@@ -3,7 +3,6 @@
 //! Persists NWC connections to a SQLite database so they survive app restarts.
 
 use crate::nwc::{BudgetRenewalPeriod, ConnectionBudget, WalletConnection};
-use directories::ProjectDirs;
 use nostr_sdk::{Keys, PublicKey, SecretKey, Timestamp};
 use rusqlite::{params, Connection, Row};
 use std::fs;
@@ -17,14 +16,7 @@ pub struct NwcConnectionStorage {
 
 impl NwcConnectionStorage {
     /// Create a new storage manager
-    pub fn new() -> Result<Self, StorageError> {
-        let project_dirs =
-            ProjectDirs::from("com", "Tollgate", "TollgateApp").ok_or_else(|| {
-                StorageError::Path("Unable to determine storage directory".to_string())
-            })?;
-
-        let base_dir = project_dirs.data_dir().to_path_buf();
-
+    pub fn new(base_dir: PathBuf) -> Result<Self, StorageError> {
         // Create directory if it doesn't exist
         if let Some(parent) = base_dir.parent() {
             fs::create_dir_all(parent)?;
@@ -256,7 +248,4 @@ pub enum StorageError {
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-
-    #[error("Path error: {0}")]
-    Path(String),
 }

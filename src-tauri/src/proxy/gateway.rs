@@ -322,8 +322,8 @@ async fn create_payment_token(
         selected_mint_url
     );
 
-    let tollgate_state = app_handle.state::<crate::TollGateState>();
-    let service = tollgate_state.lock().await;
+    let wallet_state = app_handle.state::<crate::WalletState>();
+    let service = wallet_state.lock().await;
 
     match service
         .create_external_token(amount_msats, selected_mint_url)
@@ -349,8 +349,8 @@ async fn redeem_change_token(
 ) -> Result<(), String> {
     log::info!("Redeeming change token: {}", change_token);
 
-    let tollgate_state = app_handle.state::<crate::TollGateState>();
-    let service = tollgate_state.lock().await;
+    let wallet_state = app_handle.state::<crate::WalletState>();
+    let service = wallet_state.lock().await;
 
     match service.receive_cashu_token(change_token).await {
         Ok(result) => {

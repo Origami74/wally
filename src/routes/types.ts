@@ -1,7 +1,6 @@
 import type { ComponentProps } from "react";
 
 import type { Badge } from "@/components/ui/badge";
-import type { ServiceStatus } from "@/lib/tollgate/types";
 
 export const periods = [
   { value: "day", label: "day", human: "today" },
@@ -20,7 +19,7 @@ export type StatusBadge = {
 };
 
 export type FeatureState = {
-  id: "tollgate" | "402" | "routstr" | "nwc";
+  id: "routstr" | "nwc";
   title: string;
   description: string;
   enabled: boolean;
@@ -35,6 +34,6 @@ export type PeriodMetaFn = (period: Period) => (typeof periods)[number];
 export type CopyHandler = () => Promise<void> | void;
 
 export type SettingsController = {
-  status: ServiceStatus | null;
+  status: null;
   features: FeatureState[];
 };

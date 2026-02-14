@@ -41,3 +41,14 @@ export function formatBalanceDisplay(totalMsat: number): {
     };
   }
 }
+
+export type PaymentRequestType = "cashu-token" | "cashu-request" | "lightning-invoice" | "unknown";
+
+export function identifyRequest(input: string): PaymentRequestType {
+  const trimmed = input.trim().toLowerCase();
+  if (trimmed.startsWith("cashua")) return "cashu-token";
+  if (trimmed.startsWith("creqa")) return "cashu-request";
+  if (trimmed.startsWith("ln") || trimmed.includes("lightning:ln"))
+    return "lightning-invoice";
+  return "unknown";
+}

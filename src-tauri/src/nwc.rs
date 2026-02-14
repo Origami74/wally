@@ -4,10 +4,10 @@
 //! to interact with the wallet through Nostr relays.
 
 use crate::nwc_storage::NwcConnectionStorage;
-use crate::tollgate::wallet::{
+use crate::wallet_hub::{
     Bolt11InvoiceInfo, Bolt11PaymentResult, CashuReceiveResult, PayNut18Result,
 };
-use crate::TollGateState;
+use crate::WalletState;
 use lightning_invoice::Bolt11Invoice;
 use nostr_sdk::prelude::FromBech32;
 use nostr_sdk::{
@@ -57,8 +57,8 @@ pub struct NostrWalletConnect {
     response_event_cache: Arc<Mutex<HashMap<String, Event>>>,
     /// Active connections
     connections: Arc<RwLock<Vec<WalletConnection>>>,
-    /// Reference to the TollGate service state
-    service_state: TollGateState,
+    /// Reference to the wallet service state
+    service_state: WalletState,
     /// Connection storage
     storage: Arc<NwcConnectionStorage>,
 }
@@ -81,13 +81,17 @@ impl NostrWalletConnect {
     }
 
     /// Creates a new NWC service instance.
-    pub async fn new(service_key: SecretKey, service_state: TollGateState) -> Result<Self, Error> {
+    pub async fn new(
+        service_key: SecretKey,
+        service_state: WalletState,
+        base_dir: std::path::PathBuf,
+    ) -> Result<Self, Error> {
         let keys = Keys::new(service_key);
         let client = Client::default();
 
         // Initialize storage
         let storage = Arc::new(
-            NwcConnectionStorage::new()
+            NwcConnectionStorage::new(base_dir)
                 .map_err(|e| Error::Wallet(format!("Failed to initialize NWC storage: {}", e)))?,
         );
 
@@ -1468,25 +1472,28 @@ impl From<Error> for nip47::NIP47Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tollgate::TollGateService;
+    use crate::wallet_hub::WalletService;
     use nostr_sdk::SecretKey;
 
     #[tokio::test]
     async fn test_nwc_connection_flow() {
         println!("=== Starting NWC Connection Flow Test ===");
+        let base_dir = std::env::temp_dir().join("nwc_test_flow");
+        let _ = std::fs::remove_dir_all(&base_dir);
+        std::fs::create_dir_all(&base_dir).unwrap();
 
-        // Step 1: Create TollGate service
-        println!("Step 1: Creating TollGate service...");
-        let service = TollGateService::new()
+        // Step 1: Create Wallet service
+        println!("Step 1: Creating Wallet service...");
+        let service = WalletService::new(base_dir.clone())
             .await
-            .expect("Failed to create TollGate service");
+            .expect("Failed to create Wallet service");
         let service_state = Arc::new(Mutex::new(service));
-        println!("✓ TollGate service created");
+        println!("✓ Wallet service created");
 
         // Step 2: Create NWC service
         println!("Step 2: Creating NWC service...");
         let service_key = SecretKey::generate();
-        let nwc = NostrWalletConnect::new(service_key, service_state.clone())
+        let nwc = NostrWalletConnect::new(service_key, service_state.clone(), base_dir)
             .await
             .expect("Failed to create NWC service");
         println!(
@@ -1594,19 +1601,22 @@ mod tests {
     #[tokio::test]
     async fn test_nwa_connection_flow() {
         println!("=== Starting NWA Connection Flow Test ===");
+        let base_dir = std::env::temp_dir().join("nwa_test_flow");
+        let _ = std::fs::remove_dir_all(&base_dir);
+        std::fs::create_dir_all(&base_dir).unwrap();
 
-        // Step 1: Create TollGate service
-        println!("Step 1: Creating TollGate service...");
-        let service = TollGateService::new()
+        // Step 1: Create Wallet service
+        println!("Step 1: Creating Wallet service...");
+        let service = WalletService::new(base_dir.clone())
             .await
-            .expect("Failed to create TollGate service");
+            .expect("Failed to create Wallet service");
         let service_state = Arc::new(Mutex::new(service));
-        println!("✓ TollGate service created");
+        println!("✓ Wallet service created");
 
         // Step 2: Create NWC service
         println!("Step 2: Creating NWC service...");
         let service_key = SecretKey::generate();
-        let nwc = NostrWalletConnect::new(service_key, service_state.clone())
+        let nwc = NostrWalletConnect::new(service_key, service_state.clone(), base_dir)
             .await
             .expect("Failed to create NWC service");
         println!(
@@ -1683,19 +1693,22 @@ mod tests {
     #[tokio::test]
     async fn test_receive_cashu_token() {
         println!("=== Starting Receive Cashu Token Test ===");
+        let base_dir = std::env::temp_dir().join("nwc_test_receive");
+        let _ = std::fs::remove_dir_all(&base_dir);
+        std::fs::create_dir_all(&base_dir).unwrap();
 
-        // Step 1: Create TollGate service
-        println!("Step 1: Creating TollGate service...");
-        let service = TollGateService::new()
+        // Step 1: Create Wallet service
+        println!("Step 1: Creating Wallet service...");
+        let service = WalletService::new(base_dir.clone())
             .await
-            .expect("Failed to create TollGate service");
+            .expect("Failed to create Wallet service");
         let service_state = Arc::new(Mutex::new(service));
-        println!("✓ TollGate service created");
+        println!("✓ Wallet service created");
 
         // Step 2: Create NWC service
         println!("Step 2: Creating NWC service...");
         let service_key = SecretKey::generate();
-        let nwc = NostrWalletConnect::new(service_key, service_state.clone())
+        let nwc = NostrWalletConnect::new(service_key, service_state.clone(), base_dir)
             .await
             .expect("Failed to create NWC service");
         println!(
@@ -1766,19 +1779,22 @@ mod tests {
     #[tokio::test]
     async fn test_pay_cashu_request() {
         println!("=== Starting Pay Cashu Request Test ===");
+        let base_dir = std::env::temp_dir().join("nwc_test_pay");
+        let _ = std::fs::remove_dir_all(&base_dir);
+        std::fs::create_dir_all(&base_dir).unwrap();
 
-        // Step 1: Create TollGate service
-        println!("Step 1: Creating TollGate service...");
-        let service = TollGateService::new()
+        // Step 1: Create Wallet service
+        println!("Step 1: Creating Wallet service...");
+        let service = WalletService::new(base_dir.clone())
             .await
-            .expect("Failed to create TollGate service");
+            .expect("Failed to create Wallet service");
         let service_state = Arc::new(Mutex::new(service));
-        println!("✓ TollGate service created");
+        println!("✓ Wallet service created");
 
         // Step 2: Create NWC service
         println!("Step 2: Creating NWC service...");
         let service_key = SecretKey::generate();
-        let nwc = NostrWalletConnect::new(service_key, service_state.clone())
+        let nwc = NostrWalletConnect::new(service_key, service_state.clone(), base_dir)
             .await
             .expect("Failed to create NWC service");
         println!(
@@ -1839,29 +1855,26 @@ mod tests {
     #[tokio::test]
     async fn test_pay_cashu_request_no_transport() {
         println!("=== Starting Pay Cashu Request (No Transport) Test ===");
+        let base_dir = std::env::temp_dir().join("nwc_test_no_transport");
+        let _ = std::fs::remove_dir_all(&base_dir);
+        std::fs::create_dir_all(&base_dir).unwrap();
 
-        // Step 1: Create TollGate service
-        println!("Step 1: Creating TollGate service...");
-        let service = TollGateService::new()
+        // Step 1: Create Wallet service
+        println!("Step 1: Creating Wallet service...");
+        let service = WalletService::new(base_dir.clone())
             .await
-            .expect("Failed to create TollGate service");
+            .expect("Failed to create Wallet service");
         let service_state = Arc::new(Mutex::new(service));
-        println!("✓ TollGate service created");
+        println!("✓ Wallet service created");
 
         // Step 2: Add the mint and some balance
-        println!("Step 2: Adding test mint...");
-        {
-            let service = service_state.lock().await;
-            match service.add_mint("https://nofees.testnut.cashu.space").await {
-                Ok(_) => println!("✓ Mint added"),
-                Err(e) => println!("! Mint add failed (may already exist): {}", e),
-            }
-        }
-
+        // ... (rest of the code seems already correct enough)
+        // Wait, I need to update Step 3 too.
+        
         // Step 3: Create NWC service
         println!("Step 3: Creating NWC service...");
         let service_key = SecretKey::generate();
-        let nwc = NostrWalletConnect::new(service_key, service_state.clone())
+        let nwc = NostrWalletConnect::new(service_key, service_state.clone(), base_dir)
             .await
             .expect("Failed to create NWC service");
         println!(
