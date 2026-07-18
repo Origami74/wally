@@ -1,14 +1,14 @@
 use crate::{
-    tollgate::wallet::{
+    wallet_hub::{
         Bolt11InvoiceInfo, Bolt11PaymentResult, Nut18PaymentRequestInfo, WalletSummary,
         WalletTransactionEntry,
     },
-    TollGateState,
+    WalletState,
 };
 use tauri::State;
 
 #[tauri::command]
-pub async fn add_mint(mint_url: String, state: State<'_, TollGateState>) -> Result<(), String> {
+pub async fn add_mint(mint_url: String, state: State<'_, WalletState>) -> Result<(), String> {
     let service = state.lock().await;
     service.add_mint(&mint_url).await.map_err(|e| e.to_string())
 }
@@ -16,7 +16,7 @@ pub async fn add_mint(mint_url: String, state: State<'_, TollGateState>) -> Resu
 #[tauri::command]
 pub async fn set_default_mint(
     mint_url: String,
-    state: State<'_, TollGateState>,
+    state: State<'_, WalletState>,
 ) -> Result<(), String> {
     let service = state.lock().await;
     service
@@ -26,7 +26,7 @@ pub async fn set_default_mint(
 }
 
 #[tauri::command]
-pub async fn remove_mint(mint_url: String, state: State<'_, TollGateState>) -> Result<(), String> {
+pub async fn remove_mint(mint_url: String, state: State<'_, WalletState>) -> Result<(), String> {
     let service = state.lock().await;
     service
         .remove_mint(&mint_url)
@@ -35,7 +35,7 @@ pub async fn remove_mint(mint_url: String, state: State<'_, TollGateState>) -> R
 }
 
 #[tauri::command]
-pub async fn get_wallet_balance(state: State<'_, TollGateState>) -> Result<u64, String> {
+pub async fn get_wallet_balance(state: State<'_, WalletState>) -> Result<u64, String> {
     let service = state.lock().await;
     service
         .get_wallet_balance()
@@ -47,7 +47,7 @@ pub async fn get_wallet_balance(state: State<'_, TollGateState>) -> Result<u64, 
 pub async fn create_nut18_payment_request(
     amount: Option<u64>,
     description: Option<String>,
-    state: State<'_, TollGateState>,
+    state: State<'_, WalletState>,
 ) -> Result<Nut18PaymentRequestInfo, String> {
     let service = state.lock().await;
     service
@@ -60,7 +60,7 @@ pub async fn create_nut18_payment_request(
 pub async fn create_bolt11_invoice(
     amount: u64,
     description: Option<String>,
-    state: State<'_, TollGateState>,
+    state: State<'_, WalletState>,
 ) -> Result<Bolt11InvoiceInfo, String> {
     let service = state.lock().await;
     service
@@ -73,7 +73,7 @@ pub async fn create_bolt11_invoice(
 pub async fn pay_nut18_payment_request(
     request: String,
     custom_amount: Option<u64>,
-    state: State<'_, TollGateState>,
+    state: State<'_, WalletState>,
 ) -> Result<(), String> {
     let service = state.lock().await;
     service
@@ -85,7 +85,7 @@ pub async fn pay_nut18_payment_request(
 #[tauri::command]
 pub async fn pay_bolt11_invoice(
     invoice: String,
-    state: State<'_, TollGateState>,
+    state: State<'_, WalletState>,
 ) -> Result<Bolt11PaymentResult, String> {
     let service = state.lock().await;
     service
@@ -95,7 +95,7 @@ pub async fn pay_bolt11_invoice(
 }
 
 #[tauri::command]
-pub async fn get_wallet_summary(state: State<'_, TollGateState>) -> Result<WalletSummary, String> {
+pub async fn get_wallet_summary(state: State<'_, WalletState>) -> Result<WalletSummary, String> {
     let service = state.lock().await;
     service
         .get_wallet_summary()
@@ -105,7 +105,7 @@ pub async fn get_wallet_summary(state: State<'_, TollGateState>) -> Result<Walle
 
 #[tauri::command]
 pub async fn list_wallet_transactions(
-    state: State<'_, TollGateState>,
+    state: State<'_, WalletState>,
 ) -> Result<Vec<WalletTransactionEntry>, String> {
     let service = state.lock().await;
     service
@@ -117,15 +117,22 @@ pub async fn list_wallet_transactions(
 #[tauri::command]
 pub async fn receive_cashu_token(
     token: String,
-    state: State<'_, TollGateState>,
+    state: State<'_, WalletState>,
 ) -> Result<serde_json::Value, String> {
+    log::info!(
+        "[wallet] receive_cashu_token command invoked: encoded_length={}",
+        token.len()
+    );
     let service = state.lock().await;
     match service.receive_cashu_token(&token).await {
         Ok(result) => Ok(serde_json::json!({
             "amount": result.amount,
             "mint_url": result.mint_url,
         })),
-        Err(e) => Err(e.to_string()),
+        Err(error) => {
+            log::error!("[wallet] receive_cashu_token command failed: {}", error);
+            Err(error.to_string())
+        }
     }
 }
 
@@ -133,7 +140,7 @@ pub async fn receive_cashu_token(
 pub async fn create_external_token(
     amount_sats: u64,
     mint_url: Option<String>,
-    state: State<'_, TollGateState>,
+    state: State<'_, WalletState>,
 ) -> Result<String, String> {
     let service = state.lock().await;
     service

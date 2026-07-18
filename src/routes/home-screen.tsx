@@ -1,9 +1,7 @@
+import { ScanQrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Screen } from "@/components/layout/screen";
-import { formatBytes, formatDuration } from "@/lib/tollgate/utils";
 import { calculateTotalMsat, formatBalanceDisplay } from "@/lib/wallet/utils";
-import type { NetworkInfo, SessionInfo } from "@/lib/tollgate/types";
 import type { WalletSummary } from "@/lib/wallet/api";
 import type { StatusBadge } from "./types";
 import { cn } from "@/lib/utils";
@@ -12,24 +10,25 @@ type HomeScreenProps = {
   statusBadges: StatusBadge[];
   walletBalance: number;
   walletSummary?: WalletSummary | null;
-  currentSession: SessionInfo | null;
-  currentNetwork: NetworkInfo | null;
   onReceive: () => void;
   onSend: () => void;
+  onScan: () => void;
 };
 
 export function HomeScreen({
   statusBadges,
   walletBalance,
   walletSummary,
-  currentSession,
-  currentNetwork,
   onReceive,
   onSend,
+  onScan,
 }: HomeScreenProps) {
   return (
     <Screen className="relative h-full gap-6">
-      <div className="absolute left-4 top-4 flex flex-col gap-2">
+      <div
+        className="absolute left-4 flex flex-col gap-2"
+        style={{ top: "calc(env(safe-area-inset-top) + 1rem)" }}
+      >
         {statusBadges.map((badge) => {
           const clickable = Boolean(badge.onClick);
           const isIdle = badge.value.toLowerCase() === "idle";
@@ -58,7 +57,6 @@ export function HomeScreen({
         })}
       </div>
 
-      {/* Spacer about the height of the buttons */}
       <div className="h-12"></div>
 
       <div className="flex-1 flex flex-col justify-center items-center gap-3">
@@ -89,65 +87,6 @@ export function HomeScreen({
           );
         })()}
       </div>
-
-      {currentSession ? (
-        <Card className="space-y-4 border border-dashed border-primary/30 bg-background/80 p-4">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span className="uppercase tracking-wide">Session usage</span>
-            <span className="font-semibold text-primary">
-              {Math.round(currentSession.usage_percentage)}%
-            </span>
-          </div>
-          <div className="h-2 rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-primary"
-              style={{
-                width: `${Math.min(100, Math.round(currentSession.usage_percentage))}%`,
-              }}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3 text-xs text-muted-foreground">
-            <div>
-              <span className="block text-[10px] uppercase tracking-wide">
-                Time left
-              </span>
-              <span className="text-sm font-medium text-foreground">
-                {formatDuration(currentSession.remaining_time_seconds)}
-              </span>
-            </div>
-            <div className="text-right">
-              <span className="block text-[10px] uppercase tracking-wide">
-                Data remaining
-              </span>
-              <span className="text-sm font-medium text-foreground">
-                {formatBytes(currentSession.remaining_data_bytes)}
-              </span>
-            </div>
-          </div>
-        </Card>
-      ) : null}
-
-      {currentNetwork ? (
-        <Card className="space-y-3 border border-dashed border-primary/20 bg-background/90 p-4 text-xs text-muted-foreground">
-          <div className="flex items-center justify-between text-foreground">
-            <span className="uppercase tracking-wide">Network</span>
-            <span
-              className={cn(
-                "inline-flex items-center rounded-full px-2 py-1 text-xs font-medium",
-                currentNetwork.is_tollgate
-                  ? "bg-green-100 text-green-800"
-                  : "bg-gray-100 text-gray-800",
-              )}
-            >
-              {currentNetwork.is_tollgate ? "Tollgate" : "Standard"}
-            </span>
-          </div>
-          <div className="grid gap-1">
-            <span>Gateway: {currentNetwork.gateway_ip}</span>
-            <span>MAC: {currentNetwork.mac_address}</span>
-          </div>
-        </Card>
-      ) : null}
 
       <div className="mt-auto flex gap-3 pb-2">
         <Button

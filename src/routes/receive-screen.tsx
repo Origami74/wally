@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "react-qr-code";
-import { Zap, FileText, Nut } from "lucide-react";
+import { Zap, FileText, Nut, ScanQrCode } from "lucide-react";
 
 import { Screen } from "@/components/layout/screen";
 import { CopyButton } from "@/components/copy-button";
@@ -28,9 +28,17 @@ type ReceiveScreenProps = {
   onBack: () => void;
   copyToClipboard: (value: string) => Promise<void> | void;
   defaultMint?: string;
+  onNavigateToSend?: (request: string) => void;
+  onScan: () => void;
 };
 
-export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveScreenProps) {
+export function ReceiveScreen({
+  onBack,
+  copyToClipboard,
+  defaultMint,
+  onNavigateToSend,
+  onScan,
+}: ReceiveScreenProps) {
   const [mode, setMode] = useState<ReceiveMode>("cashu");
   const [amount, setAmount] = useState("");
   const [cashuTokenInput, setCashuTokenInput] = useState("");
@@ -84,6 +92,11 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
 
       try {
         if (mode === "cashu") {
+          if (!defaultMint && (!cashuRequest || !cashuRequest.mints.length)) {
+             setError("No mints configured. Please add a mint in settings.");
+             setIsGenerating(false);
+             return;
+          }
           const numericAmount = trimmedAmount ? Number(trimmedAmount) : null;
           const request = await createNut18PaymentRequest(numericAmount, null);
           if (!cancelled) {
@@ -99,10 +112,11 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
       } catch (err) {
         if (!cancelled) {
           console.error("Failed to create receive request", err);
+          const errorMessage = err instanceof Error ? err.message : String(err);
           setError(
             mode === "cashu"
-              ? "Unable to create a Cashu payment request."
-              : "Unable to create a Lightning invoice."
+              ? `Unable to create a Cashu payment request: ${errorMessage}`
+              : `Unable to create a Lightning invoice: ${errorMessage}`
           );
         }
       } finally {
@@ -185,7 +199,8 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
       setCashuTokenInput("");
     } catch (err) {
       console.error("Failed to receive token", err);
-      setError("Failed to receive token. Check the token and try again.");
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(`Failed to receive token: ${errorMessage}`);
     } finally {
       setIsReceiving(false);
     }
@@ -198,6 +213,15 @@ export function ReceiveScreen({ onBack, copyToClipboard, defaultMint }: ReceiveS
           Receive
         </h2>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-10 w-10 rounded-full border-dashed"
+            onClick={onScan}
+            aria-label="Scan QR Code"
+          >
+            <ScanQrCode className="h-5 w-5" />
+          </Button>
           {MODES.map(({ id, label, icon: Icon }) => (
             <Button
               key={id}

@@ -5,20 +5,12 @@
   "windows": [
     "main"
   ],
-  "allowlist": {
-    "shell": {
-      "execute": true,
-      "all": true,
-      "sidecar": true,
-      "open": true,
-      "args": true
-    }
-  },
   "permissions": [
     "core:default",
-    "opener:default",
+    "deep-link:default",
+    "notification:default",
+    "barcode-scanner:default",
     "http:default",
-    "androidwifi:default",
     {
       "identifier": "http:default",
       "allow": [

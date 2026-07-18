@@ -3,27 +3,13 @@ name: "Build"
 on:
   workflow_call:
     secrets:
-      #      APPLE_ID:
-      #        required: true
-      #      APPLE_PASSWORD:
-      #        required: true
-      #      APPLE_TEAM_ID:
-      #        required: true
-      #      APPLE_CERTIFICATE:
-      #        required: true
-      #      APPLE_CERTIFICATE_PASSWORD:
-      #        required: true
-      #      KEYCHAIN_PASSWORD:
-      #        required: true
-      #      GPG_PRIVATE_KEY:
-      #        required: true
-      #      GPG_PASSPHRASE:
-      #        required: true
+      ANDROID_KEYSTORE_BASE64:
+        required: true
+      ANDROID_KEYSTORE_PASSWORD:
+        required: true
       ANDROID_KEY_ALIAS:
         required: true
-      ANDROID_KEY_PASSWORD:
-        required: true
-      ANDROID_KEY_BASE64:
+      ANDROID_KEY_PASS:
         required: true
   pull_request:
   push:
@@ -78,183 +64,103 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
-  build-tauri:
+  build-android:
     environment: build
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Single Android build that will output all ABIs
-          - name: "Android"
-            platform: "ubuntu-22.04"
-            android: true
-
-    runs-on: ${{ matrix.platform }}
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.0
+      - name: Install dependencies (ubuntu only)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev protobuf-compiler libssl-dev pkg-config build-essential
 
-      - name: Add Rust cache
-        uses: Swatinem/rust-cache@v2
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
-          # Specify the working directory for Rust cache
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        id: setup-android
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27
+          link-to-sdk: true
+
+      - name: Set NDK Env
+        run: |
+          echo "NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
+          echo "${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin" >> $GITHUB_PATH
+
+      - name: Decode Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          mkdir -p src-tauri/gen/android/app
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > src-tauri/gen/android/app/release.keystore
+          ls -la src-tauri/gen/android/app/release.keystore
+          file src-tauri/gen/android/app/release.keystore
+          echo "// Cleared by CI to be re-generated" > src-tauri/gen/android/tauri.settings.gradle
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
           workspaces: "src-tauri -> target"
-          # Cache cargo registry
           cache-directories: |
             ~/.cargo/registry
             ~/.cargo/git
-          # Add a suffix to distinguish between different platforms and architectures
-          key: ${{ matrix.platform }}${{ matrix.arch && '-' }}${{ matrix.arch }}${{ matrix.android && '-android' }}
+          key: ubuntu-latest-android
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          targets: >-
-            ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-            ${{ matrix.android && 'aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android' || '' }}
+          version: 9.15.0
 
-      - name: Install system dependencies
-        if: matrix.android
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'pnpm'
 
       - name: Install frontend dependencies
         run: pnpm install
 
-      - name: Cache Android NDK
-        if: matrix.android
-        uses: actions/cache@v4
-        with:
-          path: /usr/local/lib/android/sdk/ndk/25.2.9519653
-          key: ${{ runner.os }}-ndk-25.2.9519653
+      - name: Build frontend
+        run: pnpm run build
 
-      - name: Set up JDK 17
-        if: matrix.android
-        uses: actions/setup-java@v4
-        with:
-          distribution: "temurin"
-          java-version: "17"
-
-      - name: Setup Android SDK
-        if: matrix.android
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android NDK
-        if: matrix.android
-        run: |
-          sdkmanager --install "ndk;25.2.9519653"
-          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653" >> $GITHUB_ENV
-          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653" >> $GITHUB_ENV
-
-      - name: Setup Android signing
-        if: matrix.android
+      - name: Build the app
+        uses: tauri-apps/tauri-action@ca517bcbe58fd7012408d7ddfaeff950428bdeb1
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
+          CC_aarch64_linux_android: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
+          TAURI_ANDROID_KEYSTORE: ${{ github.workspace }}/src-tauri/gen/android/app/release.keystore
+          TAURI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          TAURI_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          TAURI_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASS }}
+          ANDROID_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
-        run: |
-          cd src-tauri/gen/android
-          echo "keyAlias=$ANDROID_KEY_ALIAS" > keystore.properties
-          echo "password=$ANDROID_KEY_PASSWORD" >> keystore.properties
-          base64 -d <<< "$ANDROID_KEY_BASE64" > $RUNNER_TEMP/keystore.jks
-          echo "storeFile=$RUNNER_TEMP/keystore.jks" >> keystore.properties
-
-      - name: Build Android universal binary
-        if: matrix.android
-        run: |
-          pnpm tauri android build
-
-      - name: Build Android arch specific binaries
-        if: matrix.android
-        run: |
-          pnpm tauri android build --apk --split-per-abi
-
-      - name: List Android build outputs
-        if: matrix.android
-        run: |
-          echo "Listing all APKs recursively:"
-          find src-tauri/gen/android -name "*.apk" -type f
-          echo "\nListing all AABs recursively:"
-          find src-tauri/gen/android -name "*.aab" -type f
-          echo "\nListing specific release directories:"
-          ls -la src-tauri/gen/android/app/build/outputs/apk/*/release/ || echo "Release dirs not found"
-
-      - name: Prepare Android artifacts
-        if: matrix.android
-        run: |
-          # Get version from Cargo.toml
-          VERSION=$(grep '^version[[:space:]]*=[[:space:]]*"' src-tauri/Cargo.toml | sed 's/^version[[:space:]]*=[[:space:]]*"\(.*\)"/\1/')
-          echo "Version: $VERSION"
-          mkdir -p android-artifacts-unsigned
-
-          echo "Checking source paths:"
-          for type in universal arm64 arm x86 x86_64; do
-            echo "Checking ${type}:"
-            ls -la "src-tauri/gen/android/app/build/outputs/apk/${type}/release/" || echo "${type} directory not found"
-          done
-
-          # Copy files with error checking
-          for pair in \
-            "universal/release/app-universal-release-unsigned.apk:android-universal.apk" \
-            "arm64/release/app-arm64-release-unsigned.apk:android-arm64.apk" \
-            "arm/release/app-arm-release-unsigned.apk:android-arm.apk" \
-            "x86/release/app-x86-release-unsigned.apk:android-x86.apk" \
-            "x86_64/release/app-x86_64-release-unsigned.apk:android-x86_64.apk"; do
-            src=${pair%:*}
-            dst=${pair#*:}
-            if [ -f "src-tauri/gen/android/app/build/outputs/apk/$src" ]; then
-              cp "src-tauri/gen/android/app/build/outputs/apk/$src" "android-artifacts-unsigned/tollgate-${VERSION}-${dst}"
-              echo "Copied $src successfully"
-            else
-              echo "Source file not found: $src"
-            fi
-          done
-
-      - name: List Android artifacts
-        if: matrix.android
-        run: |
-          find android-artifacts-unsigned/* -type f
-
-          # Store for upload to blossom
-          echo "ANDROID_UNIVERSAL_IPK_PATH=$(find android-artifacts-unsigned/*-universal.apk -type f)" >> $GITHUB_ENV
-
-      - uses: r0adkll/sign-android-release@v1
-        name: Sign app APK
-        # ID used to access action output
-        id: sign_app
+          ANDROID_KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
         with:
-          releaseDirectory: android-artifacts-unsigned
-          signingKeyBase64: ${{ secrets.ANDROID_KEY_BASE64 }}
-          alias: ${{ secrets.ANDROID_KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          keyPassword: ""
-        env:
-          # override default build-tools version (33.0.0) -- optional
-          BUILD_TOOLS_VERSION: "34.0.0"
-
-      - name: Upload Android artifacts
-        if: matrix.android
-        uses: actions/upload-artifact@v4
-        with:
-          name: android
-          path: android-artifacts-unsigned/*
-#
-#      - name: List signed apk's
-#        run: |
-#          cd android-artifacts-unsigned
-#          signed_apks=$(ls | grep "signed.apk$")
-#          echo $signed_apks
-#          echo "SIGNED_APK_FILES=${signed_apks}" >> $GITHUB_ENV
-#
-#      - name: Upload to Blossom
-#        uses: Origami74/upload-blossom-action@multi-file
-#        continue-on-error: true # TODO: fail
-#        env:
-#          SIGNED_APK_FILES: ${{ env.SIGNED_APK_FILES }}
-#        with:
-#          host: 'https://blossom.swissdash.site/'
-#          filePaths: '${{ env.SIGNED_APK_FILES }}'
+          projectPath: .
+          tagName: v__VERSION__
+          releaseName: 'Wally v__VERSION__'
+          releaseBody: 'See the assets below to download and install this version.'
+          releaseDraft: true
+          prerelease: false
+          args: '--target aarch64'
+          mobile: android

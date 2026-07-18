@@ -5,8 +5,8 @@
 @source "./**/*.{ts,tsx}";
 
 @layer base {
-  html, body {
-    @apply min-h-screen bg-background text-foreground antialiased overscroll-none;
+  html, body, #root {
+    @apply min-h-screen antialiased overscroll-none;
   }
 }
 

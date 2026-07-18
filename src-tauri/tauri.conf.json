@@ -1,25 +1,27 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Wally",
+  "productName": "wally",
   "version": "0.1.0",
-  "identifier": "com.wally.app",
+  "identifier": "com.wally.wallet",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Wally",
+        "label": "main",
+        "title": "wally",
         "width": 384,
         "height": 512,
         "minWidth": 384,
         "minHeight": 512,
         "maxWidth": 384,
         "maxHeight": 512,
+        "transparent": true,
         "resizable": false
       }
     ],

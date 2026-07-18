@@ -33,3 +33,5 @@ vite.config.ts.timestamp-*
 
 # Other
 reference
+src-tauri/release.keystore
+releases

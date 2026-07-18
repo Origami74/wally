@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -10,15 +9,12 @@ pub struct RoutstrStoragePaths {
 }
 
 impl RoutstrStoragePaths {
-    fn new() -> Result<Self> {
-        let project_dirs = ProjectDirs::from("com", "Tollgate", "TollgateApp")
-            .ok_or_else(|| anyhow!("Unable to determine Routstr storage directory"))?;
-
-        let base_dir = project_dirs.data_dir().join("routstr");
-        let config_file = base_dir.join("config.json");
+    fn new(base_dir: PathBuf) -> Result<Self> {
+        let routstr_dir = base_dir.join("routstr");
+        let config_file = routstr_dir.join("config.json");
 
         // Ensure directories exist
-        fs::create_dir_all(&base_dir)?;
+        fs::create_dir_all(&routstr_dir)?;
 
         Ok(Self { config_file })
     }
@@ -188,15 +184,12 @@ impl Clone for RoutstrService {
     }
 }
 
-impl Default for RoutstrService {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// RoutstrService needs base_dir now, removing Default impl or use a placeholder if appropriate.
+// But it's better to just pass the path from lib.rs.
 
 impl RoutstrService {
-    pub fn new() -> Self {
-        let storage = RoutstrStoragePaths::new().unwrap_or_else(|e| {
+    pub fn new(base_dir: PathBuf) -> Self {
+        let storage = RoutstrStoragePaths::new(base_dir).unwrap_or_else(|e| {
             log::error!("Failed to initialize Routstr storage: {}", e);
             // Fallback to defaults if storage init fails
             RoutstrStoragePaths {
@@ -455,7 +448,7 @@ impl RoutstrService {
         log::info!(
             "Creating wallet at {} with cashu token prefix: {}...",
             create_url,
-            &cashu_token.chars().take(8).collect::<String>()
+            cashu_token.chars().take(8).collect::<String>()
         );
 
         let response = self
@@ -493,7 +486,7 @@ impl RoutstrService {
 
         log::info!(
             "Successfully created wallet with API key: {}...",
-            &create_response.api_key.chars().take(8).collect::<String>()
+            create_response.api_key.chars().take(8).collect::<String>()
         );
 
         Ok(create_response)
@@ -513,7 +506,7 @@ impl RoutstrService {
         log::info!(
             "Creating balance at {} with cashu token prefix: {}...",
             create_url,
-            &cashu_token.chars().take(8).collect::<String>()
+            cashu_token.chars().take(8).collect::<String>()
         );
 
         let response = self
@@ -550,7 +543,7 @@ impl RoutstrService {
 
         log::info!(
             "Successfully created balance with API key: {}...",
-            &create_response.api_key.chars().take(8).collect::<String>()
+            create_response.api_key.chars().take(8).collect::<String>()
         );
 
         Ok(create_response)
@@ -567,7 +560,7 @@ impl RoutstrService {
         log::info!(
             "Attempting balance check to {} with API key prefix: {}...",
             balance_url,
-            &api_key.chars().take(8).collect::<String>()
+            api_key.chars().take(8).collect::<String>()
         );
 
         let response = self
@@ -612,7 +605,7 @@ impl RoutstrService {
                 Err(e) => {
                     log::warn!(
                         "Failed to get balance for API key {}: {}",
-                        &entry.api_key.chars().take(8).collect::<String>(),
+                        entry.api_key.chars().take(8).collect::<String>(),
                         e
                     );
                 }
@@ -638,7 +631,7 @@ impl RoutstrService {
         log::info!(
             "Attempting topup to {} with API key prefix: {}...",
             topup_url,
-            &api_key.chars().take(8).collect::<String>()
+            api_key.chars().take(8).collect::<String>()
         );
 
         let response = self
@@ -769,12 +762,12 @@ impl RoutstrService {
                 Ok(_) => {
                     log::info!(
                         "Successfully refunded wallet for API key: {}...",
-                        &api_key_entry.api_key.chars().take(8).collect::<String>()
+                        api_key_entry.api_key.chars().take(8).collect::<String>()
                     );
                 }
                 Err(e) => {
                     log::warn!("Failed to refund wallet for API key: {}..., error: {} - continuing with force reset",
-                        &api_key_entry.api_key.chars().take(8).collect::<String>(), e);
+                        api_key_entry.api_key.chars().take(8).collect::<String>(), e);
                 }
             }
         }
@@ -952,7 +945,7 @@ pub async fn routstr_top_up_wallet_for_key(
 pub async fn routstr_refund_wallet_for_key(
     api_key: String,
     routstr_state: tauri::State<'_, RoutstrState>,
-    tollgate_state: tauri::State<'_, crate::TollGateState>,
+    wallet_state: tauri::State<'_, crate::WalletState>,
 ) -> Result<RoutstrRefundResponse, String> {
     let refund_response = {
         let service = routstr_state.lock().await;
@@ -963,8 +956,8 @@ pub async fn routstr_refund_wallet_for_key(
     };
 
     if let Some(ref token) = refund_response.token {
-        let tollgate_service = tollgate_state.lock().await;
-        match tollgate_service.receive_cashu_token(token).await {
+        let wallet_service = wallet_state.lock().await;
+        match wallet_service.receive_cashu_token(token).await {
             Ok(result) => {
                 log::info!(
                     "Successfully received refunded token into local wallet: {} sats from {}",
@@ -1113,7 +1106,8 @@ mod tests {
 
     #[test]
     fn test_api_key_management() {
-        let mut service = RoutstrService::new();
+        let temp_dir = std::env::temp_dir().join(format!("routstr_test_{}", uuid::Uuid::new_v4()));
+        let mut service = RoutstrService::new(temp_dir.clone());
 
         // Test adding API keys
         service.add_api_key(
@@ -1136,5 +1130,8 @@ mod tests {
         // Test removing non-existent key
         assert!(!service.remove_api_key("non_existent"));
         assert_eq!(service.api_keys.len(), 1);
+
+        // Clean up
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

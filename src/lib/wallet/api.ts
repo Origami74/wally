@@ -47,6 +47,7 @@ export type WalletTransactionEntry = {
   mint_url: string;
   memo: string | null;
   quote_id: string | null;
+  token?: string;
 };
 
 export type SwapRequest = {
@@ -104,6 +105,16 @@ export async function payBolt11Invoice(invoice: string): Promise<Bolt11PaymentRe
 export async function receiveCashuToken(token: string): Promise<{ amount: number; mint_url: string }> {
   return invoke<{ amount: number; mint_url: string }>("receive_cashu_token", {
     token,
+  });
+}
+
+export async function createExternalToken(
+  amountSats: number,
+  mintUrl?: string,
+): Promise<string> {
+  return invoke<string>("create_external_token", {
+    amountSats,
+    mintUrl,
   });
 }
 

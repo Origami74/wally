@@ -1,4 +1,6 @@
 <resources>
-    <string name="app_name">Wally</string>
-    <string name="main_activity_title">Wally</string>
+    <string name="app_name">wally</string>
+    <string name="main_activity_title">wally</string>
+    <string name="service_notification_title">wally is running in the background</string>
+    <string name="service_notification_text">Keeping connections active</string>
 </resources>

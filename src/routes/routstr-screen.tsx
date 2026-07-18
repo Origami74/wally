@@ -40,7 +40,6 @@ import {
   getProxyStatus,
   getUIState,
   setSelectedMint,
-  getSelectedMint,
   getWalletSummary,
 } from "@/lib/routstr/api";
 import { discoverNostrProviders } from "@/lib/nostr-providers";
@@ -149,7 +148,7 @@ export function RoutstrScreen({ copyToClipboard }: RoutstrScreenProps) {
       staleTime: 10000,
     });
 
-  const { data: walletSummary, refetch: refetchWalletSummary } = useQuery({
+  const { data: walletSummary } = useQuery({
     queryKey: ["wallet-summary"],
     queryFn: getWalletSummary,
     staleTime: 30000,
