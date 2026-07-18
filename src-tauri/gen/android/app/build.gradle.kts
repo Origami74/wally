@@ -27,14 +27,19 @@ android {
     signingConfigs {
         create("release") {
             val keystoreFile = System.getenv("TAURI_ANDROID_KEYSTORE")
+                ?.takeIf { it.isNotBlank() }
                 ?.let { file(it) }
-                ?: file("release.keystore").takeIf { it.exists() }
+                ?.takeIf { it.exists() && it.length() > 0 }
+                ?: file("release.keystore").takeIf { it.exists() && it.length() > 0 }
             val keystorePassword = System.getenv("TAURI_ANDROID_KEYSTORE_PASSWORD")
-                ?: System.getenv("ANDROID_KEYSTORE_PASS")
+                ?.takeIf { it.isNotBlank() }
+                ?: System.getenv("ANDROID_KEYSTORE_PASS")?.takeIf { it.isNotBlank() }
             val keyAliasValue = System.getenv("TAURI_ANDROID_KEY_ALIAS")
-                ?: System.getenv("ANDROID_KEY_ALIAS")
+                ?.takeIf { it.isNotBlank() }
+                ?: System.getenv("ANDROID_KEY_ALIAS")?.takeIf { it.isNotBlank() }
             val keyPasswordValue = System.getenv("TAURI_ANDROID_KEY_PASSWORD")
-                ?: System.getenv("ANDROID_KEY_PASS")
+                ?.takeIf { it.isNotBlank() }
+                ?: System.getenv("ANDROID_KEY_PASS")?.takeIf { it.isNotBlank() }
 
             if (keystoreFile != null && keystorePassword != null && keyAliasValue != null && keyPasswordValue != null) {
                 storeFile = keystoreFile
@@ -58,7 +63,10 @@ android {
         }
         getByName("release") {
             isMinifyEnabled = true
-            signingConfig = signingConfigs.getByName("release")
+            val releaseSigningConfig = signingConfigs.getByName("release")
+            if (releaseSigningConfig.storeFile != null) {
+                signingConfig = releaseSigningConfig
+            }
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
                     .plus(getDefaultProguardFile("proguard-android-optimize.txt"))
