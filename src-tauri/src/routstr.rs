@@ -448,7 +448,7 @@ impl RoutstrService {
         log::info!(
             "Creating wallet at {} with cashu token prefix: {}...",
             create_url,
-            &cashu_token.chars().take(8).collect::<String>()
+            cashu_token.chars().take(8).collect::<String>()
         );
 
         let response = self
@@ -486,7 +486,7 @@ impl RoutstrService {
 
         log::info!(
             "Successfully created wallet with API key: {}...",
-            &create_response.api_key.chars().take(8).collect::<String>()
+            create_response.api_key.chars().take(8).collect::<String>()
         );
 
         Ok(create_response)
@@ -506,7 +506,7 @@ impl RoutstrService {
         log::info!(
             "Creating balance at {} with cashu token prefix: {}...",
             create_url,
-            &cashu_token.chars().take(8).collect::<String>()
+            cashu_token.chars().take(8).collect::<String>()
         );
 
         let response = self
@@ -543,7 +543,7 @@ impl RoutstrService {
 
         log::info!(
             "Successfully created balance with API key: {}...",
-            &create_response.api_key.chars().take(8).collect::<String>()
+            create_response.api_key.chars().take(8).collect::<String>()
         );
 
         Ok(create_response)
@@ -560,7 +560,7 @@ impl RoutstrService {
         log::info!(
             "Attempting balance check to {} with API key prefix: {}...",
             balance_url,
-            &api_key.chars().take(8).collect::<String>()
+            api_key.chars().take(8).collect::<String>()
         );
 
         let response = self
@@ -605,7 +605,7 @@ impl RoutstrService {
                 Err(e) => {
                     log::warn!(
                         "Failed to get balance for API key {}: {}",
-                        &entry.api_key.chars().take(8).collect::<String>(),
+                        entry.api_key.chars().take(8).collect::<String>(),
                         e
                     );
                 }
@@ -631,7 +631,7 @@ impl RoutstrService {
         log::info!(
             "Attempting topup to {} with API key prefix: {}...",
             topup_url,
-            &api_key.chars().take(8).collect::<String>()
+            api_key.chars().take(8).collect::<String>()
         );
 
         let response = self
@@ -762,12 +762,12 @@ impl RoutstrService {
                 Ok(_) => {
                     log::info!(
                         "Successfully refunded wallet for API key: {}...",
-                        &api_key_entry.api_key.chars().take(8).collect::<String>()
+                        api_key_entry.api_key.chars().take(8).collect::<String>()
                     );
                 }
                 Err(e) => {
                     log::warn!("Failed to refund wallet for API key: {}..., error: {} - continuing with force reset",
-                        &api_key_entry.api_key.chars().take(8).collect::<String>(), e);
+                        api_key_entry.api_key.chars().take(8).collect::<String>(), e);
                 }
             }
         }

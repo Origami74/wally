@@ -877,7 +877,7 @@ impl WalletHub {
             transactions.extend(wallet_transactions.drain(..).map(Into::into));
         }
 
-        transactions.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        transactions.sort_by_key(|transaction| std::cmp::Reverse(transaction.timestamp));
         Ok(transactions)
     }
 

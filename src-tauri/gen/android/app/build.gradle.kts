@@ -26,13 +26,18 @@ android {
     }
     signingConfigs {
         create("release") {
-            val keystorePath = System.getenv("TAURI_ANDROID_KEYSTORE")
+            val keystoreFile = System.getenv("TAURI_ANDROID_KEYSTORE")
+                ?.let { file(it) }
+                ?: file("release.keystore").takeIf { it.exists() }
             val keystorePassword = System.getenv("TAURI_ANDROID_KEYSTORE_PASSWORD")
+                ?: System.getenv("ANDROID_KEYSTORE_PASS")
             val keyAliasValue = System.getenv("TAURI_ANDROID_KEY_ALIAS")
+                ?: System.getenv("ANDROID_KEY_ALIAS")
             val keyPasswordValue = System.getenv("TAURI_ANDROID_KEY_PASSWORD")
+                ?: System.getenv("ANDROID_KEY_PASS")
 
-            if (keystorePath != null && keystorePassword != null && keyAliasValue != null && keyPasswordValue != null) {
-                storeFile = file(keystorePath)
+            if (keystoreFile != null && keystorePassword != null && keyAliasValue != null && keyPasswordValue != null) {
+                storeFile = keystoreFile
                 storePassword = keystorePassword
                 keyAlias = keyAliasValue
                 keyPassword = keyPasswordValue
