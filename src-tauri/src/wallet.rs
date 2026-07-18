@@ -119,13 +119,20 @@ pub async fn receive_cashu_token(
     token: String,
     state: State<'_, WalletState>,
 ) -> Result<serde_json::Value, String> {
+    log::info!(
+        "[wallet] receive_cashu_token command invoked: encoded_length={}",
+        token.len()
+    );
     let service = state.lock().await;
     match service.receive_cashu_token(&token).await {
         Ok(result) => Ok(serde_json::json!({
             "amount": result.amount,
             "mint_url": result.mint_url,
         })),
-        Err(e) => Err(e.to_string()),
+        Err(error) => {
+            log::error!("[wallet] receive_cashu_token command failed: {}", error);
+            Err(error.to_string())
+        }
     }
 }
 

@@ -9,6 +9,7 @@ pub mod errors;
 use self::errors::{WalletError, WalletResult};
 
 use bip39::{Language, Mnemonic};
+use cdk::cdk_database::WalletDatabase;
 use cdk::mint_url::MintUrl;
 use cdk::nuts::nut18::payment_request::PaymentRequest;
 use cdk::nuts::CurrencyUnit;
@@ -181,6 +182,8 @@ struct StoredSecrets {
 struct StoredMints {
     mints: Vec<String>,
     default_mint: Option<String>,
+    #[serde(default)]
+    units: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -362,6 +365,25 @@ fn wallet_units_to_sats(amount: u64, unit: &CurrencyUnit) -> WalletResult<u64> {
     }
 }
 
+fn cashu_token_keyset_ids(token: &cdk::nuts::Token) -> Vec<String> {
+    let mut keyset_ids: Vec<String> = match token {
+        cdk::nuts::Token::TokenV3(token) => token
+            .token
+            .iter()
+            .flat_map(|token| token.proofs.iter())
+            .map(|proof| proof.keyset_id.to_string())
+            .collect(),
+        cdk::nuts::Token::TokenV4(token) => token
+            .token
+            .iter()
+            .map(|token| token.keyset_id.to_string())
+            .collect(),
+    };
+    keyset_ids.sort();
+    keyset_ids.dedup();
+    keyset_ids
+}
+
 fn ordered_mint_candidates<'a>(
     preferred_mint: Option<&str>,
     default_mint: Option<&str>,
@@ -425,6 +447,11 @@ impl WalletHub {
         let stored = StoredMints {
             mints: self.wallets.keys().cloned().collect(),
             default_mint: self.default_mint.clone(),
+            units: self
+                .wallets
+                .iter()
+                .map(|(mint_url, wallet)| (mint_url.clone(), wallet.unit.to_string()))
+                .collect(),
         };
 
         if let Some(parent) = self.storage.mints_file.parent() {
@@ -438,13 +465,32 @@ impl WalletHub {
     }
 
     pub async fn load_existing_mints(&mut self) -> WalletResult<()> {
-        let stored_mints = self.load_mints_config()?;
+        let StoredMints {
+            mints,
+            default_mint,
+            units,
+        } = self.load_mints_config()?;
 
-        for mint_url in stored_mints.mints {
+        for mint_url in mints {
             if !self.wallets.contains_key(&mint_url) {
                 log::info!("Loading existing mint from storage: {}", mint_url);
-                if let Err(e) = self.add_mint_internal(&mint_url).await {
-                    log::warn!("Failed to load existing mint {}: {}", mint_url, e);
+                let load_result = if let Some(stored_unit) = units.get(&mint_url) {
+                    match CurrencyUnit::from_str(stored_unit) {
+                        Ok(unit) => self.add_mint_for_unit_internal(&mint_url, unit).await,
+                        Err(error) => {
+                            log::warn!(
+                                "[wallet] Invalid stored unit for mint {}; rediscovering: {}",
+                                mint_url,
+                                error
+                            );
+                            self.add_mint_internal(&mint_url).await
+                        }
+                    }
+                } else {
+                    self.add_mint_internal(&mint_url).await
+                };
+                if let Err(error) = load_result {
+                    log::warn!("Failed to load existing mint {}: {}", mint_url, error);
                 }
             }
         }
@@ -461,7 +507,7 @@ impl WalletHub {
             }
         }
 
-        if let Some(default_mint) = stored_mints.default_mint {
+        if let Some(default_mint) = default_mint {
             if self.wallets.contains_key(&default_mint) {
                 self.default_mint = Some(default_mint);
             }
@@ -514,12 +560,45 @@ impl WalletHub {
         let currency_unit = select_currency_unit(&keysets);
 
         log::info!(
-            "Discovered {} keysets for mint {}, selected unit: {}",
+            "[wallet] Discovered {} keysets for mint {}; selected unit {}",
             keysets.len(),
             mint_url,
             currency_unit
         );
 
+        self.add_mint_for_unit_internal(mint_url, currency_unit)
+            .await
+    }
+
+    async fn add_mint_for_unit_internal(
+        &mut self,
+        mint_url: &str,
+        currency_unit: CurrencyUnit,
+    ) -> WalletResult<()> {
+        if self
+            .wallets
+            .get(mint_url)
+            .is_some_and(|wallet| wallet.unit == currency_unit)
+        {
+            return Ok(());
+        }
+
+        let wallet = self.create_wallet_for_unit(mint_url, currency_unit).await?;
+        self.wallets.insert(mint_url.to_string(), wallet);
+
+        if self.default_mint.is_none() {
+            self.default_mint = Some(mint_url.to_string());
+        }
+
+        log::info!("[wallet] Mint wallet ready: {}", mint_url);
+        Ok(())
+    }
+
+    async fn create_wallet_for_unit(
+        &self,
+        mint_url: &str,
+        currency_unit: CurrencyUnit,
+    ) -> WalletResult<Wallet> {
         let db_path = self.storage.mint_db_path(mint_url)?;
         let localstore = WalletSqliteDatabase::new(db_path).await.map_err(|e| {
             WalletError::wallet(format!(
@@ -528,7 +607,12 @@ impl WalletHub {
             ))
         })?;
 
-        let wallet = Wallet::new(
+        log::info!(
+            "[wallet] Initializing mint wallet: mint={}, unit={}",
+            mint_url,
+            currency_unit
+        );
+        Wallet::new(
             mint_url,
             currency_unit,
             Arc::new(localstore),
@@ -540,15 +624,39 @@ impl WalletHub {
                 "Failed to create wallet for mint {}: {}",
                 mint_url, e
             ))
+        })
+    }
+
+    async fn evict_cached_token_keysets(
+        &self,
+        mint_url: &str,
+        keyset_ids: &[String],
+    ) -> WalletResult<()> {
+        let db_path = self.storage.mint_db_path(mint_url)?;
+        let localstore = WalletSqliteDatabase::new(db_path).await.map_err(|error| {
+            WalletError::wallet(format!(
+                "Failed to open wallet database for keyset refresh: {}",
+                error
+            ))
         })?;
 
-        self.wallets.insert(mint_url.to_string(), wallet);
-
-        if self.default_mint.is_none() {
-            self.default_mint = Some(mint_url.to_string());
+        for keyset_id in keyset_ids {
+            let Ok(keyset_id) = cdk::nuts::Id::from_str(keyset_id) else {
+                log::debug!(
+                    "[wallet] Skipping cache eviction for short keyset id {}",
+                    keyset_id
+                );
+                continue;
+            };
+            localstore.remove_keys(&keyset_id).await.map_err(|error| {
+                WalletError::wallet(format!(
+                    "Failed to evict cached keyset {}: {}",
+                    keyset_id, error
+                ))
+            })?;
+            log::info!("[wallet] Evicted cached keyset keys: {}", keyset_id);
         }
 
-        log::info!("Added mint to wallet: {}", mint_url);
         Ok(())
     }
 
@@ -828,37 +936,173 @@ impl WalletHub {
     }
 
     pub async fn receive_cashu_token(&mut self, token: &str) -> WalletResult<CashuReceiveResult> {
-        let cashu_token = cdk::nuts::Token::from_str(token)
-            .map_err(|e| WalletError::wallet(format!("Invalid cashu token: {}", e)))?;
+        log::info!(
+            "[wallet] Cashu receive started: encoded_length={}",
+            token.len()
+        );
 
+        let cashu_token = cdk::nuts::Token::from_str(token).map_err(|error| {
+            log::error!(
+                "[wallet] Cashu token parsing failed: encoded_length={}, error={}",
+                token.len(),
+                error
+            );
+            WalletError::wallet(format!("Invalid Cashu token: {}", error))
+        })?;
+
+        let token_kind = match &cashu_token {
+            cdk::nuts::Token::TokenV3(_) => "v3",
+            cdk::nuts::Token::TokenV4(_) => "v4",
+        };
+        // CDK treats V3 tokens without an explicit unit as sats.
+        let token_unit = cashu_token.unit().unwrap_or_default();
+        let token_amount: u64 = cashu_token
+            .value()
+            .map_err(|error| {
+                WalletError::wallet(format!("Failed to read Cashu token amount: {}", error))
+            })?
+            .into();
         let mint_url = cashu_token
             .mint_url()
-            .map_err(|e| WalletError::wallet(format!("Failed to get mint URL: {}", e)))?
+            .map_err(|error| {
+                WalletError::wallet(format!("Failed to get Cashu token mint URL: {}", error))
+            })?
             .to_string();
 
-        if !self.wallets.contains_key(&mint_url) {
-            log::info!("Mint {} not found, adding it automatically", mint_url);
-            self.add_mint(&mint_url).await?;
-        }
+        let token_keyset_ids = cashu_token_keyset_ids(&cashu_token);
+        let token_keysets = token_keyset_ids.join(",");
+        log::info!(
+            "[wallet] Cashu token decoded: version={}, mint={}, unit={}, amount={}, keysets=[{}]",
+            token_kind,
+            mint_url,
+            token_unit,
+            token_amount,
+            token_keysets
+        );
 
-        let wallet = self.wallets.get(&mint_url).ok_or_else(|| {
-            WalletError::wallet(format!("Failed to create wallet for mint: {}", mint_url))
+        let current_unit = self
+            .wallets
+            .get(&mint_url)
+            .map(|wallet| wallet.unit.clone());
+        let install_wallet_after_receive = current_unit.as_ref() != Some(&token_unit);
+        let wallet = if install_wallet_after_receive {
+            if let Some(current_unit) = current_unit {
+                log::warn!(
+                    "[wallet] Preparing token-unit wallet: mint={}, current_unit={}, token_unit={}",
+                    mint_url,
+                    current_unit,
+                    token_unit
+                );
+            } else {
+                log::info!(
+                    "[wallet] Token mint is not configured; preparing mint={}, unit={}",
+                    mint_url,
+                    token_unit
+                );
+            }
+
+            self.create_wallet_for_unit(&mint_url, token_unit.clone())
+                .await
+                .map_err(|error| {
+                    log::error!(
+                        "[wallet] Failed to initialize token mint wallet: mint={}, unit={}, error={}",
+                        mint_url,
+                        token_unit,
+                        error
+                    );
+                    error
+                })?
+        } else {
+            self.wallets.get(&mint_url).cloned().ok_or_else(|| {
+                WalletError::wallet(format!("Failed to find wallet for mint: {}", mint_url))
+            })?
+        };
+
+        // The pinned CDK 0.13 fork trusts cached key material. Force the
+        // token's public keysets to be fetched and cryptographically verified
+        // before receive mutates proof state. This avoids retrying a partially
+        // started receive and fixes stale/corrupt key caches.
+        self.evict_cached_token_keysets(&mint_url, &token_keyset_ids)
+            .await
+            .map_err(|error| {
+                log::error!(
+                    "[wallet] Cached keyset eviction failed: mint={}, keysets=[{}], error={}",
+                    mint_url,
+                    token_keysets,
+                    error
+                );
+                error
+            })?;
+        let refreshed_keysets = wallet.refresh_keysets().await.map_err(|error| {
+            log::error!(
+                "[wallet] Mint keyset preflight failed: mint={}, unit={}, keysets=[{}], error={}",
+                mint_url,
+                token_unit,
+                token_keysets,
+                error
+            );
+            WalletError::wallet(format!(
+                "The token uses keyset(s) [{}], but {} did not return matching keys: {}",
+                token_keysets, mint_url, error
+            ))
         })?;
+        log::info!(
+            "[wallet] Keyset preflight completed: mint={}, refreshed_keysets={}, token_keysets=[{}]",
+            mint_url,
+            refreshed_keysets.len(),
+            token_keysets
+        );
 
         let received_amount = wallet
             .receive(token, cdk::wallet::ReceiveOptions::default())
             .await
-            .map_err(|e| WalletError::wallet(format!("Failed to receive token: {}", e)))?;
+            .map_err(|error| {
+                log::error!(
+                    "[wallet] Cashu receive failed after keyset preflight: mint={}, unit={}, amount={}, keysets=[{}], error={}",
+                    mint_url,
+                    token_unit,
+                    token_amount,
+                    token_keysets,
+                    error
+                );
+                WalletError::wallet(format!(
+                    "Failed to receive Cashu token from {} ({}) after verifying keysets [{}]: {}",
+                    mint_url, token_unit, token_keysets, error
+                ))
+            })?;
 
-        let total_amount: u64 = received_amount.into();
+        if install_wallet_after_receive {
+            self.wallets.insert(mint_url.clone(), wallet);
+            if self.default_mint.is_none() {
+                self.default_mint = Some(mint_url.clone());
+            }
+            if let Err(error) = self.save_mints_config() {
+                log::error!(
+                    "[wallet] Token was received, but mint configuration could not be saved: mint={}, error={}",
+                    mint_url,
+                    error
+                );
+            }
+            log::info!(
+                "[wallet] Installed token-unit wallet after successful receive: mint={}, unit={}",
+                mint_url,
+                token_unit
+            );
+        }
+
+        let received_wallet_units: u64 = received_amount.into();
+        let total_amount_sats = wallet_units_to_sats(received_wallet_units, &token_unit)?;
 
         log::info!(
-            "Successfully received {} sats from token at mint {}",
-            total_amount,
-            mint_url
+            "[wallet] Cashu receive completed: mint={}, unit={}, received_units={}, received_sats={}, keysets=[{}]",
+            mint_url,
+            token_unit,
+            received_wallet_units,
+            total_amount_sats,
+            token_keysets
         );
         Ok(CashuReceiveResult {
-            amount: total_amount,
+            amount: total_amount_sats,
             mint_url,
         })
     }
@@ -1226,6 +1470,61 @@ impl WalletService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preserves_msat_default_when_mint_supports_sat_and_msat() {
+        let keysets = vec![
+            KeysetInfo {
+                id: "msat-keyset".to_string(),
+                unit: "msat".to_string(),
+                active: true,
+            },
+            KeysetInfo {
+                id: "sat-keyset".to_string(),
+                unit: "sat".to_string(),
+                active: true,
+            },
+        ];
+
+        assert_eq!(select_currency_unit(&keysets), CurrencyUnit::Msat);
+    }
+
+    #[test]
+    fn uses_msat_when_it_is_the_only_active_unit() {
+        let keysets = vec![KeysetInfo {
+            id: "msat-keyset".to_string(),
+            unit: "msat".to_string(),
+            active: true,
+        }];
+
+        assert_eq!(select_currency_unit(&keysets), CurrencyUnit::Msat);
+    }
+
+    #[test]
+    fn stored_mints_without_units_remain_backward_compatible() {
+        let stored: StoredMints = serde_json::from_str(
+            r#"{"mints":["https://mint.example"],"default_mint":"https://mint.example"}"#,
+        )
+        .unwrap();
+
+        assert!(stored.units.is_empty());
+    }
+
+    #[test]
+    fn stored_mints_preserve_selected_wallet_unit() {
+        let stored = StoredMints {
+            mints: vec!["https://mint.example".to_string()],
+            default_mint: Some("https://mint.example".to_string()),
+            units: HashMap::from([("https://mint.example".to_string(), "sat".to_string())]),
+        };
+        let decoded: StoredMints =
+            serde_json::from_slice(&serde_json::to_vec(&stored).unwrap()).unwrap();
+
+        assert_eq!(
+            decoded.units.get("https://mint.example"),
+            Some(&"sat".to_string())
+        );
+    }
 
     #[test]
     fn converts_sats_for_sat_and_msat_wallets() {

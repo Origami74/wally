@@ -199,7 +199,8 @@ export function ReceiveScreen({
       setCashuTokenInput("");
     } catch (err) {
       console.error("Failed to receive token", err);
-      setError("Failed to receive token. Check the token and try again.");
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(`Failed to receive token: ${errorMessage}`);
     } finally {
       setIsReceiving(false);
     }

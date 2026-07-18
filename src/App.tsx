@@ -242,7 +242,8 @@ function AppContent() {
           await refreshStatus();
         } catch (err) {
           console.error("Failed to receive token", err);
-          alert("Failed to receive token. It might be already redeemed.");
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          alert(`Failed to receive token: ${errorMessage}`);
         }
       } else if (type === "cashu-request" || type === "lightning-invoice") {
         if (trimmed.toLowerCase().startsWith("lightning:")) {
