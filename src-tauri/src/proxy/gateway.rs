@@ -377,7 +377,7 @@ fn build_provider_request(
 }
 
 fn msats_to_sats_rounded_up(amount_msats: u64) -> u64 {
-    amount_msats / 1_000 + u64::from(amount_msats % 1_000 != 0)
+    amount_msats.div_ceil(1_000)
 }
 
 fn value_contains_mint_unreachable(value: &serde_json::Value) -> bool {
