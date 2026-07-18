@@ -73,6 +73,13 @@ pub struct CashuReceiveResult {
     pub mint_url: String,
 }
 
+/// Cashu token prepared for an external provider.
+#[derive(Clone)]
+pub struct ExternalPaymentToken {
+    pub token: String,
+    pub mint_url: String,
+}
+
 /// Result of paying a NUT18 payment request
 #[derive(Debug, Clone, Serialize)]
 pub struct PayNut18Result {
@@ -323,12 +330,68 @@ fn select_currency_unit(keysets: &[KeysetInfo]) -> CurrencyUnit {
     }
 
     for keyset in keysets {
-        if keyset.active && keyset.unit == "ssat" {
+        if keyset.active && keyset.unit == "sat" {
             return CurrencyUnit::Sat;
         }
     }
 
     CurrencyUnit::Sat
+}
+
+fn sats_to_wallet_units(amount_sats: u64, unit: &CurrencyUnit) -> WalletResult<u64> {
+    match unit.to_string().to_ascii_lowercase().as_str() {
+        "sat" => Ok(amount_sats),
+        "msat" => amount_sats
+            .checked_mul(1_000)
+            .ok_or_else(|| WalletError::wallet("Payment amount overflows msat wallet units")),
+        other => Err(WalletError::wallet(format!(
+            "Unsupported wallet currency unit for Routstr payment: {}",
+            other
+        ))),
+    }
+}
+
+fn wallet_units_to_sats(amount: u64, unit: &CurrencyUnit) -> WalletResult<u64> {
+    match unit.to_string().to_ascii_lowercase().as_str() {
+        "sat" => Ok(amount),
+        "msat" => Ok(amount / 1_000),
+        other => Err(WalletError::wallet(format!(
+            "Unsupported wallet currency unit for Routstr payment: {}",
+            other
+        ))),
+    }
+}
+
+fn ordered_mint_candidates<'a>(
+    preferred_mint: Option<&str>,
+    default_mint: Option<&str>,
+    configured_mints: impl IntoIterator<Item = &'a str>,
+    excluded_mints: &[String],
+) -> Vec<String> {
+    let mut remaining: Vec<String> = configured_mints
+        .into_iter()
+        .map(str::trim)
+        .filter(|mint| !mint.is_empty())
+        .map(str::to_string)
+        .collect();
+    remaining.sort();
+
+    let mut candidates = Vec::new();
+    for mint in preferred_mint
+        .into_iter()
+        .chain(default_mint)
+        .chain(remaining.iter().map(String::as_str))
+    {
+        let mint = mint.trim();
+        if mint.is_empty()
+            || excluded_mints.iter().any(|excluded| excluded == mint)
+            || candidates.iter().any(|candidate| candidate == mint)
+        {
+            continue;
+        }
+        candidates.push(mint.to_string());
+    }
+    candidates
 }
 
 impl WalletHub {
@@ -823,49 +886,118 @@ impl WalletHub {
         amount_sats: u64,
         mint_url: Option<String>,
     ) -> WalletResult<String> {
-        let target_mint = if let Some(mint) = mint_url {
-            mint
-        } else {
-            let summary = self.summary().await?;
-            if summary.balances.is_empty() {
-                return Err(WalletError::wallet("No mints configured".to_string()));
+        if let Some(mint_url) = mint_url {
+            return self
+                .create_external_token_from_mint(amount_sats, &mint_url)
+                .await
+                .map(|payment| payment.token);
+        }
+
+        self.create_external_token_with_fallback(amount_sats, None, &[])
+            .await
+            .map(|payment| payment.token)
+    }
+
+    /// Create a token from the preferred mint, then deterministically try other
+    /// funded mints that have not already failed for this provider request.
+    pub async fn create_external_token_with_fallback(
+        &self,
+        amount_sats: u64,
+        preferred_mint: Option<String>,
+        excluded_mints: &[String],
+    ) -> WalletResult<ExternalPaymentToken> {
+        let candidates = ordered_mint_candidates(
+            preferred_mint.as_deref(),
+            self.default_mint.as_deref(),
+            self.wallets.keys().map(String::as_str),
+            excluded_mints,
+        );
+
+        if candidates.is_empty() {
+            return Err(WalletError::wallet("No eligible mints configured"));
+        }
+
+        let mut total_balance_sats = 0_u64;
+        let mut last_error = None;
+
+        for (index, mint_url) in candidates.iter().enumerate() {
+            let wallet = match self.wallets.get(mint_url) {
+                Some(wallet) => wallet,
+                None => continue,
+            };
+
+            let raw_balance: u64 = match wallet.total_balance().await {
+                Ok(balance) => balance.into(),
+                Err(error) => {
+                    last_error = Some(format!("Failed to get balance for {}: {}", mint_url, error));
+                    continue;
+                }
+            };
+            let balance_sats = wallet_units_to_sats(raw_balance, &wallet.unit)?;
+            total_balance_sats = total_balance_sats.saturating_add(balance_sats);
+            if balance_sats < amount_sats {
+                continue;
             }
 
-            let mut selected_mint = None;
-            for wallet_balance in &summary.balances {
-                if wallet_balance.balance >= amount_sats {
-                    selected_mint = Some(wallet_balance.mint_url.clone());
-                    break;
+            if index > 0 {
+                log::info!(
+                    "[wallet] Retrying payment token with fallback mint {} ({}/{})",
+                    mint_url,
+                    index + 1,
+                    candidates.len()
+                );
+            }
+
+            match self
+                .create_external_token_from_mint(amount_sats, mint_url)
+                .await
+            {
+                Ok(payment) => return Ok(payment),
+                Err(error) => {
+                    log::warn!(
+                        "[wallet] Could not create payment token from mint {}: {}",
+                        mint_url,
+                        error
+                    );
+                    last_error = Some(error.to_string());
                 }
             }
+        }
 
-            match selected_mint {
-                Some(mint) => mint,
-                None => {
-                    let total_balance: u64 = summary.balances.iter().map(|b| b.balance).sum();
-                    return Err(WalletError::wallet(format!(
-                        "Insufficient balance: {} sats available across all mints, {} sats requested",
-                        total_balance, amount_sats
-                    )));
-                }
-            }
-        };
+        Err(WalletError::wallet(last_error.unwrap_or_else(|| {
+            format!(
+                "Insufficient balance: {} sats available across eligible mints, {} sats requested",
+                total_balance_sats, amount_sats
+            )
+        })))
+    }
 
-        let balance = self.get_balance(&target_mint).await?;
-        if balance < amount_sats {
+    async fn create_external_token_from_mint(
+        &self,
+        amount_sats: u64,
+        mint_url: &str,
+    ) -> WalletResult<ExternalPaymentToken> {
+        let wallet = self.wallets.get(mint_url).ok_or_else(|| {
+            WalletError::wallet(format!("Wallet not found for mint: {}", mint_url))
+        })?;
+
+        let raw_balance: u64 = wallet
+            .total_balance()
+            .await
+            .map_err(|e| WalletError::wallet(format!("Failed to get balance: {}", e)))?
+            .into();
+        let balance_sats = wallet_units_to_sats(raw_balance, &wallet.unit)?;
+        if balance_sats < amount_sats {
             return Err(WalletError::wallet(format!(
                 "Insufficient balance: {} sats available, {} sats requested",
-                balance, amount_sats
+                balance_sats, amount_sats
             )));
         }
 
-        let wallet = self.wallets.get(&target_mint).ok_or_else(|| {
-            WalletError::wallet(format!("Wallet not found for mint: {}", target_mint))
-        })?;
-
+        let wallet_amount = sats_to_wallet_units(amount_sats, &wallet.unit)?;
         let prepared_send = wallet
             .prepare_send(
-                cdk::Amount::from(amount_sats),
+                cdk::Amount::from(wallet_amount),
                 cdk::wallet::SendOptions::default(),
             )
             .await
@@ -877,11 +1009,14 @@ impl WalletHub {
             .map_err(|e| WalletError::wallet(format!("Failed to create token: {}", e)))?;
 
         log::info!(
-            "Created external token: {} sats from mint {}",
+            "[wallet] Created external token for {} sats from mint {}",
             amount_sats,
-            target_mint
+            mint_url
         );
-        Ok(token.to_string())
+        Ok(ExternalPaymentToken {
+            token: token.to_string(),
+            mint_url: mint_url.to_string(),
+        })
     }
 }
 
@@ -1070,8 +1205,66 @@ impl WalletService {
         wallet.create_external_token(amount_sats, mint_url).await
     }
 
+    pub async fn create_external_token_with_fallback(
+        &self,
+        amount_sats: u64,
+        preferred_mint: Option<String>,
+        excluded_mints: &[String],
+    ) -> WalletResult<ExternalPaymentToken> {
+        let wallet = self.wallet.lock().await;
+        wallet
+            .create_external_token_with_fallback(amount_sats, preferred_mint, excluded_mints)
+            .await
+    }
+
     pub async fn get_wallet_keys(&self) -> nostr::Keys {
         let wallet = self.wallet.lock().await;
         wallet.get_keys()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn converts_sats_for_sat_and_msat_wallets() {
+        assert_eq!(sats_to_wallet_units(21, &CurrencyUnit::Sat).unwrap(), 21);
+        assert_eq!(
+            sats_to_wallet_units(21, &CurrencyUnit::Msat).unwrap(),
+            21_000
+        );
+        assert_eq!(
+            wallet_units_to_sats(21_999, &CurrencyUnit::Msat).unwrap(),
+            21
+        );
+    }
+
+    #[test]
+    fn rejects_msat_conversion_overflow() {
+        assert!(sats_to_wallet_units(u64::MAX, &CurrencyUnit::Msat).is_err());
+    }
+
+    #[test]
+    fn orders_and_deduplicates_fallback_mints() {
+        let configured = [
+            "https://mint-c.example",
+            "https://mint-a.example",
+            "https://mint-b.example",
+        ];
+        let excluded = vec!["https://mint-a.example".to_string()];
+
+        assert_eq!(
+            ordered_mint_candidates(
+                Some("https://mint-a.example"),
+                Some("https://mint-b.example"),
+                configured,
+                &excluded,
+            ),
+            vec![
+                "https://mint-b.example".to_string(),
+                "https://mint-c.example".to_string(),
+            ]
+        );
     }
 }
